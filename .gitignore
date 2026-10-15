@@ -11,3 +11,4 @@ __pycache__/
 /.run/
 # CSS generowany przez Tailwinda (`just css`)
 api/src/wheeler_api/static/app.css
+.claude/

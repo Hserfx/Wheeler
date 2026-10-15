@@ -139,7 +139,7 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Lista zadań od najnowszych, z miniaturą, statusem i datą
 - [ ] Widok szczegółów zadania z wejściem, wynikiem i użytymi parametrami

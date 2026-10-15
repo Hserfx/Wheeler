@@ -35,17 +35,21 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** None (can start immediately; może iść równolegle z 01)
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Monorepo `api/`, `worker/`, `shared/` jako workspace uv z jednym lockfile'em, `git init`
-- [ ] Maszyna Podmana `wheels` (2 CPU, 2 GB) tworzona automatycznie, jeśli nie istnieje
-- [ ] Port API opublikowany wyłącznie na `127.0.0.1`, niedostępny z sieci lokalnej
-- [ ] Schemat bazy zarządzany przez Alembic, migracje uruchamiane przy starcie
-- [ ] Worker pobiera zadania przez `FOR UPDATE SKIP LOCKED` i przetwarza jedno naraz
-- [ ] Pliki leżą na wolumenie dyskowym wspólnym dla API i workera, a w bazie są tylko ścieżki
-- [ ] Wszystkie teksty UI po polsku, w jednym pliku
-- [ ] `just up`, `just down`, `just worker` i `just test` działają, a ruff i mypy przechodzą
-- [ ] Test integracyjny: wgranie zdjęcia → zadanie → wynik, na prawdziwym Postgresie w Podmanie
+- [x] Monorepo `api/`, `worker/`, `shared/` jako workspace uv z jednym lockfile'em, `git init`
+- [x] Maszyna Podmana `wheels` (2 CPU, 2 GB) tworzona automatycznie, jeśli nie istnieje
+- [x] Port API opublikowany wyłącznie na `127.0.0.1`, niedostępny z sieci lokalnej
+- [x] Schemat bazy zarządzany przez Alembic, migracje uruchamiane przy starcie
+- [x] Worker pobiera zadania przez `FOR UPDATE SKIP LOCKED` i przetwarza jedno naraz
+- [x] Pliki leżą na wolumenie dyskowym wspólnym dla API i workera, a w bazie są tylko ścieżki
+- [x] Wszystkie teksty UI po polsku, w jednym pliku
+- [x] `just up`, `just down`, `just worker` i `just test` działają, a ruff i mypy przechodzą
+- [x] Test integracyjny: wgranie zdjęcia → zadanie → wynik, na prawdziwym Postgresie w Podmanie
+
+**Comments:**
+
+- 2026-10-15 (agent): zrobione na gałęzi `ticket-02`. Uruchamianie i testy opisane w `README.md` i `justfile`. Testy integracyjne startują własny kontener Postgresa na `wheels` (unikalna nazwa, losowy port 127.0.0.1), więc `just test` można odpalać równolegle w wielu worktree. Punkt rozszerzenia dla 03: `worker/src/wheeler_worker/processing.py` (`Processor`, `PROCESSORS`, `WHEELER_PROCESSOR`). Sprawdzone ręcznie: `just up` → wgranie zdjęcia przez HTTP → wynik PNG; port 8000 niedostępny z adresu LAN; `just down` zatrzymuje workera i kontenery.
 
 ---
 

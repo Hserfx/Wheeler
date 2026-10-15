@@ -1,0 +1,35 @@
+<section id="job-status" class="flex flex-col gap-6"
+  {%- if not job.status.finished %}
+  hx-get="/jobs/{{ job.id }}/status" hx-trigger="every 1s" hx-swap="outerHTML"
+  {%- endif %}>
+  <p class="text-sm">
+    <span class="text-slate-500">{{ t.status_label }}:</span>
+    <span class="font-semibold" data-status="{{ job.status.value }}">{{ status_labels[job.status] }}</span>
+  </p>
+
+  {% if job.error %}
+  <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+    {{ t.job_error }}: {{ job.error }}
+  </p>
+  {% endif %}
+
+  <div class="grid gap-6 sm:grid-cols-2">
+    {% if input_image %}
+    <figure>
+      <figcaption class="mb-2 text-sm font-medium text-slate-600">{{ t.job_input }}</figcaption>
+      <img src="/files/{{ input_image.path }}" alt="{{ t.job_input }}" data-role="input"
+           class="w-full rounded-lg border border-slate-200 bg-white">
+    </figure>
+    {% endif %}
+    {% if result_image %}
+    <figure>
+      <figcaption class="mb-2 flex items-baseline justify-between text-sm font-medium text-slate-600">
+        <span>{{ t.job_result }}</span>
+        <a href="/files/{{ result_image.path }}" download class="underline hover:text-slate-900">{{ t.job_download }}</a>
+      </figcaption>
+      <img src="/files/{{ result_image.path }}" alt="{{ t.job_result }}" data-role="result"
+           class="w-full rounded-lg border border-slate-200 bg-white">
+    </figure>
+    {% endif %}
+  </div>
+</section>

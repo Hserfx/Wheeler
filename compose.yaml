@@ -1,0 +1,41 @@
+# FastAPI + PostgreSQL na maszynie Podmana `wheels` (uruchamiane przez `just up`).
+# Worker AI działa natywnie na macOS (dostęp do GPU/Metal) i łączy się z Postgresem
+# przez port opublikowany na 127.0.0.1. Oba porty są dostępne WYŁĄCZNIE z tego Maca.
+name: wheeler
+
+services:
+  db:
+    image: docker.io/library/postgres:17-alpine
+    environment:
+      POSTGRES_USER: wheeler
+      POSTGRES_PASSWORD: wheeler
+      POSTGRES_DB: wheeler
+    ports:
+      - "127.0.0.1:${WHEELER_DB_PORT:-55432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wheeler -d wheeler"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Containerfile
+    image: localhost/wheeler-api:latest
+    environment:
+      WHEELER_DATABASE_URL: postgresql+psycopg://wheeler:wheeler@db:5432/wheeler
+      WHEELER_DATA_DIR: /data
+    volumes:
+      # Wolumen danych wspólny z natywnym workerem; w bazie są tylko ścieżki względne.
+      - ./data:/data
+    ports:
+      - "127.0.0.1:${WHEELER_API_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

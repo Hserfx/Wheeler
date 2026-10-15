@@ -1,0 +1,13 @@
+**/__pycache__
+**/*.pyc
+.venv
+.git
+.bin
+.run
+data
+spike
+docs
+tests
+**/.mypy_cache
+**/.ruff_cache
+**/.pytest_cache

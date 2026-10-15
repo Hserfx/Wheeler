@@ -1,4 +1,7 @@
-"""`wheeler-api`: serwer HTTP (w kontenerze nasłuchuje na 0.0.0.0, port publikowany na 127.0.0.1)."""
+"""`wheeler-api`: serwer HTTP.
+
+W kontenerze nasłuchuje na 0.0.0.0, ale port jest publikowany wyłącznie na 127.0.0.1.
+"""
 
 import os
 

@@ -24,6 +24,10 @@ just logs api
   workera). Zmiana: `WHEELER_API_PORT`, `WHEELER_DB_PORT`.
 - Pliki leżą w `./data` (bind mount `/data` w kontenerze API). W bazie są tylko ścieżki względne
   wobec tego katalogu. Dane Postgresa są w wolumenie `wheeler_pgdata` na maszynie `wheels`.
+- Wszystkie pliki zadania (wejście, maski, wycinki, wynik, miniatury) leżą w jego katalogu
+  `data/jobs/<hex>` (`Storage.new_job_dir`). Usunięcie zadania w Historii
+  (`wheeler_shared.history.delete_jobs`) kasuje ten katalog w całości; pliki poza nim (np. felgi
+  z biblioteki) zostają. Automatycznego sprzątania nie ma.
 - PID i log workera: `.run/worker.pid`, `.run/worker.log`.
 
 ## Struktura

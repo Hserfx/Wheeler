@@ -139,13 +139,17 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 02
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Lista zadań od najnowszych, z miniaturą, statusem i datą
-- [ ] Widok szczegółów zadania z wejściem, wynikiem i użytymi parametrami
-- [ ] Usuwanie pojedyncze i zbiorcze (zaznaczanie), z potwierdzeniem
-- [ ] Usunięcie kasuje pliki zadania z wolumenu, a test to weryfikuje
-- [ ] Brak automatycznego sprzątania, historia jest trzymana bezterminowo
+- [x] Lista zadań od najnowszych, z miniaturą, statusem i datą
+- [x] Widok szczegółów zadania z wejściem, wynikiem i użytymi parametrami
+- [x] Usuwanie pojedyncze i zbiorcze (zaznaczanie), z potwierdzeniem
+- [x] Usunięcie kasuje pliki zadania z wolumenu, a test to weryfikuje
+- [x] Brak automatycznego sprzątania, historia jest trzymana bezterminowo
+
+**Comments:**
+
+- 2026-10-15 (agent): zrobione na gałęzi `ticket-08`, testy w `tests/test_history.py`. `/history` to siatka miniatur (generowane leniwie przez `/jobs/{id}/thumbnail` jako `<plik>.thumb.jpg` w katalogu zadania; Pillow doszedł do zależności `api`). Szczegóły zadania (`/jobs/{id}`) pokazują wszystkie klucze z `Job.params` bez listy na sztywno; etykiety można dopisać w `PARAM_LABELS` (`texts.py`). Potwierdzenie usuwania to osobna strona `GET /history/delete?ids=…` (wspólna dla pojedynczego i zbiorczego), a `POST /history/delete` usuwa. Logika w `wheeler_shared/history.py` (`delete_jobs`): kasuje cały katalog `jobs/<hex>` (także pliki, których baza nie zna), pliki spoza niego zostają, zadania `running` są pomijane. Konwencja dla 03/09: wszystkie pliki zadania zapisuj w jego katalogu.
 
 ---
 

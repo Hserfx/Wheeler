@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ t.job_heading.format(id=job.id) }} · {{ t.app_name }}{% endblock %}
+{% block content %}
+<div class="flex items-baseline justify-between gap-4">
+  <h1 class="text-xl font-semibold">{{ t.job_heading.format(id=job.id) }}</h1>
+  <a href="/" class="text-sm font-medium text-slate-600 underline hover:text-slate-900">{{ t.job_new }}</a>
+</div>
+<div class="mt-6">
+  {% include "_job_status.html" %}
+</div>
+{% endblock %}

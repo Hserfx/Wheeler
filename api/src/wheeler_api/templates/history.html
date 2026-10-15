@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ t.history_heading }} · {{ t.app_name }}{% endblock %}
+{% block content %}
+<h1 class="text-xl font-semibold">{{ t.history_heading }}</h1>
+
+{% if deleted %}
+<p class="mt-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status">{{ t.delete_done.format(count=deleted) }}</p>
+{% endif %}
+{% if skipped %}
+<p class="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">{{ t.delete_skipped.format(count=skipped) }}</p>
+{% endif %}
+
+{% if not jobs %}
+<p class="mt-6 text-sm text-slate-500">{{ t.history_empty }}</p>
+{% else %}
+{%- set deletable_ids = jobs | select("deletable") | map(attribute="id") | list %}
+<form action="/history/delete" method="get" class="mt-6"
+      x-data="{ selected: [], all: {{ deletable_ids | tojson }} }">
+  <div class="mb-4 flex flex-wrap items-center gap-3 text-sm">
+    <button type="button" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium hover:bg-slate-100"
+            x-show="selected.length < all.length" @click="selected = all.map(String)">{{ t.history_select_all }}</button>
+    <button type="button" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium hover:bg-slate-100"
+            x-show="selected.length > 0" x-cloak @click="selected = []">{{ t.history_select_none }}</button>
+    <button type="submit" :disabled="selected.length === 0"
+            class="rounded-md bg-red-600 px-3 py-1.5 font-semibold text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40">
+      {{ t.history_delete_selected }}<span x-show="selected.length > 0" x-cloak x-text="' (' + selected.length + ')'"></span>
+    </button>
+  </div>
+
+  <ul class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+    {% for job in jobs %}
+    <li class="relative overflow-hidden rounded-lg border bg-white shadow-sm" data-job-id="{{ job.id }}"
+        :class="selected.includes('{{ job.id }}') ? 'border-red-500 ring-2 ring-red-500' : 'border-slate-200'">
+      {% if job is deletable %}
+      <label class="absolute left-2 top-2 z-10 rounded bg-white/90 p-1 shadow">
+        <input type="checkbox" name="ids" value="{{ job.id }}" x-model="selected" class="size-4 align-middle"
+               aria-label="{{ t.history_select_job.format(id=job.id) }}">
+      </label>
+      {% endif %}
+      <a href="/jobs/{{ job.id }}" class="block hover:opacity-90">
+        <img src="/jobs/{{ job.id }}/thumbnail" alt="{{ t.history_thumbnail_alt.format(id=job.id) }}"
+             loading="lazy" class="aspect-[4/3] w-full bg-slate-100 object-cover">
+        <div class="flex flex-col gap-0.5 px-3 py-2 text-sm">
+          <span class="font-medium">{{ t.history_job_label.format(id=job.id) }}</span>
+          <span class="font-semibold" data-status="{{ job.status.value }}">{{ status_labels[job.status] }}</span>
+          <span class="text-xs text-slate-500">{% with when=job.created_at %}{% include "_time.html" %}{% endwith %}</span>
+        </div>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</form>
+{% endif %}
+{% endblock %}

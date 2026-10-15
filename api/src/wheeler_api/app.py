@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,18 +15,29 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from wheeler_api.routes import router
 from wheeler_api.settings import ApiSettings
-from wheeler_api.texts import STATUS_LABELS, TEXTS
+from wheeler_api.texts import PARAM_LABELS, STATUS_LABELS, TEXTS
 from wheeler_shared.db import make_engine, make_session_factory
+from wheeler_shared.history import is_deletable
 from wheeler_shared.migrate import migrate
 from wheeler_shared.storage import Storage
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 
 
+def param_value(value: object) -> str:
+    """Wartość parametru zadania do wyświetlenia (struktury jako JSON)."""
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False)
+
+
 def create_templates() -> Jinja2Templates:
     templates = Jinja2Templates(directory=PACKAGE_DIR / "templates")
     templates.env.globals["t"] = TEXTS
     templates.env.globals["status_labels"] = STATUS_LABELS
+    templates.env.globals["param_labels"] = PARAM_LABELS
+    templates.env.filters["param_value"] = param_value
+    templates.env.tests["deletable"] = is_deletable
     return templates
 
 

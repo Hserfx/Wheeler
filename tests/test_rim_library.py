@@ -206,14 +206,15 @@ def test_rejected_preview_is_removed_with_its_files(
     assert list(storage.root.glob("rims/*/*")) == []
 
 
-def test_background_is_removed_around_the_largest_detected_wheel(
+def test_background_is_removed_around_the_largest_detected_wheel_not_a_box_around_it(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
     # Zdjęcie felgi na aucie: BiRefNet na całym zdjęciu zostawiłby karoserię, więc dostaje
     # tylko kadr wokół koła z detektora (box 80 px + 8% marginesu = kadr 93x93 od (103, 3)).
     rim = noise_photo(200, 100)
     remover = CenterDiscRemover(radius=40)
-    detector = BoxDetector([(10, 10, 50, 50), (110, 10, 190, 90)])
+    # Florence-2 zwraca czasem też box obejmujący auto razem z kołem: ten pomijamy.
+    detector = BoxDetector([(10, 10, 50, 50), (110, 10, 190, 90), (0, 0, 199, 99)])
     _post_rim(client, rim)
     assert run_once(session_factory, storage, rim_processor(remover, detector))
 
@@ -227,7 +228,8 @@ def test_click_on_rim_picks_the_detected_wheel_under_it(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
     rim = noise_photo(200, 100)
-    detector = BoxDetector([(10, 10, 50, 50), (110, 10, 190, 90)])
+    # Florence-2 zwraca czasem też box obejmujący auto razem z kołem: ten pomijamy.
+    detector = BoxDetector([(10, 10, 50, 50), (110, 10, 190, 90), (0, 0, 199, 99)])
     _post_rim(client, rim)
     assert run_once(session_factory, storage, rim_processor(detector=detector))
     rim_id = _rim_id(client.get("/rims/picker").text)

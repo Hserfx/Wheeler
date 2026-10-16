@@ -16,12 +16,25 @@ RIM_REGION_MARGIN = 0.08  # kadr dla BiRefNet: box koła z detektora + margines 
 
 
 def pick_rim_box(boxes: Sequence[BoxF], click: tuple[float, float] | None) -> BoxF | None:
-    """Koło, które wycinamy: najmniejsze zawierające kliknięcie, bez kliknięcia największe."""
+    """Koło, które wycinamy: najmniejsze zawierające kliknięcie, bez kliknięcia największe.
+
+    Pomijamy boxy obejmujące inne wykryte koło: Florence-2 zwraca czasem jako „wheel” także
+    fragment auta razem z kołem (zmierzone na `rim_mesh_silver_angle.jpg`).
+    """
+    boxes = [b for b in boxes if not any(o is not b and _encloses(b, o) for o in boxes)]
     if click is not None:
         x, y = click
         boxes = [b for b in boxes if b[0] <= x <= b[2] and b[1] <= y <= b[3]]
         return min(boxes, key=_area, default=None)
     return max(boxes, key=_area, default=None)
+
+
+def _encloses(outer: BoxF, inner: BoxF) -> bool:
+    """`inner` leży (w 90%) wewnątrz większego `outer`."""
+    width = min(outer[2], inner[2]) - max(outer[0], inner[0])
+    height = min(outer[3], inner[3]) - max(outer[1], inner[1])
+    overlap = max(0.0, width) * max(0.0, height)
+    return _area(outer) > _area(inner) and overlap >= 0.9 * _area(inner)
 
 
 def rim_region(box: BoxF, size: tuple[int, int]) -> tuple[int, int, int, int]:

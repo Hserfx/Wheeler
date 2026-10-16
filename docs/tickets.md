@@ -152,13 +152,26 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 03
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Usuwanie tła (BiRefNet lub rembg) z podglądem do akceptacji przed zapisaniem do biblioteki
-- [ ] Przechowywane dane: wycięta felga, oryginał, opcjonalna nazwa, data dodania, licznik użyć, data ostatniego użycia
-- [ ] Wybór felgi z biblioteki na stronie głównej jako alternatywa dla wgrania nowej
-- [ ] Do modelu trafia wycięta felga, nie oryginał z tłem
-- [ ] Felgę można usunąć z biblioteki, a usunięcie nie psuje historii zadań, które jej używały
+- [x] Usuwanie tła (BiRefNet lub rembg) z podglądem do akceptacji przed zapisaniem do biblioteki
+- [x] Przechowywane dane: wycięta felga, oryginał, opcjonalna nazwa, data dodania, licznik użyć, data ostatniego użycia
+- [x] Wybór felgi z biblioteki na stronie głównej jako alternatywa dla wgrania nowej
+- [x] Do modelu trafia wycięta felga, nie oryginał z tłem
+- [x] Felgę można usunąć z biblioteki, a usunięcie nie psuje historii zadań, które jej używały
+
+**Comments:**
+
+- BiRefNet (`ZhengPeng7/BiRefNet`, fp16 na MPS) w kadrze wokół koła wykrytego przez Florence-2. Sam BiRefNet
+  na całym zdjęciu felgi zamontowanej w aucie zostawiał karoserię (2 z 3 próbek ze spike'a). Klik w felgę na
+  oryginale wybiera koło (gdy jest ich kilka) i wycina ponownie. Zweryfikowane na prawdziwych modelach na
+  `docs/spike/samples/rim_*.jpg`: wszystkie trzy wycięte do samego koła (opona + felga), ~0,9 s na zdjęcie
+  po załadowaniu (~4,5 s z ładowaniem). Na `rim_mesh_silver_angle` zostaje wąski pasek błotnika nad oponą.
+- Zacisk hamulcowy widoczny przez szprychy należy do koła i zostaje na wyciętej feldze (zob. ryzyko „Przenoszenie
+  zacisku hamulcowego” w DESIGN). Usunięcie tła ogranicza ryzyko, ale go nie eliminuje.
+- Dodanie nowej felgi odbywa się zawsze przez bibliotekę (wgranie, podgląd, akceptacja); `POST /jobs` przyjmuje
+  `rim_id` zamiast pliku felgi. Zadanie dostaje kopię wyciętej felgi w swoim katalogu, więc usunięcie felgi
+  z biblioteki nie zmienia historii. Model widzi felgę na białym tle.
 
 ---
 

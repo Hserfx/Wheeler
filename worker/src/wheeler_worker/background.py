@@ -1,7 +1,7 @@
 """Usuwanie tła ze zdjęcia felgi: interfejs i adapter BiRefNet (torch, MPS).
 
 Ciężkie biblioteki importujemy leniwie, przy pierwszym użyciu modelu (jak `segmenter.py`).
-Wagi: `huggingface-cli download ZhengPeng7/BiRefNet --revision <BIREFNET_REVISION>`
+Wagi: `uv run hf download ZhengPeng7/BiRefNet --revision <BIREFNET_REVISION>`
 (ok. 0,9 GB w cache HF); model ma kod w repozytorium (`trust_remote_code`), stąd przypięta
 rewizja i zależności `timm`, `kornia`, `einops`.
 """

@@ -6,6 +6,12 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "wheeler-shared",
     "pillow>=10.4",
+    "numpy>=2.0",
+    # Modele AI (ładowane leniwie, tylko w procesorze `wheel-swap`): mflux (MLX) + SAM 2 (torch).
+    "mflux",
+    "torch>=2.13",
+    "torchvision>=0.29.1",
+    "transformers>=5.5,<6",
 ]
 
 [project.scripts]
@@ -13,6 +19,8 @@ wheeler-worker = "wheeler_worker.__main__:main"
 
 [tool.uv.sources]
 wheeler-shared = { workspace = true }
+# Qwen-Image-2.1-Turbo jest na main mflux (PR #859), nie w wydanym 0.22.0 (spike 01).
+mflux = { git = "https://github.com/mflux-community/mflux", rev = "b534021a9c8c45bb064959d754870fd98322e447" }
 
 [build-system]
 requires = ["hatchling"]

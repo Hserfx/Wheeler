@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from helpers import click_wheel, finish_job, jpeg, rim_png, upload
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -18,16 +19,8 @@ from wheeler_api.settings import ApiSettings
 from wheeler_api.texts import TEXTS
 from wheeler_shared.models import Image as DbImage
 from wheeler_shared.models import ImageRole, Job
-from wheeler_shared.queue import claim_next_job, enqueue_job
+from wheeler_shared.queue import claim_next_job, create_job
 from wheeler_shared.storage import Storage
-from wheeler_worker.processing import placeholder_processor
-from wheeler_worker.runner import run_once
-
-
-def _jpeg(width: int = 64, height: int = 48) -> bytes:
-    buffer = io.BytesIO()
-    Image.new("RGB", (width, height), (200, 30, 30)).save(buffer, format="JPEG")
-    return buffer.getvalue()
 
 
 @pytest.fixture
@@ -37,14 +30,8 @@ def client(database_url: str, storage: Storage) -> Iterator[TestClient]:
         yield test_client
 
 
-def _upload(client: TestClient, filename: str = "auto.jpg") -> int:
-    response = client.post(
-        "/jobs", files={"photo": (filename, _jpeg(), "image/jpeg")}, follow_redirects=False
-    )
-    assert response.status_code == 303
-    match = re.fullmatch(r"/jobs/(\d+)", response.headers["location"])
-    assert match
-    return int(match.group(1))
+def _upload(client: TestClient) -> int:
+    return upload(client)
 
 
 def _history_job_ids(html: str) -> list[int]:
@@ -56,7 +43,8 @@ def test_history_lists_jobs_newest_first_with_status_date_and_thumbnail(
 ) -> None:
     first = _upload(client)
     second = _upload(client)
-    assert run_once(session_factory, storage, placeholder_processor)  # pierwsze → gotowe
+    finish_job(client, session_factory, storage, first)
+    click_wheel(client, second)  # drugie czeka w kolejce na maskę
 
     page = client.get("/history")
     assert page.status_code == 200
@@ -68,7 +56,7 @@ def test_history_lists_jobs_newest_first_with_status_date_and_thumbnail(
     assert re.search(r'<time datetime="\d{4}-\d{2}-\d{2}T', item_first)
     assert f'src="/jobs/{first}/thumbnail"' in item_first
 
-    assert TEXTS["status_queued"] in _history_item(page.text, second)
+    assert TEXTS["status_segmenting"] in _history_item(page.text, second)
 
 
 def _history_item(html: str, job_id: int) -> str:
@@ -86,44 +74,50 @@ def _thumbnail(client: TestClient, job_id: int) -> Image.Image:
 def test_thumbnail_is_small_and_shows_result_once_job_is_done(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
-    response = client.post("/jobs", files={"photo": ("big.jpg", _jpeg(1600, 1200), "image/jpeg")})
-    job_id = int(str(response.url).rsplit("/", 1)[1])
+    job_id = upload(client, jpeg(1600, 1200))
 
     queued = _thumbnail(client, job_id)
     assert max(queued.size) <= 512
     assert queued.size[0] / queued.size[1] == pytest.approx(4 / 3, rel=0.02)
-    r, g, b = queued.convert("RGB").getpixel((10, 10))  # type: ignore[misc]
+    center = (queued.size[0] // 2, queued.size[1] // 2)
+    r, g, _ = queued.convert("RGB").getpixel(center)  # type: ignore[misc]
     assert r > 150 and g < 80  # czerwone wejście
 
-    assert run_once(session_factory, storage, placeholder_processor)
+    finish_job(client, session_factory, storage, job_id, point=(800, 600), radius=200)
     done = _thumbnail(client, job_id)
-    r, g, b = done.convert("RGB").getpixel((10, 10))  # type: ignore[misc]
-    assert abs(r - g) < 10 and abs(g - b) < 10  # szary wynik atrapy
+    r, g, _ = done.convert("RGB").getpixel(center)  # type: ignore[misc]
+    assert g > 150 and r < 80  # zielona felga z atrapy modelu w środku koła
 
 
 def test_thumbnail_of_unknown_job_is_404(client: TestClient) -> None:
     assert client.get("/jobs/999999/thumbnail").status_code == 404
 
 
-def _enqueue_with_params(
+def _create_with_params(
     session_factory: sessionmaker[Session], storage: Storage, params: dict[str, object]
 ) -> int:
     job_dir = storage.new_job_dir()
-    storage.write_bytes(f"{job_dir}/input.jpg", _jpeg())
+    storage.write_bytes(f"{job_dir}/input.jpg", jpeg())
+    storage.write_bytes(f"{job_dir}/rim.png", rim_png())
     with session_factory.begin() as session:
-        return enqueue_job(session, input_path=f"{job_dir}/input.jpg", params=params)
+        return create_job(
+            session,
+            input_path=f"{job_dir}/input.jpg",
+            rim_path=f"{job_dir}/rim.png",
+            params=params,
+        )
 
 
 def test_job_details_show_input_result_and_all_used_parameters(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
-    job_id = _enqueue_with_params(
+    job_id = _create_with_params(
         session_factory,
         storage,
         # Klucze dopisywane przez kolejne tickety muszą się pojawić bez zmian w szablonie.
         {"seed": 4242, "prompt_suffix": "chromowana felga", "future_option": [1, 2]},
     )
-    assert run_once(session_factory, storage, placeholder_processor)
+    finish_job(client, session_factory, storage, job_id)
 
     page = client.get(f"/jobs/{job_id}")
     assert page.status_code == 200
@@ -162,8 +156,8 @@ def test_single_job_is_deleted_after_confirmation_with_all_its_files(
 ) -> None:
     keep = _upload(client)
     doomed = _upload(client)
-    assert run_once(session_factory, storage, placeholder_processor)
-    assert run_once(session_factory, storage, placeholder_processor)
+    finish_job(client, session_factory, storage, keep)
+    finish_job(client, session_factory, storage, doomed)
     assert client.get(f"/jobs/{doomed}/thumbnail").status_code == 200
     doomed_dir = _job_dir(client, doomed, storage)
     keep_dir = _job_dir(client, keep, storage)
@@ -206,12 +200,14 @@ def test_bulk_delete_removes_selected_jobs_and_skips_running_ones(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
     done = _upload(client)
-    assert run_once(session_factory, storage, placeholder_processor)
+    finish_job(client, session_factory, storage, done)
     running = _upload(client)
+    click_wheel(client, running)
     with session_factory.begin() as session:
         claimed = claim_next_job(session)
         assert claimed is not None and claimed.id == running
     queued = _upload(client)
+    click_wheel(client, queued)
     untouched = _upload(client)
     dirs = {job: _job_dir(client, job, storage) for job in (done, running, queued, untouched)}
 
@@ -255,7 +251,7 @@ def test_old_jobs_are_kept_indefinitely(
     settings = ApiSettings(database_url=database_url, data_dir=storage.root)
     with TestClient(create_app(settings)) as client:
         old = _upload(client)
-        assert run_once(session_factory, storage, placeholder_processor)
+        finish_job(client, session_factory, storage, old)
         old_dir = _job_dir(client, old, storage)
     with session_factory.begin() as session:
         job = session.get_one(Job, old)
@@ -263,8 +259,7 @@ def test_old_jobs_are_kept_indefinitely(
 
     # Restart aplikacji (migracje, start) i kolejne zadania niczego nie sprzątają.
     with TestClient(create_app(settings)) as client:
-        _upload(client)
-        assert run_once(session_factory, storage, placeholder_processor)
+        finish_job(client, session_factory, storage, _upload(client))
         assert old in _history_job_ids(client.get("/history").text)
         assert client.get(f"/jobs/{old}").status_code == 200
     assert any(old_dir.iterdir())

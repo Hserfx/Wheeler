@@ -12,6 +12,8 @@ from typing import Any, Protocol
 
 from PIL import Image
 
+from wheeler_worker.model_lifecycle import NO_OBSERVER, LoadObserver
+
 DEFAULT_MODEL_PATH = Path.home() / ".cache" / "wheeler" / "qwen-image-2.1-turbo-mflux-q8"
 
 # Po każdym kroku denoisingu: (ukończone kroki, liczba kroków). Wyjątek z callbacku przerywa
@@ -50,32 +52,39 @@ class MfluxRimEditor:
     Wagi ładują się przy pierwszym wywołaniu (~4 s) i zostają w pamięci do `release()`.
     """
 
-    def __init__(self, model_path: Path = DEFAULT_MODEL_PATH, cache_limit_gb: float = 2.0):
+    def __init__(
+        self,
+        model_path: Path = DEFAULT_MODEL_PATH,
+        cache_limit_gb: float = 2.0,
+        observer: LoadObserver = NO_OBSERVER,
+    ):
         self.model_path = model_path
+        self.observer = observer
         self.cache_limit_gb = cache_limit_gb
         self._model: Any = None
         self._steps = _StepRelay()
 
     def _load(self) -> Any:
         if self._model is None:
-            import mlx.core as mx
-            from mflux.models.common.config import ModelConfig
-            from mflux.models.common.vae.tiling_config import TilingConfig
-            from mflux.models.qwen21.variants.edit.qwen_image_21_edit import QwenImage21Edit
+            with self.observer.loading():
+                import mlx.core as mx
+                from mflux.models.common.config import ModelConfig
+                from mflux.models.common.vae.tiling_config import TilingConfig
+                from mflux.models.qwen21.variants.edit.qwen_image_21_edit import QwenImage21Edit
 
-            # Bez limitu cache MLX trzyma zwolnione bufory i realne zużycie rośnie.
-            mx.set_cache_limit(int(self.cache_limit_gb * 1024**3))
-            model = QwenImage21Edit(
-                model_path=str(self.model_path),
-                model_config=ModelConfig.qwen_image_21_turbo(),
-                compute_precision=mx.float16,
-            )
-            # Kafelkowy dekoder VAE: szczyt pamięci niższy o 9-14 GB przy 1024 px.
-            model.tiling_config = TilingConfig()
-            mx.eval(model.parameters())  # ładowanie jest leniwe; wymuszamy je tutaj
-            # mflux nie pozwala wyrejestrować callbacku, więc rejestrujemy jeden przekaźnik.
-            model.callbacks.register(self._steps)
-            self._model = model
+                # Bez limitu cache MLX trzyma zwolnione bufory i realne zużycie rośnie.
+                mx.set_cache_limit(int(self.cache_limit_gb * 1024**3))
+                model = QwenImage21Edit(
+                    model_path=str(self.model_path),
+                    model_config=ModelConfig.qwen_image_21_turbo(),
+                    compute_precision=mx.float16,
+                )
+                # Kafelkowy dekoder VAE: szczyt pamięci niższy o 9-14 GB przy 1024 px.
+                model.tiling_config = TilingConfig()
+                mx.eval(model.parameters())  # ładowanie jest leniwe; wymuszamy je tutaj
+                # mflux nie pozwala wyrejestrować callbacku, więc rejestrujemy jeden przekaźnik.
+                model.callbacks.register(self._steps)
+                self._model = model
         return self._model
 
     def release(self) -> None:

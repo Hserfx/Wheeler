@@ -26,6 +26,7 @@ from wheeler_shared.queue import (
     report_progress,
 )
 from wheeler_shared.storage import Storage
+from wheeler_worker.model_lifecycle import ModelLifecycle
 from wheeler_worker.processing import (
     GenerateItem,
     JobCancelled,
@@ -150,8 +151,13 @@ def run_forever(
     *,
     poll_interval: float,
     stop: threading.Event,
+    lifecycle: ModelLifecycle | None = None,
 ) -> None:
-    """Przetwarza zadania aż do ustawienia `stop`. Pusta kolejka → czeka `poll_interval` s."""
+    """Przetwarza zadania aż do ustawienia `stop`. Pusta kolejka → czeka `poll_interval` s.
+
+    Z `lifecycle`: po każdym zadaniu liczy od nowa czas bezczynności, a przy pustej kolejce
+    zwalnia modele procesora, gdy minie `lifecycle.idle_timeout`.
+    """
     while not stop.is_set():
         try:
             processed = run_once(session_factory, storage, processor)
@@ -159,5 +165,18 @@ def run_forever(
             # Np. chwilowy brak bazy; nie kończymy procesu, tylko próbujemy ponownie.
             log.exception("Błąd pętli workera")
             processed = False
+        if lifecycle is not None:
+            _track_idle(lifecycle, processor, processed=processed)
         if not processed:
             stop.wait(poll_interval)
+
+
+def _track_idle(lifecycle: ModelLifecycle, processor: Processor, *, processed: bool) -> None:
+    if processed:
+        lifecycle.mark_used()
+        return
+    try:
+        if lifecycle.release_if_idle(processor.release):
+            log.info("Modele zwolnione po %.0f s bezczynności", lifecycle.idle_timeout)
+    except Exception:
+        log.exception("Błąd zwalniania modeli")

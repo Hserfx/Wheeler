@@ -1,7 +1,7 @@
 """Postęp generowania i prośba o anulowanie (ticket 05)
 
 Revision ID: t05_progress
-Revises: 0002
+Revises: t11_worker_state
 Create Date: 2026-10-16
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "t05_progress"
-down_revision: str | None = "0002"
+down_revision: str | None = "t11_worker_state"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

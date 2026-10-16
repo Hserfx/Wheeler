@@ -7,6 +7,9 @@
     <span class="text-slate-500">{{ t.status_label }}:</span>
     <span class="font-semibold" data-status="{{ job.status.value }}">{{ job_status_label(job) }}</span>
   </p>
+  {% if model_loading_for(job) %}
+  <p class="text-sm text-amber-700" role="status" data-role="model-loading">{{ t.model_loading_job }}</p>
+  {% endif %}
 
   {%- if queue_position %}
   <p class="text-sm text-slate-600" data-queue-position="{{ queue_position }}">{{ t.queue_position.format(position=queue_position) }}</p>

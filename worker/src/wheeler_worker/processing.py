@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from wheeler_shared.progress import Progress
+from wheeler_worker.model_lifecycle import NO_OBSERVER, LoadObserver
 from wheeler_worker.settings import WorkerSettings
 
 # Odbiorca postępu generowania. Może rzucić wyjątek (np. `JobCancelled`), żeby przerwać pracę:
@@ -81,33 +82,39 @@ class Processor(Protocol):
 
     def generate(self, item: GenerateItem, /) -> GenerateResult: ...
 
+    def release(self) -> None:
+        """Zwalnia wszystkie modele z pamięci (po bezczynności; następne zadanie je załaduje)."""
+        ...
 
-def _wheel_swap(settings: WorkerSettings) -> Processor:
+
+def _wheel_swap(settings: WorkerSettings, observer: LoadObserver) -> Processor:
     from wheeler_worker.rim_editor import MfluxRimEditor
     from wheeler_worker.segmenter import Sam2Segmenter
     from wheeler_worker.wheel_swap import WheelSwapProcessor
 
     return WheelSwapProcessor(
-        segmenter=Sam2Segmenter(), editor=MfluxRimEditor(model_path=settings.mflux_model_path)
+        segmenter=Sam2Segmenter(observer=observer),
+        editor=MfluxRimEditor(model_path=settings.mflux_model_path, observer=observer),
     )
 
 
-def _placeholder(settings: WorkerSettings) -> Processor:
+def _placeholder(settings: WorkerSettings, observer: LoadObserver) -> Processor:
     from wheeler_worker.placeholder import placeholder_processor
 
-    return placeholder_processor()
+    return placeholder_processor(observer)
 
 
-PROCESSORS: dict[str, Callable[[WorkerSettings], Processor]] = {
+# Fabryka dostaje `observer`: modele zgłaszają przez niego ładowanie (`model_lifecycle.py`).
+PROCESSORS: dict[str, Callable[[WorkerSettings, LoadObserver], Processor]] = {
     "wheel-swap": _wheel_swap,
     "placeholder": _placeholder,
 }
 
 
-def build_processor(settings: WorkerSettings) -> Processor:
+def build_processor(settings: WorkerSettings, observer: LoadObserver = NO_OBSERVER) -> Processor:
     try:
         factory = PROCESSORS[settings.processor]
     except KeyError:
         known = ", ".join(sorted(PROCESSORS))
         raise ValueError(f"Nieznany procesor {settings.processor!r}; dostępne: {known}") from None
-    return factory(settings)
+    return factory(settings, observer)

@@ -16,6 +16,7 @@
         <span class="hidden text-sm text-slate-500 sm:inline">{{ t.app_tagline }}</span>
       </div>
       <nav class="flex items-baseline gap-4 text-sm font-medium text-slate-600">
+        <span hx-get="/model-state" hx-trigger="load" hx-swap="outerHTML"></span>
         <a href="/" class="hover:text-slate-900">{{ t.nav_home }}</a>
         <a href="/history" class="hover:text-slate-900">{{ t.nav_history }}</a>
       </nav>

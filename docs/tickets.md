@@ -67,7 +67,7 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 01, 02
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Kliknięcie w koło tworzy maskę i pokazuje ją jako nakładkę przed generowaniem
 - [ ] Wywołanie modelu przyjmuje obraz felgi i wycinek koła, a ustawienia domyślne pochodzą z wyników spike'a

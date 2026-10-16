@@ -181,12 +181,29 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 04
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Suwak przed/po działa na pełnym obrazie, z możliwością powiększenia okolicy koła
-- [ ] „Ponów to koło” generuje tylko wybrane koło z nowym seedem i podmienia je w wyniku
-- [ ] Piksele poza maską ponawianego koła, łącznie z pozostałymi kołami, pozostają bez zmian
-- [ ] Pobieranie zwraca PNG w rozdzielczości oryginału
+- [x] Suwak przed/po działa na pełnym obrazie, z możliwością powiększenia okolicy koła
+- [x] „Ponów to koło” generuje tylko wybrane koło z nowym seedem i podmienia je w wyniku
+- [x] Piksele poza maską ponawianego koła, łącznie z pozostałymi kołami, pozostają bez zmian
+- [x] Pobieranie zwraca PNG w rozdzielczości oryginału
+
+**Comments:**
+
+- Ekran wyniku: `_result_compare.html` (suwak przed/po na pełnym obrazie, przyciski „Koło N”
+  powiększające okolicę koła według `Wheel.box`, „Cały obraz”), `GET /jobs/{id}/download`
+  (PNG jako załącznik, rozdzielczość oryginału, ICC/EXIF bez GPS). Suwak i powiększanie są
+  sprawdzone testami na poziomie HTML; w przeglądarce nie były klikane (brak przeglądarki
+  sterowanej z agenta), matematyka powiększenia sprawdzona ręcznie na boxach z prawdziwej detekcji.
+- „Ponów to koło”: `POST /jobs/{id}/wheels/{wheel_id}/regenerate` (tylko `done`),
+  `TaskKind.REGENERATE_WHEEL`, migracja `t07_wheel_seed` (`wheels.seed`, `wheels.pending_seed`).
+  Koło jest składane na bieżącym wyniku, nowy plik `result-<n>.png`; błąd, anulowanie albo awaria
+  workera wracają do poprzedniego wyniku. Test bit w bit: `tests/test_wheel_swap.py`
+  i `tests/test_result_screen.py`.
+- Prawdziwe modele (Golf 1920x1080, felga multispoke, q8, 1024 px, przed merge'em 06): detekcja
+  2 kół 16 s, generowanie obu 250 s, ponowienie koła 2 130 s (seed 42 -> 849551686); poza maską
+  ponawianego koła 0 zmienionych pikseli (koło 1 identyczne), w masce zmienione 61 366 z 64 241,
+  ICC zachowany.
 
 ---
 

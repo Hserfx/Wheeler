@@ -68,6 +68,12 @@ wgranie auta + felgi -> draft --klik w koło--> segment (SAM 2) -> draft z mask�
 - Modele ładują się leniwie przy pierwszym użyciu. Przed generowaniem SAM 2 jest zwalniany.
 - Pliki koła w katalogu zadania: `wheels/<id>/mask.png` (dokładnie obszar, który może się zmienić),
   `overlay.png`, `crop.png`, `crop_mask.png`, `generated.png`; wynik `result.png`.
+- Wejście (`wheeler_api/uploads.py`, `save_image_upload`, wspólne dla każdego wgrywanego obrazu):
+  JPEG, PNG, WebP, HEIC, do 50 MB i 40 MPx; format rozpoznawany po zawartości. Dla HEIC i zdjęć
+  z orientacją EXIF obok pliku powstaje obrócony podgląd `<plik>.preview.jpg` w pełnym rozmiarze
+  (szablony: filtr `display_path`), bo kliknięcia są w układzie obróconego zdjęcia.
+- Odczyt i zapis zdjęć w workerze: `wheeler_worker/photos.py`. `result.png` dostaje profil ICC
+  i EXIF oryginału (`read_metadata`: bez GPS i orientacji); maski i pliki robocze są bez metadanych.
 
 ## Migracje
 

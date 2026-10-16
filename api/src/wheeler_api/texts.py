@@ -37,7 +37,11 @@ TEXTS: Final[dict[str, str]] = {
     "delete_skipped": "Pominięto zadania w trakcie przetwarzania: {count}.",
     # Strona główna
     "upload_heading": "Wgraj zdjęcie samochodu i felgi",
-    "upload_hint": "Pliki JPEG, PNG lub WebP. Koło do podmiany wskażesz w następnym kroku.",
+    "upload_hint": (
+        "Pliki JPEG, PNG, WebP lub HEIC, do 50 MB i 40 MPx. Koło do podmiany wskażesz "
+        "w następnym kroku."
+    ),
+    "upload_drop_hint": "Przeciągnij plik tutaj albo wklej go ze schowka (Ctrl+V / ⌘V).",
     "upload_photo_label": "Zdjęcie samochodu",
     "upload_rim_label": "Zdjęcie felgi",
     "upload_choose": "Wybierz plik",
@@ -101,6 +105,13 @@ TEXTS: Final[dict[str, str]] = {
     # Błędy
     "error_no_photo": "Wybierz zdjęcie samochodu.",
     "error_no_rim": "Wybierz zdjęcie felgi.",
+    "error_upload_format": (
+        "Plik „{name}” nie jest obsługiwanym zdjęciem. Wgraj plik JPEG, PNG, WebP lub HEIC."
+    ),
+    "error_upload_too_large": "Plik „{name}” jest za duży. Limit to {limit} MB.",
+    "error_upload_too_many_pixels": (
+        "Zdjęcie „{name}” ma za dużą rozdzielczość. Limit to {limit} MPx (megapikseli)."
+    ),
     "error_no_wheel": "Najpierw kliknij koło i poczekaj na jego maskę.",
     "error_job_busy": "Zadanie jest teraz przetwarzane albo już zakończone.",
     "error_mask_failed": "Nie udało się zaznaczyć koła w tym miejscu. Kliknij bliżej środka koła.",

@@ -10,6 +10,7 @@ dependencies = [
     "jinja2>=3.1",
     "python-multipart>=0.0.9",
     "pillow>=10.4",
+    "pillow-heif>=1.0",
 ]
 
 [project.scripts]

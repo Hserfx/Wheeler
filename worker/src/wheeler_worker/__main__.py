@@ -9,18 +9,12 @@ from types import FrameType
 
 from wheeler_shared.db import make_engine, make_session_factory
 from wheeler_shared.migrate import migrate
-from wheeler_shared.settings import Settings
 from wheeler_shared.storage import Storage
 from wheeler_worker.processing import build_processor
 from wheeler_worker.runner import run_forever
+from wheeler_worker.settings import WorkerSettings
 
 log = logging.getLogger("wheeler_worker")
-
-
-class WorkerSettings(Settings):
-    poll_interval: float = 1.0
-    # Nazwa procesora z `wheeler_worker.processing.PROCESSORS`.
-    processor: str = "placeholder"
 
 
 def main() -> None:
@@ -28,7 +22,7 @@ def main() -> None:
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
     settings = WorkerSettings()
-    processor = build_processor(settings.processor)
+    processor = build_processor(settings)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     storage = Storage(settings.data_dir)
 

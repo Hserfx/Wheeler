@@ -31,3 +31,8 @@ python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 files = ["shared/src", "api/src", "worker/src", "tests"]
+
+[[tool.mypy.overrides]]
+# mflux nie ma typów (brak py.typed); adapter w `wheeler_worker/rim_editor.py` używa `Any`.
+module = ["mflux.*"]
+ignore_missing_imports = true

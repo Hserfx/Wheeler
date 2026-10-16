@@ -1,4 +1,6 @@
-"""Wgranie zdjęcia → zadanie w kolejce → worker → wynik na stronie (prawdziwy Postgres)."""
+"""Przepływ przez wszystkie warstwy (prawdziwy Postgres, atrapy SAM 2 i mflux):
+wgranie zdjęcia auta i felgi -> klik w koło -> maska jako nakładka -> „Generuj” -> PNG.
+"""
 
 from __future__ import annotations
 
@@ -7,8 +9,11 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
+import numpy as np
 import pytest
+from fake_models import DiscSegmenter, NothingSegmenter, SolidEditor
 from fastapi.testclient import TestClient
+from helpers import click_wheel, encode, fake_processor, generate, noise_photo, upload
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -16,14 +21,8 @@ from wheeler_api.app import create_app
 from wheeler_api.settings import ApiSettings
 from wheeler_api.texts import TEXTS
 from wheeler_shared.storage import Storage
-from wheeler_worker.processing import WorkItem, WorkResult, placeholder_processor
 from wheeler_worker.runner import run_once
-
-
-def _jpeg(width: int = 64, height: int = 48) -> bytes:
-    buffer = io.BytesIO()
-    Image.new("RGB", (width, height), (200, 30, 30)).save(buffer, format="JPEG")
-    return buffer.getvalue()
+from wheeler_worker.wheel_swap import WheelSwapProcessor
 
 
 @pytest.fixture
@@ -33,75 +32,156 @@ def client(database_url: str, storage: Storage) -> Iterator[TestClient]:
         yield test_client
 
 
-def _upload(client: TestClient, content: bytes, filename: str = "auto.jpg") -> str:
-    response = client.post(
-        "/jobs",
-        files={"photo": (filename, content, "image/jpeg")},
-        follow_redirects=False,
-    )
-    assert response.status_code == 303
-    location = response.headers["location"]
-    assert re.fullmatch(r"/jobs/\d+", location)
-    return location
+def _image_src(html: str, role: str) -> str:
+    match = re.search(rf'<img[^>]+src="(/files/[^"]+)"[^>]*data-role="{role}"', html)
+    assert match, html
+    return match.group(1)
 
 
-def test_home_page_is_polish_upload_form(client: TestClient) -> None:
+def _fetch(client: TestClient, url: str) -> Image.Image:
+    response = client.get(url)
+    assert response.status_code == 200
+    return Image.open(io.BytesIO(response.content))
+
+
+def test_home_page_asks_for_car_photo_and_rim(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert '<html lang="pl"' in response.text
     assert TEXTS["upload_heading"] in response.text
     assert 'enctype="multipart/form-data"' in response.text
+    assert 'name="photo"' in response.text and 'name="rim"' in response.text
 
 
-def test_uploaded_photo_is_processed_by_worker_and_result_is_shown(
+def test_click_shows_mask_overlay_and_generation_changes_only_pixels_inside_it(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
-    job_url = _upload(client, _jpeg(64, 48))
+    original = noise_photo(320, 200)
+    processor = WheelSwapProcessor(segmenter=DiscSegmenter(radius=40), editor=SolidEditor())
+    job_id = upload(client, encode(original), filename="auto.png")
 
-    page = client.get(job_url)
-    assert page.status_code == 200
-    assert TEXTS["status_queued"] in page.text
-    assert 'hx-trigger="every 1s"' in page.text
+    page = client.get(f"/jobs/{job_id}")
+    assert TEXTS["wheel_click_hint"] in page.text
+    assert 'data-role="wheel-picker"' in page.text
+    assert f'action="/jobs/{job_id}/generate"' not in page.text  # bez maski nie ma generowania
 
-    assert run_once(session_factory, storage, placeholder_processor) is True
-    assert run_once(session_factory, storage, placeholder_processor) is False
+    segmenting = click_wheel(client, job_id, (120, 90))
+    assert TEXTS["status_segmenting"] in segmenting
+    assert 'hx-trigger="every 1s"' in segmenting
+    assert run_once(session_factory, storage, processor)
 
-    status = client.get(f"{job_url}/status")
-    assert TEXTS["status_done"] in status.text
-    assert "hx-trigger" not in status.text  # po zakończeniu polling się zatrzymuje
-    match = re.search(r'<img[^>]+src="(/files/[^"]+\.png)"[^>]*data-role="result"', status.text)
-    assert match, status.text
+    draft = client.get(f"/jobs/{job_id}/status").text
+    assert "hx-trigger" not in draft  # czeka na użytkownika, bez pollingu
+    overlay = _fetch(client, _image_src(draft, "mask-overlay"))
+    assert overlay.mode == "RGBA" and overlay.size == (320, 200)
+    assert f'action="/jobs/{job_id}/generate"' in draft
 
-    served = client.get(match.group(1))
-    assert served.status_code == 200
-    result = Image.open(io.BytesIO(served.content))
+    generate(client, job_id)
+    queued = client.get(f"/jobs/{job_id}/status").text
+    assert TEXTS["status_queued"] in queued and 'hx-trigger="every 1s"' in queued
+    assert run_once(session_factory, storage, processor)
+    assert run_once(session_factory, storage, processor) is False
+
+    done = client.get(f"/jobs/{job_id}/status").text
+    assert TEXTS["status_done"] in done and "hx-trigger" not in done
+    result = _fetch(client, _image_src(done, "result"))
     assert result.format == "PNG"
-    assert result.size == (64, 48)
+    assert result.size == (320, 200)
+    pixels = np.asarray(result.convert("RGB"))
+    unmarked = np.asarray(overlay)[..., 3] == 0
+    assert np.array_equal(pixels[unmarked], np.asarray(original)[unmarked])
+    assert tuple(pixels[90, 120]) == (10, 200, 30)  # środek koła pochodzi z „modelu”
 
-    # Plik leży na wolumenie danych, a URL odpowiada ścieżce względnej.
-    on_disk = storage.root / match.group(1).removeprefix("/files/")
-    assert on_disk.is_file()
 
-
-def test_failure_in_processing_marks_job_failed_with_error_on_page(
+def test_generation_records_used_seed_in_job_parameters(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
-    def broken_processor(item: WorkItem) -> WorkResult:
-        raise RuntimeError("model się wyłożył")
+    job_id = upload(client)
+    click_wheel(client, job_id)
+    assert run_once(session_factory, storage, fake_processor())
+    generate(client, job_id)
 
-    job_url = _upload(client, _jpeg())
-    assert run_once(session_factory, storage, broken_processor) is True
-
-    status = client.get(f"{job_url}/status")
-    assert TEXTS["status_failed"] in status.text
-    assert "model się wyłożył" in status.text
-    assert "hx-trigger" not in status.text
+    params = re.search(r"<dl[^>]*data-params.*?</dl>", client.get(f"/jobs/{job_id}").text, re.S)
+    assert params and re.search(
+        r'data-param="seed".*?<dd[^>]*>\s*\d+\s*</dd>', params.group(0), re.S
+    )
 
 
-def test_upload_without_file_shows_error(client: TestClient) -> None:
-    response = client.post("/jobs", files={"photo": ("", b"", "application/octet-stream")})
+def test_clicking_again_replaces_the_selected_wheel(
+    client: TestClient, session_factory: sessionmaker[Session], storage: Storage
+) -> None:
+    processor = fake_processor(radius=8)
+    job_id = upload(client)
+    click_wheel(client, job_id, (15, 15))
+    assert run_once(session_factory, storage, processor)
+    click_wheel(client, job_id, (45, 30))
+    assert run_once(session_factory, storage, processor)
+
+    draft = client.get(f"/jobs/{job_id}/status").text
+    assert len(re.findall(r'data-role="mask-overlay"', draft)) == 1
+    alpha = np.asarray(_fetch(client, _image_src(draft, "mask-overlay")))[..., 3]
+    assert alpha[30, 45] > 0 and alpha[15, 15] == 0
+
+
+def test_generation_requires_a_wheel_mask(client: TestClient) -> None:
+    job_id = upload(client)
+    response = client.post(f"/jobs/{job_id}/generate", follow_redirects=False)
+    assert response.status_code == 409
+    assert TEXTS["error_no_wheel"] in response.text
+
+
+def test_wheel_cannot_be_clicked_while_mask_is_being_computed(client: TestClient) -> None:
+    job_id = upload(client)
+    click_wheel(client, job_id)
+    response = client.post(f"/jobs/{job_id}/wheels", data={"x": 1, "y": 1})
+    assert response.status_code == 409
+
+
+def test_failed_segmentation_lets_user_click_again(
+    client: TestClient, session_factory: sessionmaker[Session], storage: Storage
+) -> None:
+    job_id = upload(client)
+    click_wheel(client, job_id)
+    processor = WheelSwapProcessor(segmenter=NothingSegmenter(), editor=SolidEditor())
+    assert run_once(session_factory, storage, processor)
+
+    draft = client.get(f"/jobs/{job_id}/status").text
+    assert TEXTS["error_mask_failed"] in draft
+    assert 'data-role="wheel-picker"' in draft
+    assert 'data-role="mask-overlay"' not in draft
+    click_wheel(client, job_id)
+
+
+def test_failure_in_generation_marks_job_failed_with_error_on_page(
+    client: TestClient, session_factory: sessionmaker[Session], storage: Storage
+) -> None:
+    class BrokenEditor(SolidEditor):
+        def edit(self, *args: object, **kwargs: object) -> Image.Image:
+            raise RuntimeError("model się wyłożył")
+
+    processor = WheelSwapProcessor(segmenter=DiscSegmenter(radius=10), editor=BrokenEditor())
+    job_id = upload(client)
+    click_wheel(client, job_id)
+    assert run_once(session_factory, storage, processor)
+    generate(client, job_id)
+    assert run_once(session_factory, storage, processor)
+
+    status = client.get(f"/jobs/{job_id}/status").text
+    assert TEXTS["status_failed"] in status
+    assert "model się wyłożył" in status
+    assert "hx-trigger" not in status
+
+
+@pytest.mark.parametrize("missing", ["photo", "rim"])
+def test_upload_without_photo_or_rim_shows_error(client: TestClient, missing: str) -> None:
+    files = {
+        "photo": ("auto.jpg", encode(noise_photo()), "image/jpeg"),
+        "rim": ("felga.png", encode(noise_photo()), "image/png"),
+    }
+    files[missing] = ("", b"", "application/octet-stream")
+    response = client.post("/jobs", files=files)
     assert response.status_code == 400
-    assert TEXTS["error_no_file"] in response.text
+    assert TEXTS[f"error_no_{missing}"] in response.text
 
 
 def test_unknown_job_returns_404(client: TestClient) -> None:

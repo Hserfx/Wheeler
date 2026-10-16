@@ -67,14 +67,30 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 01, 02
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Kliknięcie w koło tworzy maskę i pokazuje ją jako nakładkę przed generowaniem
-- [ ] Wywołanie modelu przyjmuje obraz felgi i wycinek koła, a ustawienia domyślne pochodzą z wyników spike'a
-- [ ] Wynik ma dokładnie tę samą rozdzielczość co zdjęcie wejściowe
-- [ ] Test automatyczny: każdy piksel poza maską jest identyczny bit w bit z oryginałem
-- [ ] Wynik zapisywany zawsze jako PNG
-- [ ] Testy API używają mocka modelu AI, a logika kompozycji jest testowana bez modelu
+- [x] Kliknięcie w koło tworzy maskę i pokazuje ją jako nakładkę przed generowaniem
+- [x] Wywołanie modelu przyjmuje obraz felgi i wycinek koła, a ustawienia domyślne pochodzą z wyników spike'a
+- [x] Wynik ma dokładnie tę samą rozdzielczość co zdjęcie wejściowe
+- [x] Test automatyczny: każdy piksel poza maską jest identyczny bit w bit z oryginałem
+- [x] Wynik zapisywany zawsze jako PNG
+- [x] Testy API używają mocka modelu AI, a logika kompozycji jest testowana bez modelu
+
+**Comments:**
+
+- 2026-10-16 (agent): zrobione na gałęzi `ticket-03`. Maska po kliknięciu też idzie przez kolejkę, bo SAM 2
+  działa tylko w natywnym workerze: `Job.task` (`segment` / `generate`), nowy status `draft` (czeka na
+  użytkownika), tabela `wheels` (klik, ścieżki maski i nakładki), migracja `0002`. Segmentacja ma pierwszeństwo
+  przed generowaniem, FIFO po `queued_at`. `Processor` ma metody `segment` i `generate` (tylko pliki), modele
+  są za interfejsami `Segmenter` (SAM 2.1) i `RimEditor` (mflux), ładowane leniwie. Zapisana maska jest już
+  poszerzona o 3% boku koła, więc nakładka pokazuje dokładnie obszar, który może się zmienić. Kod kompozycji
+  przeniesiony ze spike'a do `wheeler_worker/compositing.py`. Testy: `test_compositing.py`, `test_wheel_swap.py`
+  (procesor z atrapami modeli), `test_upload_flow.py` (HTTP + worker), `test_queue.py`.
+- Weryfikacja na prawdziwym modelu (SAM 2.1 large + mflux q8, `car_side_golf.jpg` 1920×1080, przez HTTP i
+  worker pod `gpu-run.sh`): maska po kliknięciu 15 s (zimny start z importem torch), generowanie 121 s
+  (z ładowaniem mflux; 8 kroków po ~9 s), szczyt pamięci procesu 28,6 GB. Wynik PNG 1920×1080, wszystkie
+  2 009 257 pikseli poza maską identyczne bit w bit. Felga podmieniona poprawnie; model przeniósł też żółty
+  zacisk ze zdjęcia felgi (znane ryzyko, ticket 06).
 
 ---
 

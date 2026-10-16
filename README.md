@@ -41,13 +41,31 @@ just logs api
 
 Jeden `uv.lock` dla całego workspace'u. Katalog `spike/` (ticket 01) nie należy do workspace'u.
 
-## Worker: punkt rozszerzenia
+## Przepływ zadania i worker
 
-`wheeler_worker/processing.py` definiuje `Processor` (`WorkItem -> WorkResult`). Runner nie wie
-nic o modelu: pobiera zadanie (`FOR UPDATE SKIP LOCKED`), woła procesor, zapisuje wynik albo błąd.
-Nowy procesor rejestruje się w `PROCESSORS`, a wybiera go zmienna `WHEELER_PROCESSOR` (domyślnie
-`placeholder`: atrapa w odcieniach szarości). Testy podają procesor bezpośrednio do `run_once`,
-więc nie potrzebują modelu.
+Zadanie (`Job`) przechodzi przez kroki użytkownika (status `draft`) i pracę workera
+(`queued`/`running`, rodzaj pracy w `Job.task`):
+
+```
+wgranie auta + felgi -> draft --klik w koło--> segment (SAM 2) -> draft z maską (nakładka)
+                        draft --„Generuj”----> generate (mflux) -> done | failed
+```
+
+- SAM 2 i mflux działają wyłącznie w natywnym workerze, więc maska po kliknięciu też idzie przez
+  kolejkę (`TaskKind.SEGMENT`). Segmentacja ma pierwszeństwo przed generowaniem, w obrębie rodzaju
+  obowiązuje FIFO po `queued_at`. Nieudana segmentacja wraca do szkicu z komunikatem.
+- Działania użytkownika: `wheeler_shared/editing.py` (`select_wheel`, `start_generation`).
+  Kolejka: `wheeler_shared/queue.py`. Parametry edycji i ustawienia domyślne:
+  `wheeler_shared/edit_params.py`.
+- `wheeler_worker/processing.py` definiuje `Processor` z metodą na każdy rodzaj pracy
+  (`segment`, `generate`; tylko pliki, bez bazy). Runner (`runner.py`, `HANDLERS`) pobiera zadanie
+  (`FOR UPDATE SKIP LOCKED`), woła procesor i zapisuje wynik albo błąd.
+- `WHEELER_PROCESSOR`: `wheel-swap` (domyślny: SAM 2.1 + mflux Qwen-Image-2.1-Turbo q8, wagi
+  w `WHEELER_MFLUX_MODEL_PATH`, domyślnie `~/.cache/wheeler/qwen-image-2.1-turbo-mflux-q8`) albo
+  `placeholder` (te same kroki z atrapami modeli, bez GPU; do pracy nad UI).
+- Modele ładują się leniwie przy pierwszym użyciu. Przed generowaniem SAM 2 jest zwalniany.
+- Pliki koła w katalogu zadania: `wheels/<id>/mask.png` (dokładnie obszar, który może się zmienić),
+  `overlay.png`, `crop.png`, `crop_mask.png`, `generated.png`; wynik `result.png`.
 
 ## Migracje
 
@@ -75,4 +93,6 @@ Testy integracyjne (`tests/conftest.py`):
   `session_factory` i `storage` (katalog danych w `tmp_path`) budują się na nim.
 - `WHEELER_TEST_PG_ADMIN_URL` pozwala wskazać istniejący serwer zamiast startować kontener.
 - Test przepływu (`tests/test_upload_flow.py`) używa `TestClient` dla API i `run_once` workera
-  z atrapą procesora; model AI nie jest potrzebny.
+  z prawdziwym `WheelSwapProcessor` i atrapami modeli (`tests/fake_models.py`); GPU nie jest
+  potrzebne. Kroki „wgraj, kliknij, generuj” są w `tests/helpers.py` (`upload`, `finish_job`).
+- Logika wycinania i kompozycji: `tests/test_compositing.py`, bez modelu.

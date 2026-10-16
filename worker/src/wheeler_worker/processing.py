@@ -1,11 +1,13 @@
-"""Punkt rozszerzenia: przetwarzanie pojedynczego zadania.
+"""Punkt rozszerzenia: przetwarzanie zadań przez worker.
 
-`Processor` to dowolna funkcja `WorkItem -> WorkResult`. Runner (`runner.py`) nie wie nic
-o modelu: pobiera zadanie z kolejki, woła procesor i zapisuje wynik w bazie. Testy podają
-własny procesor (atrapę), a aplikacja wybiera go po nazwie przez `build_processor`
-(zmienna `WHEELER_PROCESSOR`).
+`Processor` ma po jednej metodzie na rodzaj zadania (`wheeler_shared.models.TaskKind`).
+Metody pracują wyłącznie na plikach (wejście w katalogu zadania, wynik do `output_dir`)
+i nie znają bazy. Runner (`runner.py`) pobiera zadanie z kolejki, buduje `*Item`, woła
+właściwą metodę i zapisuje wynik w bazie.
 
-Ticket 03 dopisuje prawdziwy procesor (mflux + SAM 2) do `PROCESSORS` i zmienia domyślny.
+Procesory wybiera się po nazwie (`WHEELER_PROCESSOR`, `build_processor`):
+- `wheel-swap` (domyślny): SAM 2 + mflux (`wheel_swap.WheelSwapProcessor`),
+- `placeholder`: te same kroki z atrapami modeli, bez GPU (`placeholder.py`).
 """
 
 from __future__ import annotations
@@ -15,47 +17,82 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from PIL import Image, ImageOps
+from wheeler_worker.settings import WorkerSettings
 
 
 @dataclass(frozen=True)
-class WorkItem:
+class SegmentItem:
+    """Kliknięcia w koła -> maski. Klucz `clicks`: id koła (`Wheel.id`)."""
+
     job_id: int
-    input_path: Path  # bezwzględna ścieżka zdjęcia wejściowego
+    photo_path: Path  # bezwzględna ścieżka zdjęcia auta
     output_dir: Path  # bezwzględny katalog zadania na wolumenie danych (istnieje)
     params: Mapping[str, Any]
+    clicks: Mapping[int, tuple[float, float]]  # punkt w pikselach zdjęcia (po obrocie EXIF)
 
 
 @dataclass(frozen=True)
-class WorkResult:
-    result_path: Path  # bezwzględna ścieżka wyniku; musi leżeć na wolumenie danych
+class MaskFiles:
+    mask: Path  # L 0/255, rozmiar zdjęcia: dokładnie obszar, który generowanie może zmienić
+    overlay: Path  # RGBA do wyświetlenia na zdjęciu (przezroczysty poza maską)
+
+
+@dataclass(frozen=True)
+class SegmentResult:
+    masks: Mapping[int, MaskFiles]  # id koła -> pliki maski
+
+
+@dataclass(frozen=True)
+class GenerateItem:
+    """Podmiana felg we wszystkich kołach (`masks`: id koła -> maska z `SegmentResult`)."""
+
+    job_id: int
+    photo_path: Path
+    rim_path: Path  # zdjęcie felgi referencyjnej
+    output_dir: Path
+    params: Mapping[str, Any]  # zawiera `seed` (ustawiany przy starcie generowania)
+    masks: Mapping[int, Path]
+
+
+@dataclass(frozen=True)
+class GenerateResult:
+    result_path: Path  # PNG w rozdzielczości zdjęcia; musi leżeć na wolumenie danych
     width: int
     height: int
 
 
 class Processor(Protocol):
-    def __call__(self, item: WorkItem, /) -> WorkResult: ...
+    def segment(self, item: SegmentItem, /) -> SegmentResult: ...
+
+    def generate(self, item: GenerateItem, /) -> GenerateResult: ...
 
 
-def placeholder_processor(item: WorkItem) -> WorkResult:
-    """Atrapa bez AI: obraz w odcieniach szarości, zapisany jako PNG w tej samej rozdzielczości."""
-    with Image.open(item.input_path) as source:
-        image = ImageOps.exif_transpose(source)
-        result = ImageOps.grayscale(image).convert("RGB")
-    target = item.output_dir / "result.png"
-    result.save(target, format="PNG")
-    return WorkResult(result_path=target, width=result.width, height=result.height)
+def _wheel_swap(settings: WorkerSettings) -> Processor:
+    from wheeler_worker.rim_editor import MfluxRimEditor
+    from wheeler_worker.segmenter import Sam2Segmenter
+    from wheeler_worker.wheel_swap import WheelSwapProcessor
+
+    return WheelSwapProcessor(
+        segmenter=Sam2Segmenter(), editor=MfluxRimEditor(model_path=settings.mflux_model_path)
+    )
 
 
-PROCESSORS: dict[str, Callable[[], Processor]] = {
-    "placeholder": lambda: placeholder_processor,
+def _placeholder(settings: WorkerSettings) -> Processor:
+    from wheeler_worker.placeholder import placeholder_processor
+
+    return placeholder_processor()
+
+
+PROCESSORS: dict[str, Callable[[WorkerSettings], Processor]] = {
+    "wheel-swap": _wheel_swap,
+    "placeholder": _placeholder,
 }
 
 
-def build_processor(name: str) -> Processor:
+def build_processor(settings: WorkerSettings) -> Processor:
     try:
-        factory = PROCESSORS[name]
+        factory = PROCESSORS[settings.processor]
     except KeyError:
         known = ", ".join(sorted(PROCESSORS))
-        raise ValueError(f"Nieznany procesor {name!r}; dostępne: {known}") from None
-    return factory()
+        raise ValueError(f"Nieznany procesor {settings.processor!r}; dostępne: {known}") from None
+    return factory(settings)

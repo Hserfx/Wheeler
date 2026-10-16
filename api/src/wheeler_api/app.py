@@ -15,7 +15,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from wheeler_api.routes import router
 from wheeler_api.settings import ApiSettings
-from wheeler_api.texts import PARAM_LABELS, STATUS_LABELS, TEXTS
+from wheeler_api.texts import PARAM_LABELS, STATUS_LABELS, TEXTS, job_status_label
 from wheeler_shared.db import make_engine, make_session_factory
 from wheeler_shared.history import is_deletable
 from wheeler_shared.migrate import migrate
@@ -36,6 +36,7 @@ def create_templates() -> Jinja2Templates:
     templates.env.globals["t"] = TEXTS
     templates.env.globals["status_labels"] = STATUS_LABELS
     templates.env.globals["param_labels"] = PARAM_LABELS
+    templates.env.globals["job_status_label"] = job_status_label
     templates.env.filters["param_value"] = param_value
     templates.env.tests["deletable"] = is_deletable
     return templates

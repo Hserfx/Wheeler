@@ -9,17 +9,22 @@
   {% endif %}
 
   <form action="/jobs" method="post" enctype="multipart/form-data" class="mt-6 flex flex-col gap-4"
-        x-data="{ fileName: '', sending: false }" @submit="sending = true">
-    <label class="flex cursor-pointer items-center gap-3">
-      <span class="rounded-md border border-slate-300 bg-slate-100 px-4 py-2 text-sm font-medium hover:bg-slate-200">
-        {{ t.upload_choose }}
-      </span>
-      <span class="text-sm text-slate-600" x-text="fileName || '{{ t.upload_no_file_chosen }}'">{{ t.upload_no_file_chosen }}</span>
-      <input type="file" name="photo" accept="image/*" class="sr-only" required
-             @change="fileName = $event.target.files[0]?.name ?? ''">
-    </label>
+        x-data="{ files: { photo: '', rim: '' }, sending: false }" @submit="sending = true">
+    {% for field, label in [("photo", t.upload_photo_label), ("rim", t.upload_rim_label)] %}
+    <div class="flex flex-col gap-1">
+      <span class="text-sm font-medium">{{ label }}</span>
+      <label class="flex cursor-pointer items-center gap-3">
+        <span class="rounded-md border border-slate-300 bg-slate-100 px-4 py-2 text-sm font-medium hover:bg-slate-200">
+          {{ t.upload_choose }}
+        </span>
+        <span class="text-sm text-slate-600" x-text="files.{{ field }} || '{{ t.upload_no_file_chosen }}'">{{ t.upload_no_file_chosen }}</span>
+        <input type="file" name="{{ field }}" accept="image/*" class="sr-only" required
+               @change="files.{{ field }} = $event.target.files[0]?.name ?? ''">
+      </label>
+    </div>
+    {% endfor %}
     <div>
-      <button type="submit" :disabled="sending || !fileName"
+      <button type="submit" :disabled="sending || !files.photo || !files.rim"
               class="rounded-md bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50">
         <span x-show="!sending">{{ t.upload_submit }}</span>
         <span x-show="sending" x-cloak>{{ t.upload_sending }}</span>

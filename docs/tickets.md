@@ -100,7 +100,7 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Detekcja (detektor wybrany w spike'u) + SAM 2 kończy się w ciągu kilku sekund
 - [ ] Gdy nie wykryto żadnego koła, UI jasno o tym informuje i zachęca do dodania koła kliknięciem
@@ -116,7 +116,7 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Postęp per koło i per krok odświeżany pollingiem HTMX co ~1 s
 - [ ] „Anuluj” zatrzymuje zadanie najpóźniej po bieżącym kroku, a zadanie dostaje status „anulowane”
@@ -132,7 +132,7 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Usuwanie tła (BiRefNet lub rembg) z podglądem do akceptacji przed zapisaniem do biblioteki
 - [ ] Przechowywane dane: wycięta felga, oryginał, opcjonalna nazwa, data dodania, licznik użyć, data ostatniego użycia
@@ -183,7 +183,7 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Sekcja domyślnie zwinięta, z ustawieniami domyślnymi z wyników spike'a
 - [ ] Puste pole seed oznacza losowy seed, a wylosowana wartość jest zapisywana w zadaniu
@@ -198,7 +198,7 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Akceptowane formaty: JPEG, PNG, WebP i HEIC, a inne są odrzucane z komunikatem
 - [ ] Obrót według orientacji EXIF stosowany przed detekcją i kompozycją
@@ -215,7 +215,7 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Po starcie workera model nie jest załadowany
 - [ ] Pierwsze zadanie ładuje model, a UI pokazuje stan „ładowanie” zamiast zablokowanego postępu

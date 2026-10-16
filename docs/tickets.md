@@ -125,13 +125,24 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 03
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Postęp per koło i per krok odświeżany pollingiem HTMX co ~1 s
-- [ ] „Anuluj” zatrzymuje zadanie najpóźniej po bieżącym kroku, a zadanie dostaje status „anulowane”
-- [ ] Zadanie przerwane przez awarię lub restart workera ma status `failed`, bez automatycznego ponawiania
-- [ ] „Ponów” tworzy nowe zadanie z tymi samymi danymi wejściowymi i parametrami
-- [ ] Kolejne zadania czekają w kolejce FIFO, a UI pokazuje pozycję w kolejce
+- [x] Postęp per koło i per krok odświeżany pollingiem HTMX co ~1 s
+- [x] „Anuluj” zatrzymuje zadanie najpóźniej po bieżącym kroku, a zadanie dostaje status „anulowane”
+- [x] Zadanie przerwane przez awarię lub restart workera ma status `failed`, bez automatycznego ponawiania
+- [x] „Ponów” tworzy nowe zadanie z tymi samymi danymi wejściowymi i parametrami
+- [x] Kolejne zadania czekają w kolejce FIFO, a UI pokazuje pozycję w kolejce
+
+**Comments:**
+
+- Postęp: `Job.progress` (JSONB, `wheeler_shared.progress.Progress`), flaga `Job.cancel_requested`,
+  migracja `t05_progress`, nowy status `cancelled`. Anulowanie działa dla generowania (w kolejce: od razu,
+  w trakcie: po bieżącym kroku albo przed kolejnym kołem). „Ponów” jest też dla zadań anulowanych.
+- Awaria workera jest wykrywana przy jego ponownym starcie (`recover_interrupted_jobs`); dopóki worker
+  nie wystartuje, zadanie przerwane twardym zabiciem procesu pokazuje się jako „Przetwarzanie…”.
+- Weryfikacja na prawdziwym modelu (SAM 2 + mflux q8, Golf, 1024 px): postęp krok 1/8 po 55 s, potem co
+  ~10 s; „Anuluj” w kroku 4 zatrzymał generowanie 11 s później (po tym kroku), status `cancelled`,
+  bez `result.png`.
 
 ---
 

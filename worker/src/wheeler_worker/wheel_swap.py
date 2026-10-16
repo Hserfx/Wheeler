@@ -22,6 +22,7 @@ import numpy as np
 from PIL import Image
 
 from wheeler_shared.edit_params import EditParams
+from wheeler_shared.progress import Progress
 from wheeler_worker.compositing import composite, crop_box_for, grow_mask, mask_box, working_size
 from wheeler_worker.detector import WheelDetector
 from wheeler_worker.photos import load_photo, read_metadata, save_png
@@ -34,7 +35,7 @@ from wheeler_worker.processing import (
     SegmentItem,
     SegmentResult,
 )
-from wheeler_worker.rim_editor import RimEditor
+from wheeler_worker.rim_editor import RimEditor, StepCallback
 from wheeler_worker.segmenter import Segmenter
 
 # Obraz 1 = wycinek koła (do niego odnosi się maska mflux), obraz 2 = felga. Kolejność
@@ -104,11 +105,18 @@ class WheelSwapProcessor:
             resolution=params.resolution,
         )
         result = photo
+        wheels = len(item.masks)
         # Koła po kolei, każde osobnym wywołaniem modelu, z tym samym seedem i promptem.
-        for wheel_id, mask_path in item.masks.items():
+        # Raport przed kołem i po każdym kroku: tu odbiorca może przerwać pracę (anulowanie).
+        for index, (wheel_id, mask_path) in enumerate(item.masks.items(), start=1):
+            item.on_progress(Progress(wheel=index, wheels=wheels))
             with Image.open(mask_path) as mask_file:
                 mask = mask_file.convert("L")
-            result = edit.apply(result, mask, wheel_dir(item.output_dir, wheel_id))
+
+            def on_step(step: int, steps: int, wheel: int = index) -> None:
+                item.on_progress(Progress(wheel=wheel, wheels=wheels, step=step, steps=steps))
+
+            result = edit.apply(result, mask, wheel_dir(item.output_dir, wheel_id), on_step)
         target = save_png(
             result, item.output_dir / "result.png", metadata=read_metadata(item.photo_path)
         )
@@ -128,7 +136,13 @@ class _WheelEdit:
     seed: int
     resolution: int
 
-    def apply(self, photo: Image.Image, mask: Image.Image, out: Path) -> Image.Image:
+    def apply(
+        self,
+        photo: Image.Image,
+        mask: Image.Image,
+        out: Path,
+        on_step: StepCallback | None = None,
+    ) -> Image.Image:
         """Podmienia felgę w jednym kole; piksele poza `mask` zostają bit w bit."""
         wheel = mask_box(mask)
         if wheel is None:
@@ -147,6 +161,7 @@ class _WheelEdit:
             seed=self.seed,
             size=size,
             resolution=self.resolution,
+            on_step=on_step,
         ).convert("RGB")
         save_png(generated, out / "generated.png")
         feather = max(2, round(side * FEATHER))

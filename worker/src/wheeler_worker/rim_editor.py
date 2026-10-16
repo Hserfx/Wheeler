@@ -6,12 +6,17 @@ MLX i mflux importujemy leniwie, przy pierwszym generowaniu, więc testy i atrap
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
 
 from PIL import Image
 
 DEFAULT_MODEL_PATH = Path.home() / ".cache" / "wheeler" / "qwen-image-2.1-turbo-mflux-q8"
+
+# Po każdym kroku denoisingu: (ukończone kroki, liczba kroków). Wyjątek z callbacku przerywa
+# edycję (wychodzi z `edit`), więc anulowanie działa najpóźniej po bieżącym kroku.
+StepCallback = Callable[[int, int], None]
 
 
 class RimEditor(Protocol):
@@ -24,11 +29,13 @@ class RimEditor(Protocol):
         seed: int,
         size: tuple[int, int],
         resolution: int,
+        on_step: StepCallback | None = None,
     ) -> Image.Image:
         """Edytuje `images[0]` (wycinek) według promptu; `images[1:]` to referencje (felga).
 
         `mask` (L, rozmiar `size`, biały = przemaluj) dotyczy pierwszego obrazu. Wynik ma
         rozmiar `size` (wielokrotności 32). `resolution` to budżet pikseli każdej referencji.
+        `on_step` jest wołany po każdym kroku denoisingu (`StepCallback`).
         """
         ...
 
@@ -47,6 +54,7 @@ class MfluxRimEditor:
         self.model_path = model_path
         self.cache_limit_gb = cache_limit_gb
         self._model: Any = None
+        self._steps = _StepRelay()
 
     def _load(self) -> Any:
         if self._model is None:
@@ -65,6 +73,8 @@ class MfluxRimEditor:
             # Kafelkowy dekoder VAE: szczyt pamięci niższy o 9-14 GB przy 1024 px.
             model.tiling_config = TilingConfig()
             mx.eval(model.parameters())  # ładowanie jest leniwe; wymuszamy je tutaj
+            # mflux nie pozwala wyrejestrować callbacku, więc rejestrujemy jeden przekaźnik.
+            model.callbacks.register(self._steps)
             self._model = model
         return self._model
 
@@ -88,16 +98,41 @@ class MfluxRimEditor:
         seed: int,
         size: tuple[int, int],
         resolution: int,
+        on_step: StepCallback | None = None,
     ) -> Image.Image:
         model = self._load()
-        result = model.generate_image(
-            seed=seed,
-            prompt=prompt,
-            image_paths=list(images),
-            width=size[0],
-            height=size[1],
-            output_resolution=resolution,
-            mask_image=mask,
-        )
+        self._steps.target = on_step
+        try:
+            result = model.generate_image(
+                seed=seed,
+                prompt=prompt,
+                image_paths=list(images),
+                width=size[0],
+                height=size[1],
+                output_resolution=resolution,
+                mask_image=mask,
+            )
+        finally:
+            self._steps.target = None
         image: Image.Image = result.image
         return image.convert("RGB")
+
+
+class _StepRelay:
+    """Callback mflux (`InLoopCallback`) przekazujący kroki do `on_step` bieżącej edycji.
+
+    mflux woła `call_in_loop` po każdym kroku (`t` = indeks kroku od `init_time_step`)
+    i nie łapie wyjątków innych niż `KeyboardInterrupt`, więc wyjątek z `on_step` przerywa
+    `generate_image`.
+    """
+
+    def __init__(self) -> None:
+        self.target: StepCallback | None = None
+
+    def call_in_loop(
+        self, t: int, seed: int, prompt: str, latents: Any, config: Any, time_steps: Any
+    ) -> None:
+        if self.target is None:
+            return
+        first = config.init_time_step
+        self.target(t - first + 1, config.num_inference_steps - first)

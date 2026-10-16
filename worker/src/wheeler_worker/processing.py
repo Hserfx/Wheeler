@@ -17,7 +17,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from wheeler_shared.progress import Progress
 from wheeler_worker.settings import WorkerSettings
+
+# Odbiorca postępu generowania. Może rzucić wyjątek (np. `JobCancelled`), żeby przerwać pracę:
+# procesor go nie łapie, więc generowanie kończy się po bieżącym kroku albo przed kolejnym kołem.
+ProgressCallback = Callable[[Progress], None]
+
+
+class JobCancelled(Exception):
+    """Użytkownik anulował zadanie; rzucane przez `ProgressCallback`."""
+
+
+def _ignore_progress(progress: Progress, /) -> None:
+    pass
 
 
 @dataclass(frozen=True)
@@ -52,6 +65,8 @@ class GenerateItem:
     output_dir: Path
     params: Mapping[str, Any]  # zawiera `seed` (ustawiany przy starcie generowania)
     masks: Mapping[int, Path]
+    # Wołany przed każdym kołem (krok 0) i po każdym kroku denoisingu.
+    on_progress: ProgressCallback = _ignore_progress
 
 
 @dataclass(frozen=True)

@@ -11,7 +11,7 @@ from wheeler_shared.db import make_engine, make_session_factory
 from wheeler_shared.migrate import migrate
 from wheeler_shared.storage import Storage
 from wheeler_worker.processing import build_processor
-from wheeler_worker.runner import run_forever
+from wheeler_worker.runner import recover_interrupted_jobs, run_forever
 from wheeler_worker.settings import WorkerSettings
 
 log = logging.getLogger("wheeler_worker")
@@ -37,10 +37,12 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
+    session_factory = make_session_factory(engine)
+    recover_interrupted_jobs(session_factory)
     log.info("Worker gotowy (procesor=%s, dane=%s)", settings.processor, storage.root)
     try:
         run_forever(
-            make_session_factory(engine),
+            session_factory,
             storage,
             processor,
             poll_interval=settings.poll_interval,

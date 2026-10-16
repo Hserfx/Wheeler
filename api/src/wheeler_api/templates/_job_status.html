@@ -8,6 +8,40 @@
     <span class="font-semibold" data-status="{{ job.status.value }}">{{ job_status_label(job) }}</span>
   </p>
 
+  {%- if queue_position %}
+  <p class="text-sm text-slate-600" data-queue-position="{{ queue_position }}">{{ t.queue_position.format(position=queue_position) }}</p>
+  {%- endif %}
+
+  {%- set progress = job_progress(job) %}
+  {%- if progress %}
+  <div class="flex flex-col gap-2" data-role="progress">
+    <p class="text-sm text-slate-600">{{ progress_label(progress) }}</p>
+    <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+      <div class="h-full rounded-full bg-slate-900 transition-all" style="width: {{ (progress.fraction * 100) | round(1) }}%"></div>
+    </div>
+  </div>
+  {%- endif %}
+
+  {% if job is retryable %}
+  <form action="/jobs/{{ job.id }}/retry" method="post" class="flex flex-wrap items-center gap-3"
+        x-data="{ sending: false }" @submit="sending = true">
+    <button type="submit" data-role="retry" :disabled="sending"
+            class="rounded-md bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
+      {{ t.job_retry }}
+    </button>
+    <span class="text-sm text-slate-500">{{ t.job_retry_hint }}</span>
+  </form>
+  {% endif %}
+
+  {% if job is cancellable %}
+  <div>
+    <button type="button" data-role="cancel" hx-post="/jobs/{{ job.id }}/cancel" hx-target="#job-status" hx-swap="outerHTML"
+            class="rounded-md border border-slate-300 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100">
+      {{ t.job_cancel }}
+    </button>
+  </div>
+  {% endif %}
+
   {% if job.error %}
   <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
     {% if job.task and job.task.value == "segment" %}

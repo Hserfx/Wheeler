@@ -5,10 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 from fake_models import DiscSegmenter, SolidEditor, disc_mask
 from PIL import Image
 
-from wheeler_worker.processing import GenerateItem, SegmentItem, build_processor
+from wheeler_shared.progress import Progress
+from wheeler_worker.processing import GenerateItem, JobCancelled, SegmentItem, build_processor
 from wheeler_worker.settings import WorkerSettings
 from wheeler_worker.wheel_swap import WheelSwapProcessor
 
@@ -141,3 +143,65 @@ def test_placeholder_processor_runs_whole_pipeline_without_models(tmp_path: Path
     assert output.shape == original.shape
     assert np.array_equal(output[~inside], original[~inside])
     assert not np.array_equal(output[inside], original[inside])
+
+
+def _two_wheels(processor: WheelSwapProcessor, photo: Path, out: Path) -> dict[int, Path]:
+    item = SegmentItem(
+        job_id=1, photo_path=photo, output_dir=out, params={}, clicks={7: (90, 120), 8: (300, 120)}
+    )
+    return {wheel_id: files.mask for wheel_id, files in processor.segment(item).masks.items()}
+
+
+def test_generation_reports_progress_per_wheel_and_denoising_step(tmp_path: Path) -> None:
+    photo = _noise_photo(tmp_path / "input.png")
+    processor = WheelSwapProcessor(segmenter=DiscSegmenter(radius=30), editor=SolidEditor(steps=2))
+    reports: list[Progress] = []
+
+    processor.generate(
+        GenerateItem(
+            job_id=1,
+            photo_path=photo,
+            rim_path=_rim(tmp_path / "rim.png"),
+            output_dir=tmp_path,
+            params={"seed": 1},
+            masks=_two_wheels(processor, photo, tmp_path),
+            on_progress=reports.append,
+        )
+    )
+
+    assert reports == [
+        Progress(wheel=1, wheels=2),
+        Progress(wheel=1, wheels=2, step=1, steps=2),
+        Progress(wheel=1, wheels=2, step=2, steps=2),
+        Progress(wheel=2, wheels=2),
+        Progress(wheel=2, wheels=2, step=1, steps=2),
+        Progress(wheel=2, wheels=2, step=2, steps=2),
+    ]
+
+
+def test_exception_from_progress_callback_stops_generation_before_next_wheel(
+    tmp_path: Path,
+) -> None:
+    photo = _noise_photo(tmp_path / "input.png")
+    editor = SolidEditor(steps=2)
+    processor = WheelSwapProcessor(segmenter=DiscSegmenter(radius=30), editor=editor)
+
+    def cancel_after_first_wheel(progress: Progress) -> None:
+        if progress.wheel == 2:
+            raise JobCancelled
+
+    with pytest.raises(JobCancelled):
+        processor.generate(
+            GenerateItem(
+                job_id=1,
+                photo_path=photo,
+                rim_path=_rim(tmp_path / "rim.png"),
+                output_dir=tmp_path,
+                params={"seed": 1},
+                masks=_two_wheels(processor, photo, tmp_path),
+                on_progress=cancel_after_first_wheel,
+            )
+        )
+
+    assert len(editor.calls) == 1 and editor.steps_run == 2
+    assert not (tmp_path / "result.png").exists()

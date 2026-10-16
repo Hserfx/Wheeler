@@ -14,20 +14,24 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Upl
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload, sessionmaker
+from sqlalchemy.orm import Session, object_session, selectinload, sessionmaker
 
 from wheeler_api.texts import TEXTS
 from wheeler_api.thumbnails import ensure_thumbnail
 from wheeler_shared.editing import (
     EditingError,
     JobBusy,
+    NotCancellable,
     NoWheelSelected,
+    cancel_job,
     select_wheel,
     start_generation,
 )
 from wheeler_shared.history import delete_jobs, is_deletable
 from wheeler_shared.models import ImageRole, Job
 from wheeler_shared.queue import create_job as create_draft_job
+from wheeler_shared.queue import queue_position
+from wheeler_shared.retry import NotRetryable, retry_job
 from wheeler_shared.storage import Storage
 
 router = APIRouter()
@@ -146,6 +150,48 @@ def generate(
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 
+@router.post("/jobs/{job_id}/cancel", response_class=HTMLResponse)
+def cancel(job_id: int, request: Request, session: SessionDep, templates: TemplatesDep) -> Response:
+    """„Anuluj” (HTMX): zwraca odświeżony stan zadania; 409, gdy nie ma czego anulować."""
+    status_code = 200
+    try:
+        with session.begin():
+            cancel_job(session, job_id)
+    except LookupError:
+        raise HTTPException(status_code=404) from None
+    except NotCancellable:
+        status_code = 409
+    job = _load_job(session, job_id)
+    return templates.TemplateResponse(
+        request, "_job_status.html", _job_context(job), status_code=status_code
+    )
+
+
+@router.post("/jobs/{job_id}/retry")
+def retry(
+    job_id: int,
+    request: Request,
+    session: SessionDep,
+    storage: StorageDep,
+    templates: TemplatesDep,
+) -> Response:
+    """„Ponów”: nowe zadanie z tymi samymi plikami, kołami i parametrami."""
+    job_dir = storage.new_job_dir()
+    try:
+        with session.begin():
+            new_id = retry_job(session, storage, job_id, job_dir=job_dir)
+    except BaseException as exc:
+        shutil.rmtree(storage.path(job_dir), ignore_errors=True)
+        if isinstance(exc, LookupError):
+            raise HTTPException(status_code=404) from None
+        if isinstance(exc, NotRetryable):
+            return templates.TemplateResponse(
+                request, "error.html", {"message": TEXTS["error_not_retryable"]}, status_code=409
+            )
+        raise
+    return RedirectResponse(f"/jobs/{new_id}", status_code=303)
+
+
 def _load_job(session: Session, job_id: int) -> Job:
     job = session.get(
         Job,
@@ -159,8 +205,10 @@ def _load_job(session: Session, job_id: int) -> Job:
 
 
 def _job_context(job: Job) -> dict[str, object]:
+    session = object_session(job)
     return {
         "job": job,
+        "queue_position": queue_position(session, job) if session is not None else None,
         "rim_image": job.image(ImageRole.RIM),
         "input_image": job.image(ImageRole.INPUT),
         "result_image": job.image(ImageRole.RESULT),

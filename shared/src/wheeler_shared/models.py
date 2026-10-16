@@ -4,7 +4,7 @@ Zadanie (`Job`) to jedna edycja jednego zdjęcia, widoczna w Historii. Przechodz
 z których część wykonuje worker (`TaskKind`), a część użytkownik (status `draft`):
 
     draft --klik w koło--> queued/running (segment) --> draft (maska jako nakładka)
-    draft --„Generuj”----> queued/running (generate) --> done | failed
+    draft --„Generuj”----> queued/running (generate) --> done | failed | cancelled
 
 `Job.task` to rodzaj ostatnio zleconej pracy workera; razem ze statusem mówi UI, co się dzieje.
 """
@@ -15,7 +15,18 @@ import enum
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    false,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -28,10 +39,11 @@ class JobStatus(enum.StrEnum):
     RUNNING = "running"
     DONE = "done"
     FAILED = "failed"
+    CANCELLED = "cancelled"  # anulowane przez użytkownika (w kolejce albo w trakcie generowania)
 
     @property
     def finished(self) -> bool:
-        return self in (JobStatus.DONE, JobStatus.FAILED)
+        return self in (JobStatus.DONE, JobStatus.FAILED, JobStatus.CANCELLED)
 
     @property
     def busy(self) -> bool:
@@ -81,6 +93,10 @@ class Job(Base):
     queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Postęp generowania (`wheeler_shared.progress.Progress.to_json`), pisany przez worker.
+    progress: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # „Anuluj” w trakcie pracy workera: worker sprawdza flagę po każdym kroku i przed kołem.
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     images: Mapped[list[Image]] = relationship(
         back_populates="job", cascade="all, delete-orphan", order_by="Image.id"

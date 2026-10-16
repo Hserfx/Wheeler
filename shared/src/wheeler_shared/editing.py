@@ -1,10 +1,12 @@
-"""Działania użytkownika na szkicu zadania: wybór koła kliknięciem i start generowania.
+"""Działania użytkownika na zadaniu: wybór koła kliknięciem, start generowania, anulowanie.
 
 Każde działanie, które wymaga modelu (SAM 2, mflux), wstawia zadanie do kolejki z właściwym
 `TaskKind`; resztę robi worker. Funkcje nie zatwierdzają transakcji (jak `queue.py`).
 """
 
 from __future__ import annotations
+
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session, selectinload
 
@@ -23,6 +25,10 @@ class JobBusy(EditingError):
 
 class NoWheelSelected(EditingError):
     """Generowanie bez żadnej gotowej maski koła."""
+
+
+class NotCancellable(EditingError):
+    """Anulować można tylko generowanie w kolejce albo w trakcie."""
 
 
 def select_wheel(session: Session, job_id: int, point: tuple[float, float]) -> int:
@@ -53,6 +59,21 @@ def start_generation(session: Session, job_id: int, *, seed: int) -> None:
     enqueue(job, TaskKind.GENERATE)
 
 
+def cancel_job(session: Session, job_id: int) -> None:
+    """„Anuluj” generowanie. Zadanie w kolejce jest anulowane od razu; zadanie w trakcie
+    dostaje prośbę o anulowanie, którą worker sprawdza po każdym kroku modelu i przed kołem
+    (`queue.report_progress`), a potem oznacza je jako `cancelled` (`queue.mark_cancelled`).
+    """
+    job = _lock(session, job_id)
+    if job.task != TaskKind.GENERATE or not job.status.busy:
+        raise NotCancellable
+    if job.status == JobStatus.QUEUED:
+        job.status = JobStatus.CANCELLED
+        job.finished_at = datetime.now(UTC)
+    else:
+        job.cancel_requested = True
+
+
 def _lock_draft(session: Session, job_id: int) -> Job:
     job = session.get(
         Job,
@@ -65,4 +86,11 @@ def _lock_draft(session: Session, job_id: int) -> Job:
         raise LookupError(job_id)
     if job.status != JobStatus.DRAFT:
         raise JobBusy
+    return job
+
+
+def _lock(session: Session, job_id: int) -> Job:
+    job = session.get(Job, job_id, with_for_update=True, populate_existing=True)
+    if job is None:
+        raise LookupError(job_id)
     return job

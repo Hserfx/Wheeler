@@ -39,7 +39,7 @@
            },
          }"
          @click="pick($event)">
-      <img x-ref="photo" src="/files/{{ input_image.path }}" alt="{{ t.wheel_picker_alt }}" data-role="input"
+      <img x-ref="photo" src="/files/{{ input_image.path | display_path }}" alt="{{ t.wheel_picker_alt }}" data-role="input"
            draggable="false" class="block w-full rounded-lg border border-slate-200 bg-white">
       {% for wheel in job.masked_wheels %}
       <img src="/files/{{ wheel.overlay_path }}" alt="{{ t.wheel_mask_alt }}" data-role="mask-overlay"
@@ -62,7 +62,7 @@
     {% if input_image %}
     <figure>
       <figcaption class="mb-2 text-sm font-medium text-slate-600">{{ t.job_input }}</figcaption>
-      <img src="/files/{{ input_image.path }}" alt="{{ t.job_input }}" data-role="input"
+      <img src="/files/{{ input_image.path | display_path }}" alt="{{ t.job_input }}" data-role="input"
            class="w-full rounded-lg border border-slate-200 bg-white">
     </figure>
     {% endif %}
@@ -82,7 +82,7 @@
   {% if rim_image %}
   <figure class="w-32">
     <figcaption class="mb-2 text-sm font-medium text-slate-600">{{ t.job_rim }}</figcaption>
-    <img src="/files/{{ rim_image.path }}" alt="{{ t.job_rim }}" data-role="rim"
+    <img src="/files/{{ rim_image.path | display_path }}" alt="{{ t.job_rim }}" data-role="rim"
          class="w-full rounded-lg border border-slate-200 bg-white">
   </figure>
   {% endif %}

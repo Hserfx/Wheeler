@@ -7,6 +7,7 @@ from typing import Final
 
 from wheeler_shared import edit_params
 from wheeler_shared.models import Job, JobStatus, TaskKind
+from wheeler_shared.worker_state import ModelState
 
 TEXTS: Final[dict[str, str]] = {
     "app_name": "Wheeler",
@@ -105,6 +106,15 @@ TEXTS: Final[dict[str, str]] = {
     "status_running": "Przetwarzanie…",
     "status_done": "Gotowe",
     "status_failed": "Niepowodzenie",
+    # Stan modelu w pamięci workera (nagłówek i zadanie w toku)
+    "model_state_label": "Model",
+    "model_state_asleep": "uśpiony",
+    "model_state_loading": "ładowanie",
+    "model_state_ready": "gotowy",
+    "model_state_hint": (
+        "Model ładuje się przy pierwszym zadaniu i zwalnia pamięć po okresie bezczynności."
+    ),
+    "model_loading_job": "Ładowanie modelu do pamięci (pierwsze zadanie po przerwie)…",
     # Błędy
     "error_no_photo": "Wybierz zdjęcie samochodu.",
     "error_no_rim": "Wybierz zdjęcie felgi.",
@@ -151,3 +161,10 @@ def job_status_label(job: Job) -> str:
     if job.status.busy and job.task == TaskKind.DETECT:
         return TEXTS["status_detecting"]
     return STATUS_LABELS[job.status]
+
+
+MODEL_STATE_LABELS: Final[dict[ModelState, str]] = {
+    ModelState.ASLEEP: TEXTS["model_state_asleep"],
+    ModelState.LOADING: TEXTS["model_state_loading"],
+    ModelState.READY: TEXTS["model_state_ready"],
+}

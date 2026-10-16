@@ -1,7 +1,7 @@
 """Automatyczna detekcja kół: źródło i box koła, liczba wykrytych kół zadania
 
 Revision ID: t04_wheel_detection
-Revises: 0002
+Revises: t11_worker_state
 Create Date: 2026-10-16
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "t04_wheel_detection"
-down_revision: str | None = "0002"
+down_revision: str | None = "t11_worker_state"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

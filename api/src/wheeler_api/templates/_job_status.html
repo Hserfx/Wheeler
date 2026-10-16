@@ -7,6 +7,9 @@
     <span class="text-slate-500">{{ t.status_label }}:</span>
     <span class="font-semibold" data-status="{{ job.status.value }}">{{ job_status_label(job) }}</span>
   </p>
+  {% if model_loading_for(job) %}
+  <p class="text-sm text-amber-700" role="status" data-role="model-loading">{{ t.model_loading_job }}</p>
+  {% endif %}
 
   {% if job.error %}
   <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">

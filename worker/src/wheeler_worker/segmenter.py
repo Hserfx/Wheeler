@@ -10,6 +10,8 @@ from typing import Any, Protocol
 
 from PIL import Image
 
+from wheeler_worker.model_lifecycle import NO_OBSERVER, LoadObserver
+
 
 class Segmenter(Protocol):
     def segment_click(self, image: Image.Image, point: tuple[float, float], /) -> Image.Image:
@@ -39,8 +41,15 @@ class Sam2Segmenter:
     Model ładuje się przy pierwszym kliknięciu i zostaje w pamięci (~3 GB) do `release()`.
     """
 
-    def __init__(self, repo: str = SAM_REPO, revision: str = SAM_REVISION, grow: float = 1.5):
+    def __init__(
+        self,
+        repo: str = SAM_REPO,
+        revision: str = SAM_REVISION,
+        grow: float = 1.5,
+        observer: LoadObserver = NO_OBSERVER,
+    ):
         self.repo = repo
+        self.observer = observer
         self.revision = revision
         self.grow = grow
         self._model: Any = None
@@ -50,14 +59,15 @@ class Sam2Segmenter:
     def _load(self) -> None:
         if self._model is not None:
             return
-        import torch
-        from transformers import Sam2Model, Sam2Processor
+        with self.observer.loading():
+            import torch
+            from transformers import Sam2Model, Sam2Processor
 
-        self._device = "mps" if torch.backends.mps.is_available() else "cpu"
-        kwargs: dict[str, Any] = {"revision": self.revision, "local_files_only": True}
-        self._processor = Sam2Processor.from_pretrained(self.repo, **kwargs)
-        model: Any = Sam2Model.from_pretrained(self.repo, **kwargs)
-        self._model = model.to(self._device).eval()
+            self._device = "mps" if torch.backends.mps.is_available() else "cpu"
+            kwargs: dict[str, Any] = {"revision": self.revision, "local_files_only": True}
+            self._processor = Sam2Processor.from_pretrained(self.repo, **kwargs)
+            model: Any = Sam2Model.from_pretrained(self.repo, **kwargs)
+            self._model = model.to(self._device).eval()
 
     def release(self) -> None:
         """Zwalnia model (np. przed mflux, żeby oba nie zajmowały pamięci naraz)."""

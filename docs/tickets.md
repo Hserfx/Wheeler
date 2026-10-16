@@ -237,10 +237,20 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 03
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Po starcie workera model nie jest załadowany
-- [ ] Pierwsze zadanie ładuje model, a UI pokazuje stan „ładowanie” zamiast zablokowanego postępu
-- [ ] Po skonfigurowanym czasie bezczynności model jest zwalniany, a pamięć faktycznie wraca do systemu
-- [ ] Czas bezczynności ustawiany przez konfigurację, domyślnie 10 min
-- [ ] Stan modelu (uśpiony / ładowanie / gotowy) widoczny w UI
+- [x] Po starcie workera model nie jest załadowany
+- [x] Pierwsze zadanie ładuje model, a UI pokazuje stan „ładowanie” zamiast zablokowanego postępu
+- [x] Po skonfigurowanym czasie bezczynności model jest zwalniany, a pamięć faktycznie wraca do systemu
+- [x] Czas bezczynności ustawiany przez konfigurację, domyślnie 10 min
+- [x] Stan modelu (uśpiony / ładowanie / gotowy) widoczny w UI
+
+**Comments:**
+
+- Weryfikacja na prawdziwym modelu (M2 Max, SAM 2.1 + mflux q8, generowanie 512 px, czas bezczynności 5 s):
+  `phys_footprint` procesu 0,05 GB po starcie → 3,2 GB po segmentacji → 21,3 GB po generowaniu
+  (MLX active 17,2 GB + cache 2,1 GB) → **1,6 GB po zwolnieniu** (MLX active 0, cache 0; MPS driver 1,0 GB).
+  Ponowne zadanie ładuje SAM 2 znowu (3,8 GB), drugie zwolnienie → 1,4 GB.
+  Stany: asleep → loading → ready → loading (mflux) → ready → asleep → loading → ready → asleep.
+- Stan modelu w tabeli `worker_state`; po awarii workera zostaje ostatni stan aż do restartu
+  (start workera zapisuje „uśpiony”). Brak heartbeatu.

@@ -10,6 +10,8 @@ from typing import Any, Protocol
 
 from PIL import Image
 
+from wheeler_worker.model_lifecycle import NO_OBSERVER, LoadObserver
+
 BoxF = tuple[float, float, float, float]  # x0, y0, x1, y1 w pikselach zdjęcia
 
 
@@ -37,9 +39,14 @@ class FlorenceWheelDetector:
     """
 
     def __init__(
-        self, repo: str = FLORENCE_REPO, revision: str = FLORENCE_REVISION, phrase: str = "wheel"
+        self,
+        repo: str = FLORENCE_REPO,
+        revision: str = FLORENCE_REVISION,
+        phrase: str = "wheel",
+        observer: LoadObserver = NO_OBSERVER,
     ) -> None:
         self.repo = repo
+        self.observer = observer
         self.revision = revision
         self.phrase = phrase
         self._model: Any = None
@@ -50,19 +57,20 @@ class FlorenceWheelDetector:
     def _load(self) -> None:
         if self._model is not None:
             return
-        import torch
-        from transformers import AutoProcessor, Florence2ForConditionalGeneration
+        with self.observer.loading():
+            import torch
+            from transformers import AutoProcessor, Florence2ForConditionalGeneration
 
-        mps = torch.backends.mps.is_available()
-        self._device = "mps" if mps else "cpu"
-        self._dtype = torch.float16 if mps else torch.float32
-        kwargs: dict[str, Any] = {"revision": self.revision, "local_files_only": True}
-        auto_processor: Any = AutoProcessor  # bez typów w transformers
-        self._processor = auto_processor.from_pretrained(self.repo, **kwargs)
-        model: Any = Florence2ForConditionalGeneration.from_pretrained(
-            self.repo, dtype=self._dtype, **kwargs
-        )
-        self._model = model.to(self._device).eval()
+            mps = torch.backends.mps.is_available()
+            self._device = "mps" if mps else "cpu"
+            self._dtype = torch.float16 if mps else torch.float32
+            kwargs: dict[str, Any] = {"revision": self.revision, "local_files_only": True}
+            auto_processor: Any = AutoProcessor  # bez typów w transformers
+            self._processor = auto_processor.from_pretrained(self.repo, **kwargs)
+            model: Any = Florence2ForConditionalGeneration.from_pretrained(
+                self.repo, dtype=self._dtype, **kwargs
+            )
+            self._model = model.to(self._device).eval()
 
     def release(self) -> None:
         if self._model is None:

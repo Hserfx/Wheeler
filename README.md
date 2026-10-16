@@ -75,6 +75,11 @@ draft --„Generuj”------------> generate (mflux, każde koło osobno, ten sam
   `placeholder` (te same kroki z atrapami modeli, bez GPU; do pracy nad UI).
 - Modele ładują się leniwie przy pierwszym użyciu. Przed generowaniem Florence-2 i SAM 2 są zwalniane.
   Detekcja z ładowaniem modeli ~4,5 s (pierwszy odczyt wag z dysku ~20 s), potem ~1 s na zdjęcie.
+- Cykl życia modeli (`wheeler_worker/model_lifecycle.py`): po starcie workera modele nie są
+  załadowane („uśpiony”), pierwsze zadanie je ładuje („ładowanie”, też w statusie zadania),
+  potem zostają w pamięci („gotowy”) i są zwalniane po `WHEELER_MODEL_IDLE_TIMEOUT` sekundach
+  bez zadań (domyślnie 600). Stan leży w tabeli `worker_state` (`wheeler_shared/worker_state.py`),
+  a UI pokazuje go w nagłówku (`GET /model-state`, odświeżane co 2 s).
 - Pliki koła w katalogu zadania: `wheels/<id>/mask.png` (dokładnie obszar, który może się zmienić;
   dla kół z detekcji maska i nakładka leżą w `wheels/detected-<n>/`),
   `overlay.png`, `crop.png`, `crop_mask.png`, `generated.png`; wynik `result.png`.

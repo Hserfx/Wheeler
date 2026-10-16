@@ -114,6 +114,11 @@ class WheelSwapProcessor:
         )
         return GenerateResult(result_path=target, width=result.width, height=result.height)
 
+    def release(self) -> None:
+        self.detector.release()
+        self.segmenter.release()
+        self.editor.release()
+
 
 @dataclass(frozen=True)
 class _WheelEdit:

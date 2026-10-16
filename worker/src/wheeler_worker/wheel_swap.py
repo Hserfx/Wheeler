@@ -24,7 +24,7 @@ from PIL import Image
 from wheeler_shared.edit_params import EditParams
 from wheeler_worker.compositing import composite, crop_box_for, grow_mask, mask_box, working_size
 from wheeler_worker.detector import WheelDetector
-from wheeler_worker.photos import load_photo, save_png
+from wheeler_worker.photos import load_photo, read_metadata, save_png
 from wheeler_worker.processing import (
     DetectItem,
     DetectResult,
@@ -95,8 +95,7 @@ class WheelSwapProcessor:
         self.detector.release()
         self.segmenter.release()
         photo = load_photo(item.photo_path)
-        with Image.open(item.rim_path) as rim_file:
-            rim = rim_file.convert("RGB")
+        rim = load_photo(item.rim_path)
         edit = _WheelEdit(
             editor=self.editor,
             rim=rim,
@@ -110,7 +109,9 @@ class WheelSwapProcessor:
             with Image.open(mask_path) as mask_file:
                 mask = mask_file.convert("L")
             result = edit.apply(result, mask, wheel_dir(item.output_dir, wheel_id))
-        target = save_png(result, item.output_dir / "result.png")
+        target = save_png(
+            result, item.output_dir / "result.png", metadata=read_metadata(item.photo_path)
+        )
         return GenerateResult(result_path=target, width=result.width, height=result.height)
 
 

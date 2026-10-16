@@ -55,8 +55,10 @@ wgranie auta + felgi -> draft --klik w koło--> segment (SAM 2) -> draft z mask�
   kolejkę (`TaskKind.SEGMENT`). Segmentacja ma pierwszeństwo przed generowaniem, w obrębie rodzaju
   obowiązuje FIFO po `queued_at`. Nieudana segmentacja wraca do szkicu z komunikatem.
 - Działania użytkownika: `wheeler_shared/editing.py` (`select_wheel`, `start_generation`).
-  Kolejka: `wheeler_shared/queue.py`. Parametry edycji i ustawienia domyślne:
-  `wheeler_shared/edit_params.py`.
+  Kolejka: `wheeler_shared/queue.py`. Parametry edycji, ustawienia domyślne i dozwolone zakresy:
+  `wheeler_shared/edit_params.py`. Sekcja „Zaawansowane” na stronie głównej
+  (`wheeler_api/advanced.py`) zapisuje w `Job.params` użyte wartości już przy wgraniu zdjęcia;
+  pusty seed jest losowany i zapisywany przy „Generuj”.
 - `wheeler_worker/processing.py` definiuje `Processor` z metodą na każdy rodzaj pracy
   (`segment`, `generate`; tylko pliki, bez bazy). Runner (`runner.py`, `HANDLERS`) pobiera zadanie
   (`FOR UPDATE SKIP LOCKED`), woła procesor i zapisuje wynik albo błąd.
@@ -66,6 +68,12 @@ wgranie auta + felgi -> draft --klik w koło--> segment (SAM 2) -> draft z mask�
 - Modele ładują się leniwie przy pierwszym użyciu. Przed generowaniem SAM 2 jest zwalniany.
 - Pliki koła w katalogu zadania: `wheels/<id>/mask.png` (dokładnie obszar, który może się zmienić),
   `overlay.png`, `crop.png`, `crop_mask.png`, `generated.png`; wynik `result.png`.
+- Wejście (`wheeler_api/uploads.py`, `save_image_upload`, wspólne dla każdego wgrywanego obrazu):
+  JPEG, PNG, WebP, HEIC, do 50 MB i 40 MPx; format rozpoznawany po zawartości. Dla HEIC i zdjęć
+  z orientacją EXIF obok pliku powstaje obrócony podgląd `<plik>.preview.jpg` w pełnym rozmiarze
+  (szablony: filtr `display_path`), bo kliknięcia są w układzie obróconego zdjęcia.
+- Odczyt i zapis zdjęć w workerze: `wheeler_worker/photos.py`. `result.png` dostaje profil ICC
+  i EXIF oryginału (`read_metadata`: bez GPS i orientacji); maski i pliki robocze są bez metadanych.
 
 ## Migracje
 

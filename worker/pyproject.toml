@@ -12,6 +12,7 @@ dependencies = [
     "torch>=2.13",
     "torchvision>=0.29.1",
     "transformers>=5.5,<6",
+    "pillow-heif>=1.0",
 ]
 
 [project.scripts]

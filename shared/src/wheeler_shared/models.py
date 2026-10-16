@@ -7,6 +7,8 @@ z których część wykonuje worker (`TaskKind`), a część użytkownik (status
     draft --klik obok masek--> queued/running (segment) --> draft (nowe koło dodane)
     draft --klik w maskę--> draft (koło usunięte, bez workera)
     draft --„Generuj”----> queued/running (generate) --> done | failed | cancelled
+    done --„Ponów to koło”--> queued/running (regenerate_wheel) --> done (błąd/anulowanie
+        też wracają do done z poprzednim wynikiem)
 
 `Job.task` to rodzaj ostatnio zleconej pracy workera; razem ze statusem mówi UI, co się dzieje.
 """
@@ -59,6 +61,12 @@ class TaskKind(enum.StrEnum):
     SEGMENT = "segment"  # kliknięcia -> maski kół (SAM 2), interaktywne: mają pierwszeństwo
     DETECT = "detect"  # zdjęcie -> wszystkie widoczne koła (Florence-2 + SAM 2), interaktywne
     GENERATE = "generate"  # podmiana felg we wszystkich kołach (mflux)
+    REGENERATE_WHEEL = "regenerate_wheel"  # jedno koło od nowa z nowym seedem (ticket 07)
+
+    @property
+    def generates(self) -> bool:
+        """Praca modelu edycji (mflux): długa, w kolejce za pracą interaktywną, z postępem."""
+        return self in (TaskKind.GENERATE, TaskKind.REGENERATE_WHEEL)
 
 
 class WheelSource(enum.StrEnum):
@@ -157,6 +165,11 @@ class Wheel(Base):
     box_top: Mapped[int | None] = mapped_column(Integer)
     box_right: Mapped[int | None] = mapped_column(Integer)
     box_bottom: Mapped[int | None] = mapped_column(Integer)
+    # Seed, z którym koło jest w bieżącym wyniku, gdy różni się od seeda zadania („ponów to
+    # koło”); None = seed zadania (`params["seed"]`).
+    seed: Mapped[int | None] = mapped_column(Integer)
+    # Seed zleconego ponowienia tego koła (przenoszony do `seed` po sukcesie); None = brak.
+    pending_seed: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     job: Mapped[Job] = relationship(back_populates="wheels")

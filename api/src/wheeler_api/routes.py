@@ -27,8 +27,10 @@ from wheeler_shared.editing import (
     NoWheelSelected,
     cancel_job,
     click_photo,
+    regenerate_wheel,
     request_detection,
     start_generation,
+    wheel_seed,
 )
 from wheeler_shared.history import delete_jobs, is_deletable
 from wheeler_shared.models import ImageRole, Job
@@ -205,6 +207,23 @@ def generate(
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 
+@router.post("/jobs/{job_id}/wheels/{wheel_id}/regenerate")
+def regenerate(
+    job_id: int, wheel_id: int, request: Request, session: SessionDep, templates: TemplatesDep
+) -> Response:
+    """„Ponów to koło”: jedno koło gotowego wyniku od nowa z nowym (losowym) seedem."""
+    try:
+        with session.begin():
+            regenerate_wheel(session, job_id, wheel_id, seed=secrets.randbelow(2**31))
+    except LookupError:
+        raise HTTPException(status_code=404) from None
+    except JobBusy:
+        return templates.TemplateResponse(
+            request, "error.html", {"message": TEXTS["error_not_regeneratable"]}, status_code=409
+        )
+    return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+
 @router.post("/jobs/{job_id}/cancel", response_class=HTMLResponse)
 def cancel(job_id: int, request: Request, session: SessionDep, templates: TemplatesDep) -> Response:
     """„Anuluj” (HTMX): zwraca odświeżony stan zadania; 409, gdy nie ma czego anulować."""
@@ -267,6 +286,7 @@ def _job_context(job: Job) -> dict[str, object]:
         "rim_image": job.image(ImageRole.RIM),
         "input_image": job.image(ImageRole.INPUT),
         "result_image": job.image(ImageRole.RESULT),
+        "wheel_seed": wheel_seed,
     }
 
 

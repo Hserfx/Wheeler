@@ -22,6 +22,7 @@ from wheeler_shared.queue import (
     complete_detection,
     complete_job,
     complete_segmentation,
+    complete_wheel_regeneration,
     fail_interrupted_jobs,
     fail_job,
     mark_cancelled,
@@ -36,6 +37,7 @@ from wheeler_worker.processing import (
     MaskFiles,
     Processor,
     ProgressCallback,
+    RegenerateWheelItem,
     SegmentItem,
 )
 
@@ -108,10 +110,41 @@ def _generate(
     )
 
 
+def _regenerate_wheel(
+    job: ClaimedJob, storage: Storage, processor: Processor, report: ProgressCallback
+) -> SaveResult:
+    if job.rim_path is None or job.result_path is None:
+        raise ValueError("Zadanie nie ma felgi referencyjnej albo wyniku")
+    wheel = next((w for w in job.wheels if w.pending_seed is not None and w.mask_path), None)
+    if wheel is None:
+        raise ValueError("Nie wskazano koła do ponownego wygenerowania")
+    assert wheel.pending_seed is not None and wheel.mask_path is not None
+    photo = storage.path(job.input_path)
+    result = processor.regenerate_wheel(
+        RegenerateWheelItem(
+            job_id=job.id,
+            photo_path=photo,
+            result_path=storage.path(job.result_path),
+            rim_path=storage.path(job.rim_path),
+            output_dir=photo.parent,
+            params=job.params,
+            wheel_id=wheel.id,
+            mask_path=storage.path(wheel.mask_path),
+            seed=wheel.pending_seed,
+            on_progress=report,
+        )
+    )
+    result_path = storage.relative(result.result_path)
+    return lambda session: complete_wheel_regeneration(
+        session, job.id, result_path=result_path, width=result.width, height=result.height
+    )
+
+
 HANDLERS: dict[TaskKind, Handler] = {
     TaskKind.DETECT: _detect,
     TaskKind.SEGMENT: _segment,
     TaskKind.GENERATE: _generate,
+    TaskKind.REGENERATE_WHEEL: _regenerate_wheel,
 }
 
 

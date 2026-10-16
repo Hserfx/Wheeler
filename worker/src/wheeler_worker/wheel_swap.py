@@ -32,6 +32,7 @@ from wheeler_worker.processing import (
     GenerateItem,
     GenerateResult,
     MaskFiles,
+    RegenerateWheelItem,
     SegmentItem,
     SegmentResult,
 )
@@ -122,6 +123,34 @@ class WheelSwapProcessor:
         )
         return GenerateResult(result_path=target, width=result.width, height=result.height)
 
+    def regenerate_wheel(self, item: RegenerateWheelItem) -> GenerateResult:
+        """Jedno koło z nowym seedem na bieżącym wyniku; zapis do nowego pliku `result-<n>.png`
+        (poprzedni wynik zostaje, a nowa nazwa omija pamięć podręczną przeglądarki)."""
+        params = EditParams.from_params(item.params)
+        self.detector.release()
+        self.segmenter.release()
+        edit = _WheelEdit(
+            editor=self.editor,
+            rim=load_photo(item.rim_path),
+            prompt=build_prompt(params.prompt_suffix),
+            seed=item.seed,
+            resolution=params.resolution,
+        )
+        item.on_progress(Progress(wheel=1, wheels=1))
+        with Image.open(item.mask_path) as mask_file:
+            mask = mask_file.convert("L")
+
+        def on_step(step: int, steps: int) -> None:
+            item.on_progress(Progress(wheel=1, wheels=1, step=step, steps=steps))
+
+        result = edit.apply(
+            load_photo(item.result_path), mask, wheel_dir(item.output_dir, item.wheel_id), on_step
+        )
+        target = save_png(
+            result, _next_result_path(item.output_dir), metadata=read_metadata(item.photo_path)
+        )
+        return GenerateResult(result_path=target, width=result.width, height=result.height)
+
     def release(self) -> None:
         self.detector.release()
         self.segmenter.release()
@@ -185,6 +214,13 @@ def _save_mask(raw: Image.Image, params: EditParams, target: Path) -> MaskFiles 
         overlay=save_png(_overlay(mask), target / "overlay.png"),
         box=grown,
     )
+
+
+def _next_result_path(output_dir: Path) -> Path:
+    number = 2
+    while (output_dir / f"result-{number}.png").exists():
+        number += 1
+    return output_dir / f"result-{number}.png"
 
 
 def build_prompt(suffix: str = "") -> str:

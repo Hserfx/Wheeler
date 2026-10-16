@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from fake_models import BoxDetector, DiscSegmenter, SolidEditor, disc_mask
+from photo_files import display_profile
 from PIL import Image
 
 from wheeler_shared.progress import Progress
@@ -14,6 +15,7 @@ from wheeler_worker.processing import (
     DetectItem,
     GenerateItem,
     JobCancelled,
+    RegenerateWheelItem,
     SegmentItem,
     build_processor,
 )
@@ -264,3 +266,79 @@ def test_exception_from_progress_callback_stops_generation_before_next_wheel(
 
     assert len(editor.calls) == 1 and editor.steps_run == 2
     assert not (tmp_path / "result.png").exists()
+
+
+def _two_wheel_result(tmp_path: Path) -> tuple[Path, dict[int, Path], Path]:
+    """Zdjęcie 400x240 z ICC, koła 3 i 4 wygenerowane na zielono: (zdjęcie, maski, wynik)."""
+    photo = tmp_path / "input.png"
+    rng = np.random.default_rng(5)
+    Image.fromarray(rng.integers(0, 256, (240, 400, 3), dtype=np.uint8)).save(
+        photo, icc_profile=display_profile()
+    )
+    segmenter = DiscSegmenter(radius=40)
+    processor = WheelSwapProcessor(
+        detector=BoxDetector(), segmenter=segmenter, editor=SolidEditor()
+    )
+    masks = processor.segment(
+        SegmentItem(
+            job_id=1,
+            photo_path=photo,
+            output_dir=tmp_path,
+            params={},
+            clicks={3: (100, 120), 4: (300, 120)},
+        )
+    ).masks
+    result = processor.generate(
+        GenerateItem(
+            job_id=1,
+            photo_path=photo,
+            rim_path=_rim(tmp_path / "rim.png"),
+            output_dir=tmp_path,
+            params={"seed": 7},
+            masks={wheel_id: files.mask for wheel_id, files in masks.items()},
+        )
+    )
+    return photo, {wheel_id: files.mask for wheel_id, files in masks.items()}, result.result_path
+
+
+def test_regenerating_one_wheel_keeps_every_pixel_outside_its_mask_bit_for_bit(
+    tmp_path: Path,
+) -> None:
+    photo, masks, previous = _two_wheel_result(tmp_path)
+    previous_bytes = previous.read_bytes()
+    editor = SolidEditor(color=(200, 0, 200))
+    processor = WheelSwapProcessor(detector=BoxDetector(), segmenter=DiscSegmenter(), editor=editor)
+    reports: list[Progress] = []
+
+    result = processor.regenerate_wheel(
+        RegenerateWheelItem(
+            job_id=1,
+            photo_path=photo,
+            result_path=previous,
+            rim_path=tmp_path / "rim.png",
+            output_dir=tmp_path,
+            params={"seed": 7, "prompt_suffix": "Matte."},
+            wheel_id=4,
+            mask_path=masks[4],
+            seed=99,
+            on_progress=reports.append,
+        )
+    )
+
+    [call] = editor.calls  # tylko ponawiane koło, z nowym seedem i tym samym promptem
+    assert call.seed == 99 and call.prompt.endswith("Photorealistic. Matte.")
+    assert result.result_path != previous and result.result_path.is_relative_to(tmp_path)
+    assert previous.read_bytes() == previous_bytes  # poprzedni wynik nietknięty
+    with Image.open(result.result_path) as output:
+        assert output.format == "PNG" and output.size == (400, 240)
+        assert (result.width, result.height) == (400, 240)
+        assert output.info.get("icc_profile") == display_profile()
+        pixels = np.asarray(output.convert("RGB"))
+    with Image.open(previous) as before:
+        old = np.asarray(before.convert("RGB"))
+    outside = np.asarray(Image.open(masks[4]).convert("L")) == 0
+    assert np.array_equal(pixels[outside], old[outside])  # w tym całe koło nr 3
+    assert (pixels[np.asarray(disc_mask((400, 240), (100, 120), 30)) > 0] == (10, 200, 30)).all()
+    assert (pixels[np.asarray(disc_mask((400, 240), (300, 120), 30)) > 0] == (200, 0, 200)).all()
+    assert reports[0] == Progress(wheel=1, wheels=1)
+    assert reports[-1] == Progress(wheel=1, wheels=1, step=1, steps=1)

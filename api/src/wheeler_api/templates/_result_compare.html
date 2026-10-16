@@ -48,6 +48,15 @@
       <button type="button" data-role="zoom-wheel" data-box="{{ wheel.box | join(',') }}"
               @click="zoom($el.dataset.box)"
               class="rounded px-2 py-1 hover:bg-slate-100">{{ t.zoom_wheel.format(number=loop.index) }}</button>
+      {%- set seed = wheel_seed(job, wheel) %}
+      {%- if seed is not none %}
+      <span class="text-xs text-slate-500">{{ t.wheel_seed }} <span data-role="wheel-seed" class="font-mono">{{ seed }}</span></span>
+      {%- endif %}
+      <form action="/jobs/{{ job.id }}/wheels/{{ wheel.id }}/regenerate" method="post"
+            x-data="{ sending: false }" @submit="sending = true">
+        <button type="submit" data-role="regenerate-wheel" :disabled="sending" title="{{ t.wheel_regenerate_hint }}"
+                class="rounded bg-slate-900 px-2 py-1 font-medium text-white hover:bg-slate-700 disabled:opacity-50">{{ t.wheel_regenerate }}</button>
+      </form>
     </li>
     {% endfor %}
   </ul>

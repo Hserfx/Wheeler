@@ -5,8 +5,10 @@ pliki pomocnicze obok nich, np. podgląd HEIC),
 bo usunięcie oryginału z Historii kasuje cały jego katalog. Pliki spoza katalogu zadania
 (np. felga z biblioteki) są wskazywane tą samą ścieżką. Parametry, w tym seed, są
 kopiowane bez zmian, koła razem ze źródłem (`source`) i prostokątem maski (`box_*`), a także
-`Job.wheels_detected`. Gdy wszystkie koła mają maski, zadanie od razu trafia do kolejki;
-inaczej czeka na wybór koła jako szkic.
+`Job.wheels_detected`. Seedy pojedynczych kół (`Wheel.seed`, „ponów to koło”, ticket 07)
+nie są kopiowane: ponowić można tylko zadanie nieudane albo anulowane, a nowe generowanie
+i tak liczy wszystkie koła od nowa z seedem zadania. Gdy wszystkie koła mają maski, zadanie
+od razu trafia do kolejki; inaczej czeka na wybór koła jako szkic.
 """
 
 from __future__ import annotations

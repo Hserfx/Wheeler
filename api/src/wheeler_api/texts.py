@@ -93,12 +93,26 @@ TEXTS: Final[dict[str, str]] = {
     "job_result": "Wynik",
     "job_download": "Pobierz PNG",
     # Ekran wyniku (suwak przed/po, powiększanie, ponowienie koła)
-    "compare_hint": "Przesuń suwak, aby porównać zdjęcie przed i po. Wybierz koło, aby je powiększyć.",
+    "compare_hint": (
+        "Przesuń suwak, aby porównać zdjęcie przed i po. Wybierz koło, aby je powiększyć."
+    ),
     "compare_before": "Przed",
     "compare_after": "Po",
     "compare_slider": "Suwak przed/po",
     "zoom_wheel": "Koło {number}",
     "zoom_reset": "Cały obraz",
+    "wheel_regenerate": "Ponów to koło",
+    "wheel_regenerate_hint": (
+        "Generuje to koło od nowa z innym seedem; reszta zdjęcia się nie zmienia."
+    ),
+    "wheel_seed": "seed",
+    "error_not_regeneratable": (
+        "Ponowić koło można tylko w gotowym wyniku, gdy nic innego nie jest generowane."
+    ),
+    "status_regenerating": "Ponowne generowanie koła…",
+    "error_regenerate_failed": (
+        "Nie udało się ponownie wygenerować koła. Poprzedni wynik został zachowany."
+    ),
     "job_error": "Błąd",
     "job_new": "Wgraj kolejne zdjęcie",
     "job_delete": "Usuń zadanie",
@@ -181,12 +195,14 @@ def job_status_label(job: Job) -> str:
         return TEXTS["status_detecting"]
     if job.status.busy and job.cancel_requested:
         return TEXTS["status_cancelling"]
+    if job.status.busy and job.task == TaskKind.REGENERATE_WHEEL:
+        return TEXTS["status_regenerating"]
     return STATUS_LABELS[job.status]
 
 
 def job_progress(job: Job) -> Progress | None:
     """Postęp generowania, gdy worker nad nim pracuje."""
-    if job.status != JobStatus.RUNNING or job.task != TaskKind.GENERATE:
+    if job.status != JobStatus.RUNNING or job.task is None or not job.task.generates:
         return None
     return Progress.from_json(job.progress)
 
@@ -201,7 +217,9 @@ def progress_label(progress: Progress) -> str:
 
 def can_cancel(job: Job) -> bool:
     """Przycisk „Anuluj”: generowanie w kolejce albo w trakcie, bez wcześniejszej prośby."""
-    return job.status.busy and job.task == TaskKind.GENERATE and not job.cancel_requested
+    return (
+        job.status.busy and job.task is not None and job.task.generates and not job.cancel_requested
+    )
 
 
 MODEL_STATE_LABELS: Final[dict[ModelState, str]] = {

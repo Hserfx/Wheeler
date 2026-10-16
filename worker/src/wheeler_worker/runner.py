@@ -21,8 +21,9 @@ from wheeler_shared.queue import (
     complete_segmentation,
     fail_job,
 )
+from wheeler_shared.rim_library import claim_next_rim, complete_rim_cut, fail_rim_cut
 from wheeler_shared.storage import Storage
-from wheeler_worker.processing import GenerateItem, Processor, SegmentItem
+from wheeler_worker.processing import CutRimItem, GenerateItem, Processor, SegmentItem
 
 log = logging.getLogger(__name__)
 
@@ -79,7 +80,12 @@ HANDLERS: dict[TaskKind, Handler] = {
 def run_once(
     session_factory: sessionmaker[Session], storage: Storage, processor: Processor
 ) -> bool:
-    """Przetwarza następne oczekujące zadanie. Zwraca False, gdy kolejka jest pusta."""
+    """Przetwarza następne oczekujące zadanie. Zwraca False, gdy kolejka jest pusta.
+
+    Felgi do wycięcia (biblioteka, ~1 s, użytkownik czeka na podgląd) idą przed zadaniami.
+    """
+    if _cut_next_rim(session_factory, storage, processor):
+        return True
     with session_factory.begin() as session:
         job = claim_next_job(session)
     if job is None:
@@ -97,6 +103,34 @@ def run_once(
     with session_factory.begin() as session:
         save(session)
     log.info("Zadanie %s (%s): gotowe", job.id, job.task)
+    return True
+
+
+def _cut_next_rim(
+    session_factory: sessionmaker[Session], storage: Storage, processor: Processor
+) -> bool:
+    with session_factory.begin() as session:
+        rim = claim_next_rim(session)
+    if rim is None:
+        return False
+
+    log.info("Felga %s: usuwanie tła", rim.id)
+    original = storage.path(rim.original_path)
+    try:
+        result = processor.cut_rim(
+            CutRimItem(
+                rim_id=rim.id, original_path=original, output_dir=original.parent, click=rim.click
+            )
+        )
+        cut_path = storage.relative(result.cut_path)
+    except Exception as exc:
+        log.exception("Felga %s: błąd", rim.id)
+        with session_factory.begin() as session:
+            fail_rim_cut(session, rim.id, error=f"{type(exc).__name__}: {exc}")
+        return True
+
+    with session_factory.begin() as session:
+        complete_rim_cut(session, rim.id, cut_path=cut_path)
     return True
 
 

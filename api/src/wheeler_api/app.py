@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from wheeler_api.rim_routes import router as rim_router
 from wheeler_api.routes import router
 from wheeler_api.settings import ApiSettings
 from wheeler_api.texts import PARAM_LABELS, STATUS_LABELS, TEXTS, job_status_label
@@ -66,6 +67,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=PACKAGE_DIR / "static"), name="static")
     app.mount("/files", StaticFiles(directory=storage.root, check_dir=False), name="files")
     app.include_router(router)
+    app.include_router(rim_router)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(request: Request, exc: StarletteHTTPException) -> Response:

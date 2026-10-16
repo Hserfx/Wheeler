@@ -20,15 +20,19 @@ import numpy as np
 from PIL import Image
 
 from wheeler_shared.edit_params import EditParams
+from wheeler_worker.background import BackgroundRemover
 from wheeler_worker.compositing import composite, crop_box_for, grow_mask, mask_box, working_size
 from wheeler_worker.photos import load_photo, save_png
 from wheeler_worker.processing import (
+    CutRimItem,
+    CutRimResult,
     GenerateItem,
     GenerateResult,
     MaskFiles,
     SegmentItem,
     SegmentResult,
 )
+from wheeler_worker.rim_cut import cut_out, reference
 from wheeler_worker.rim_editor import RimEditor
 from wheeler_worker.segmenter import Segmenter
 
@@ -52,9 +56,17 @@ def wheel_dir(output_dir: Path, wheel_id: int) -> Path:
 
 
 class WheelSwapProcessor:
-    def __init__(self, *, segmenter: Segmenter, editor: RimEditor) -> None:
+    def __init__(
+        self,
+        *,
+        segmenter: Segmenter,
+        editor: RimEditor,
+        remover: BackgroundRemover | None = None,
+    ) -> None:
         self.segmenter = segmenter
         self.editor = editor
+        # Usuwanie tła felgi (biblioteka felg); bez niego `cut_rim` działa tylko z kliknięciem.
+        self.remover = remover
 
     def segment(self, item: SegmentItem) -> SegmentResult:
         photo = load_photo(item.photo_path)
@@ -73,6 +85,20 @@ class WheelSwapProcessor:
                 overlay=save_png(_overlay(mask), target / "overlay.png"),
             )
         return SegmentResult(masks=masks)
+
+    def cut_rim(self, item: CutRimItem) -> CutRimResult:
+        """Felga bez tła: automatycznie (BiRefNet) albo z kliknięcia w felgę (SAM 2, całe koło)."""
+        photo = load_photo(item.original_path)
+        if item.click is not None:
+            foreground = self.segmenter.segment_click(photo, item.click)
+        elif self.remover is not None:
+            foreground = self.remover.foreground(photo)
+        else:
+            raise RuntimeError("Procesor nie ma modelu do usuwania tła")
+        cut = cut_out(photo, foreground)
+        if cut is None:
+            raise ValueError("Nie znaleziono felgi na zdjęciu")
+        return CutRimResult(cut_path=save_png(cut, item.output_dir / "cut.png"))
 
     def generate(self, item: GenerateItem) -> GenerateResult:
         params = EditParams.from_params(item.params)

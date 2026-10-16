@@ -1,6 +1,7 @@
 """Punkt rozszerzenia: przetwarzanie zadań przez worker.
 
-`Processor` ma po jednej metodzie na rodzaj zadania (`wheeler_shared.models.TaskKind`).
+`Processor` ma po jednej metodzie na rodzaj zadania (`wheeler_shared.models.TaskKind`)
+oraz `cut_rim` dla kolejki felg (`wheeler_shared.rim_library`).
 Metody pracują wyłącznie na plikach (wejście w katalogu zadania, wynik do `output_dir`)
 i nie znają bazy. Runner (`runner.py`) pobiera zadanie z kolejki, buduje `*Item`, woła
 właściwą metodę i zapisuje wynik w bazie.
@@ -61,19 +62,40 @@ class GenerateResult:
     height: int
 
 
+@dataclass(frozen=True)
+class CutRimItem:
+    """Usunięcie tła ze zdjęcia felgi (biblioteka felg, `wheeler_shared.rim_library`)."""
+
+    rim_id: int
+    original_path: Path  # bezwzględna ścieżka zdjęcia felgi
+    output_dir: Path  # bezwzględny katalog felgi na wolumenie danych (istnieje)
+    # Klik w felgę (piksele po obrocie EXIF): wycięcie przez SAM 2 zamiast automatycznego.
+    click: tuple[float, float] | None = None
+
+
+@dataclass(frozen=True)
+class CutRimResult:
+    cut_path: Path  # RGBA PNG przycięty do felgi, przezroczyste tło; na wolumenie danych
+
+
 class Processor(Protocol):
     def segment(self, item: SegmentItem, /) -> SegmentResult: ...
 
     def generate(self, item: GenerateItem, /) -> GenerateResult: ...
 
+    def cut_rim(self, item: CutRimItem, /) -> CutRimResult: ...
+
 
 def _wheel_swap(settings: WorkerSettings) -> Processor:
+    from wheeler_worker.background import BiRefNetRemover
     from wheeler_worker.rim_editor import MfluxRimEditor
     from wheeler_worker.segmenter import Sam2Segmenter
     from wheeler_worker.wheel_swap import WheelSwapProcessor
 
     return WheelSwapProcessor(
-        segmenter=Sam2Segmenter(), editor=MfluxRimEditor(model_path=settings.mflux_model_path)
+        segmenter=Sam2Segmenter(),
+        editor=MfluxRimEditor(model_path=settings.mflux_model_path),
+        remover=BiRefNetRemover(),
     )
 
 

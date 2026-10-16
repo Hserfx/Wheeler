@@ -6,12 +6,13 @@ import io
 import re
 
 import numpy as np
-from fake_models import DiscSegmenter, SolidEditor
+from fake_models import DiscSegmenter, OpaqueRemover, SolidEditor
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
 from wheeler_shared.storage import Storage
+from wheeler_worker.background import BackgroundRemover
 from wheeler_worker.runner import run_once
 from wheeler_worker.wheel_swap import WheelSwapProcessor
 
@@ -40,6 +41,13 @@ def rim_png() -> bytes:
 def fake_processor(radius: int = 10) -> WheelSwapProcessor:
     """Prawdziwy procesor podmiany felgi z atrapami SAM 2 i mflux (zielona felga)."""
     return WheelSwapProcessor(segmenter=DiscSegmenter(radius=radius), editor=SolidEditor())
+
+
+def rim_processor(remover: BackgroundRemover | None = None) -> WheelSwapProcessor:
+    """Procesor z atrapą usuwania tła (domyślnie felga zostaje bez zmian)."""
+    return WheelSwapProcessor(
+        segmenter=DiscSegmenter(), editor=SolidEditor(), remover=remover or OpaqueRemover()
+    )
 
 
 def upload(

@@ -12,6 +12,7 @@ TEXTS: Final[dict[str, str]] = {
     "app_tagline": "Podmiana felg na zdjęciu samochodu",
     "nav_home": "Nowe zdjęcie",
     "nav_history": "Historia",
+    "nav_rims": "Biblioteka felg",
     # Historia
     "history_heading": "Historia",
     "history_empty": "Nie ma jeszcze żadnych zadań.",
@@ -43,6 +44,34 @@ TEXTS: Final[dict[str, str]] = {
     "upload_no_file_chosen": "Nie wybrano pliku",
     "upload_submit": "Dalej",
     "upload_sending": "Wysyłanie…",
+    # Biblioteka felg
+    "library_heading": "Biblioteka felg",
+    "library_hint": (
+        "Felgi dodane raz można wybierać przy kolejnych zdjęciach. Tło jest usuwane automatycznie."
+    ),
+    "library_empty": "Biblioteka jest pusta. Dodaj pierwszą felgę poniżej.",
+    "rim_unnamed": "Felga nr {id}",
+    "rim_new": "Nowa felga",
+    "rim_used": "Użyto: {count}×",
+    "rim_last_used": "ostatnio",
+    "rim_delete": "Usuń z biblioteki",
+    "rim_delete_confirm": (
+        "Usunąć felgę z biblioteki? Zadania, które jej użyły, zachowają swoją kopię felgi."
+    ),
+    "rim_add_heading": "Dodaj nową felgę",
+    "rim_add_hint": "Zdjęcie felgi (JPEG, PNG lub WebP). Tło usuniemy automatycznie.",
+    "rim_name_placeholder": "Nazwa (opcjonalnie)",
+    "rim_add_submit": "Dodaj felgę",
+    "rim_cutting": "Usuwanie tła…",
+    "rim_original": "Oryginał",
+    "rim_cut": "Wycięta felga",
+    "rim_review_hint": (
+        "Sprawdź wyciętą felgę. Jeśli zostało coś poza nią (np. karoseria), kliknij felgę "
+        "na oryginale, a wytniemy samo koło."
+    ),
+    "rim_cut_failed": "Nie udało się wyciąć felgi. Kliknij felgę na oryginale albo odrzuć zdjęcie.",
+    "rim_accept": "Dodaj do biblioteki",
+    "rim_reject": "Odrzuć",
     # Wybór koła i generowanie
     "wheel_click_hint": "Kliknij koło, w którym chcesz podmienić felgę.",
     "wheel_mask_hint": (
@@ -75,7 +104,9 @@ TEXTS: Final[dict[str, str]] = {
     "status_failed": "Niepowodzenie",
     # Błędy
     "error_no_photo": "Wybierz zdjęcie samochodu.",
-    "error_no_rim": "Wybierz zdjęcie felgi.",
+    "error_no_rim": "Wybierz felgę z biblioteki albo dodaj nową.",
+    "error_rim_file": "Wybierz zdjęcie felgi.",
+    "error_rim_busy": "Felga jest teraz przetwarzana albo jej stan się zmienił. Spróbuj ponownie.",
     "error_no_wheel": "Najpierw kliknij koło i poczekaj na jego maskę.",
     "error_job_busy": "Zadanie jest teraz przetwarzane albo już zakończone.",
     "error_mask_failed": "Nie udało się zaznaczyć koła w tym miejscu. Kliknij bliżej środka koła.",

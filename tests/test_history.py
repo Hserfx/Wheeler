@@ -138,8 +138,11 @@ def test_job_details_show_input_result_and_all_used_parameters(
         ), (key, params.group(0))
 
 
-def test_job_details_without_parameters_say_defaults_were_used(client: TestClient) -> None:
-    job_id = _upload(client)
+def test_job_details_without_parameters_say_defaults_were_used(
+    client: TestClient, session_factory: sessionmaker[Session], storage: Storage
+) -> None:
+    # Zadanie bez zapisanych parametrów (np. sprzed ticketu 09, który zapisuje użyte wartości).
+    job_id = _create_with_params(session_factory, storage, {})
     page = client.get(f"/jobs/{job_id}")
     assert TEXTS["job_params_default"] in page.text
 

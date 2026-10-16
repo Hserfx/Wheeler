@@ -5,6 +5,7 @@ Szablony odwołują się do nich przez `t.<klucz>`; w szablonach nie wpisujemy t
 
 from typing import Final
 
+from wheeler_shared import edit_params
 from wheeler_shared.models import Job, JobStatus, TaskKind
 from wheeler_shared.progress import Progress
 
@@ -37,13 +38,41 @@ TEXTS: Final[dict[str, str]] = {
     "delete_skipped": "Pominięto zadania w trakcie przetwarzania: {count}.",
     # Strona główna
     "upload_heading": "Wgraj zdjęcie samochodu i felgi",
-    "upload_hint": "Pliki JPEG, PNG lub WebP. Koło do podmiany wskażesz w następnym kroku.",
+    "upload_hint": (
+        "Pliki JPEG, PNG, WebP lub HEIC, do 50 MB i 40 MPx. Koło do podmiany wskażesz "
+        "w następnym kroku."
+    ),
+    "upload_drop_hint": "Przeciągnij plik tutaj albo wklej go ze schowka (Ctrl+V / ⌘V).",
     "upload_photo_label": "Zdjęcie samochodu",
     "upload_rim_label": "Zdjęcie felgi",
     "upload_choose": "Wybierz plik",
     "upload_no_file_chosen": "Nie wybrano pliku",
     "upload_submit": "Dalej",
     "upload_sending": "Wysyłanie…",
+    # Sekcja „Zaawansowane” (parametry edycji)
+    "advanced_heading": "Zaawansowane",
+    "advanced_hint": "Bez zmian użyte zostaną ustawienia domyślne.",
+    "param_seed": "Seed",
+    "param_seed_placeholder": "losowy",
+    "param_seed_hint": (
+        "Puste pole oznacza losowy seed. Użyty seed zobaczysz w szczegółach zadania."
+    ),
+    "param_resolution": "Rozdzielczość robocza (px)",
+    "param_resolution_hint": (
+        "Wielokrotność {step}, od {min} do {max}. Wyższa jest wolniejsza i zajmuje więcej pamięci."
+    ),
+    "param_mask_grow": "Poszerzenie maski (%)",
+    "param_mask_grow_hint": "Procent boku koła, od {min} do {max}.",
+    "param_prompt_suffix": "Dopisek do promptu",
+    "param_prompt_suffix_placeholder": "np. Glossy black finish.",
+    "param_prompt_suffix_hint": "Po angielsku; doklejany na końcu promptu.",
+    "param_empty": "(brak)",
+    "error_param_seed": "Seed musi być liczbą całkowitą od 0 do {seed_max} albo pustym polem.",
+    "error_param_resolution": (
+        "Rozdzielczość robocza musi być wielokrotnością {step} px, od {min} do {max} px."
+    ),
+    "error_param_mask_grow": "Poszerzenie maski musi być liczbą od {grow_min} do {grow_max}%.",
+    "error_param_prompt_suffix": "Dopisek do promptu może mieć najwyżej {length} znaków.",
     # Wybór koła i generowanie
     "wheel_click_hint": "Kliknij koło, w którym chcesz podmienić felgę.",
     "wheel_mask_hint": (
@@ -86,6 +115,13 @@ TEXTS: Final[dict[str, str]] = {
     # Błędy
     "error_no_photo": "Wybierz zdjęcie samochodu.",
     "error_no_rim": "Wybierz zdjęcie felgi.",
+    "error_upload_format": (
+        "Plik „{name}” nie jest obsługiwanym zdjęciem. Wgraj plik JPEG, PNG, WebP lub HEIC."
+    ),
+    "error_upload_too_large": "Plik „{name}” jest za duży. Limit to {limit} MB.",
+    "error_upload_too_many_pixels": (
+        "Zdjęcie „{name}” ma za dużą rozdzielczość. Limit to {limit} MPx (megapikseli)."
+    ),
     "error_no_wheel": "Najpierw kliknij koło i poczekaj na jego maskę.",
     "error_job_busy": "Zadanie jest teraz przetwarzane albo już zakończone.",
     "error_mask_failed": "Nie udało się zaznaczyć koła w tym miejscu. Kliknij bliżej środka koła.",
@@ -97,7 +133,12 @@ TEXTS: Final[dict[str, str]] = {
 
 # Etykiety parametrów zadania (`Job.params`) w szczegółach zadania. Parametr bez etykiety
 # wyświetla się pod swoim kluczem, więc nowe parametry są widoczne bez zmian w szablonach.
-PARAM_LABELS: Final[dict[str, str]] = {}
+PARAM_LABELS: Final[dict[str, str]] = {
+    edit_params.SEED: TEXTS["param_seed"],
+    edit_params.RESOLUTION: "Rozdzielczość robocza",
+    edit_params.MASK_GROW: "Poszerzenie maski",
+    edit_params.PROMPT_SUFFIX: TEXTS["param_prompt_suffix"],
+}
 
 STATUS_LABELS: Final[dict[JobStatus, str]] = {
     JobStatus.DRAFT: TEXTS["status_draft"],

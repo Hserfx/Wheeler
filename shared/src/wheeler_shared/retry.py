@@ -1,6 +1,7 @@
 """„Ponów”: nowe zadanie z tymi samymi danymi wejściowymi i parametrami co nieudane.
 
-Nowe zadanie dostaje własne kopie plików (zdjęcie, felga z katalogu zadania, maski kół),
+Nowe zadanie dostaje własne kopie plików (zdjęcie, felga z katalogu zadania, maski kół,
+pliki pomocnicze obok nich, np. podgląd HEIC),
 bo usunięcie oryginału z Historii kasuje cały jego katalog. Pliki spoza katalogu zadania
 (np. felga z biblioteki) są wskazywane tą samą ścieżką. Parametry, w tym seed, są
 kopiowane bez zmian. Gdy wszystkie koła mają maski, zadanie od razu trafia do kolejki;
@@ -9,6 +10,7 @@ inaczej czeka na wybór koła jako szkic.
 
 from __future__ import annotations
 
+import glob
 import shutil
 from pathlib import PurePosixPath
 
@@ -46,8 +48,13 @@ def retry_job(session: Session, storage: Storage, job_id: int, *, job_dir: str) 
         if source_dir is None:
             return relative
         target = f"{job_dir}/{name or PurePosixPath(relative).relative_to(source_dir)}"
-        storage.path(target).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(storage.path(relative), storage.path(target))
+        source_path, target_path = storage.path(relative), storage.path(target)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, target_path)
+        # Pliki pomocnicze obok obrazu (`<plik>.preview.jpg` dla HEIC/EXIF z ticketu 10).
+        for sidecar in source_path.parent.glob(f"{glob.escape(source_path.name)}.*"):
+            suffix = sidecar.name.removeprefix(source_path.name)
+            shutil.copy2(sidecar, target_path.with_name(target_path.name + suffix))
         return target
 
     retried = Job(status=JobStatus.DRAFT, params=dict(job.params))

@@ -30,7 +30,7 @@
   <dl class="mt-2 grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1" data-params>
     {% for key, value in job.params | dictsort %}
     <dt class="text-slate-500" data-param="{{ key }}">{{ param_labels.get(key, key) }}</dt>
-    <dd class="break-words font-mono">{{ value | param_value }}</dd>
+    <dd class="break-words font-mono">{{ value | param_value(key) }}</dd>
     {% endfor %}
   </dl>
   {% else %}

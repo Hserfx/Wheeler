@@ -16,6 +16,21 @@ RESOLUTION = "resolution"
 MASK_GROW = "mask_grow"
 PROMPT_SUFFIX = "prompt_suffix"
 
+# Dozwolone zakresy (sekcja „Zaawansowane”, ticket 09; wyniki spike'a 01).
+SEED_MAX = 2**31 - 1
+# Boki wycinka są wielokrotnością 32 px. Poniżej ~1024 px Turbo traci detal (siatka pikseli),
+# więc 768 px to dolna granica do szybkich prób. 1536 px przy q8 przekracza 32 GB (swap,
+# 35,7 GB); 1024 px ma szczyt 26,9 GB, a pamięć rośnie z polem wycinka, więc górna granica
+# 1152 px (pole 1,27 razy większe, szacunkowo ~29 GB) zostawia zapas przed swapem.
+RESOLUTION_STEP = 32
+RESOLUTION_MIN = 768
+RESOLUTION_MAX = 1152
+# Poszerzenie maski: 0 = dokładnie maska SAM; powyżej ~10% boku koła wycinek obejmuje już
+# spory kawałek nadkola i karoserii, które model wygeneruje na nowo.
+MASK_GROW_MIN = 0.0
+MASK_GROW_MAX = 0.10
+PROMPT_SUFFIX_MAX_LENGTH = 300
+
 
 @dataclass(frozen=True)
 class EditParams:

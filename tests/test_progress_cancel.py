@@ -14,6 +14,7 @@ import pytest
 from fake_models import DiscSegmenter, SolidEditor
 from fastapi.testclient import TestClient
 from helpers import click_wheel, encode, fake_processor, generate, noise_photo, upload
+from photo_files import phone_heic, quadrants
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -253,6 +254,22 @@ def test_cancelled_job_can_be_retried(
     new_id = _retry(client, job_id)
 
     assert TEXTS["status_queued"] in _status(client, new_id)
+
+
+def test_retried_heic_job_keeps_browser_preview_of_the_photo(
+    client: TestClient, session_factory: sessionmaker[Session], storage: Storage
+) -> None:
+    job_id = upload(client, phone_heic(quadrants(64, 48)), filename="IMG_0001.HEIC")
+    click_wheel(client, job_id, (48, 36))
+    assert run_once(session_factory, storage, fake_processor(radius=6))
+    generate(client, job_id)
+    client.post(f"/jobs/{job_id}/cancel")
+
+    new_id = _retry(client, job_id)
+
+    src = re.search(r'<img[^>]+src="(/files/[^"]+)"[^>]*data-role="input"', _status(client, new_id))
+    assert src and src.group(1).endswith(".preview.jpg")
+    assert client.get(src.group(1)).status_code == 200
 
 
 def test_only_failed_or_cancelled_job_can_be_retried(

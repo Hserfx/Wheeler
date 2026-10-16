@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import re
 import secrets
 import shutil
 from collections.abc import Iterator
-from pathlib import PurePath
 from typing import Annotated
 from urllib.parse import urlencode
 
@@ -16,8 +14,11 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session, object_session, selectinload, sessionmaker
 
+from wheeler_api import advanced
 from wheeler_api.texts import TEXTS
 from wheeler_api.thumbnails import ensure_thumbnail
+from wheeler_api.uploads import UploadRejected, save_image_upload
+from wheeler_shared import edit_params
 from wheeler_shared.editing import (
     EditingError,
     JobBusy,
@@ -62,12 +63,37 @@ SessionFactoryDep = Annotated[sessionmaker[Session], Depends(get_session_factory
 StorageDep = Annotated[Storage, Depends(get_storage)]
 TemplatesDep = Annotated[Jinja2Templates, Depends(get_templates)]
 
-_SAFE_SUFFIX = re.compile(r"\.[a-z0-9]{1,5}")
-
 
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, templates: TemplatesDep) -> Response:
-    return templates.TemplateResponse(request, "index.html", {"error": None})
+    return _home_page(request, templates)
+
+
+def _home_page(
+    request: Request,
+    templates: Jinja2Templates,
+    *,
+    error: str | None = None,
+    values: dict[str, str] | None = None,
+    advanced_error: bool = False,
+    status_code: int = 200,
+) -> Response:
+    """Strona główna; po błędzie pola „Zaawansowane” zachowują wpisane wartości."""
+    context = {
+        "error": error,
+        "advanced": values or advanced.default_values(),
+        "advanced_open": advanced_error,
+        "limits": {
+            "seed_max": edit_params.SEED_MAX,
+            "resolution_min": edit_params.RESOLUTION_MIN,
+            "resolution_max": edit_params.RESOLUTION_MAX,
+            "resolution_step": edit_params.RESOLUTION_STEP,
+            "mask_grow_min": advanced.percent(edit_params.MASK_GROW_MIN),
+            "mask_grow_max": advanced.percent(edit_params.MASK_GROW_MAX),
+            "prompt_suffix_max": edit_params.PROMPT_SUFFIX_MAX_LENGTH,
+        },
+    }
+    return templates.TemplateResponse(request, "index.html", context, status_code=status_code)
 
 
 @router.post("/jobs")
@@ -78,35 +104,60 @@ def create_job(
     templates: TemplatesDep,
     photo: UploadFile | None = None,
     rim: UploadFile | None = None,
+    seed: Annotated[str, Form()] = "",
+    resolution: Annotated[str, Form()] = "",
+    mask_grow: Annotated[str, Form()] = "",
+    prompt_suffix: Annotated[str, Form()] = "",
 ) -> Response:
+    values = {
+        edit_params.SEED: seed,
+        edit_params.RESOLUTION: resolution,
+        edit_params.MASK_GROW: mask_grow,
+        edit_params.PROMPT_SUFFIX: prompt_suffix,
+    }
     for field, upload in (("photo", photo), ("rim", rim)):
         if upload is None or not upload.filename:
-            return templates.TemplateResponse(
-                request, "index.html", {"error": TEXTS[f"error_no_{field}"]}, status_code=400
+            return _home_page(
+                request,
+                templates,
+                error=TEXTS[f"error_no_{field}"],
+                values=values if any(values.values()) else None,
+                status_code=400,
             )
     assert photo is not None and rim is not None
+    try:
+        params = advanced.parse(values)
+    except advanced.InvalidParam as exc:
+        return _home_page(
+            request,
+            templates,
+            error=advanced.error_message(exc),
+            values=values,
+            advanced_error=True,
+            status_code=400,
+        )
 
     job_dir = storage.new_job_dir()
     try:
-        input_path = _save_upload(storage, photo, f"{job_dir}/input")
-        rim_path = _save_upload(storage, rim, f"{job_dir}/rim")
+        input_path = save_image_upload(storage, photo, f"{job_dir}/input")
+        rim_path = save_image_upload(storage, rim, f"{job_dir}/rim")
         with session.begin():
-            job_id = create_draft_job(session, input_path=input_path, rim_path=rim_path, params={})
+            job_id = create_draft_job(
+                session, input_path=input_path, rim_path=rim_path, params=params
+            )
+    except UploadRejected as rejected:
+        shutil.rmtree(storage.path(job_dir), ignore_errors=True)
+        return _home_page(
+            request,
+            templates,
+            error=rejected.message,
+            values=values if any(values.values()) else None,
+            status_code=400,
+        )
     except BaseException:
         shutil.rmtree(storage.path(job_dir), ignore_errors=True)
         raise
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
-
-
-def _save_upload(storage: Storage, upload: UploadFile, stem: str) -> str:
-    """Zapisuje wgrany plik jako `<stem><rozszerzenie>` i zwraca ścieżkę względną."""
-    suffix = PurePath(upload.filename or "").suffix.lower()
-    if not _SAFE_SUFFIX.fullmatch(suffix):
-        suffix = ".bin"
-    relative = f"{stem}{suffix}"
-    with storage.path(relative).open("wb") as target:
-        shutil.copyfileobj(upload.file, target)
-    return relative
 
 
 @router.post("/jobs/{job_id}/wheels", response_class=HTMLResponse)

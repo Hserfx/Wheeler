@@ -74,7 +74,7 @@ draft --„Generuj”------------> generate (mflux, każde koło osobno, ten sam
   w `WHEELER_MFLUX_MODEL_PATH`, domyślnie `~/.cache/wheeler/qwen-image-2.1-turbo-mflux-q8`) albo
   `placeholder` (te same kroki z atrapami modeli, bez GPU; do pracy nad UI).
 - Modele ładują się leniwie przy pierwszym użyciu. Przed generowaniem Florence-2 i SAM 2 są zwalniane.
-  Detekcja z ładowaniem modeli ~4,5 s (pierwszy odczyt wag z dysku ~20 s), potem ~1 s na zdjęcie.
+  Detekcja z ładowaniem modeli 4–6 s (pierwszy odczyt wag z dysku ~20 s), potem ~1 s na zdjęcie.
 - Cykl życia modeli (`wheeler_worker/model_lifecycle.py`): po starcie workera modele nie są
   załadowane („uśpiony”), pierwsze zadanie je ładuje („ładowanie”, też w statusie zadania),
   potem zostają w pamięci („gotowy”) i są zwalniane po `WHEELER_MODEL_IDLE_TIMEOUT` sekundach

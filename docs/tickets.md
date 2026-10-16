@@ -112,7 +112,7 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 - Detekcja: Florence-2-large (`wheeler_worker/detector.py`) -> SAM 2.1 z promptem box (`Segmenter.segment_boxes`),
   jako `TaskKind.DETECT` w kolejce zaraz po wgraniu. Na prawdziwych modelach (M2 Max, `docs/spike/samples/`):
-  ciepło 0,8–1,0 s na zdjęcie, zimny start z ładowaniem modeli ~4,4 s; pierwszy odczyt wag z dysku (pusty cache
+  ciepło 0,8–1,0 s na zdjęcie, zimny start z ładowaniem modeli 4–6 s; pierwszy odczyt wag z dysku (pusty cache
   stron) ~20 s. Maski obejmują oponę i felgę, jak w spike'u (Golf 2/2, Sorento 2/2 z kawałkiem cienia, Vios 3 koła
   aut + koło skutera do usunięcia kliknięciem).
 - Klik w zdjęcie: w masce usuwa koło od razu (bez workera), obok masek dodaje koło (SAM 2, dwustopniowo jak w 03).

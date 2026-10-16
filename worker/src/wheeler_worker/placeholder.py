@@ -1,8 +1,9 @@
 """Atrapa modeli (`WHEELER_PROCESSOR=placeholder`): cały pipeline bez GPU i bez wag.
 
 Przydaje się do pracy nad UI: „detektor” znajduje dwa koła w stałych miejscach (dolne rogi
-zdjęcia), „SAM 2” zwraca okrąg wokół kliknięcia albo wpisany w box, a „mflux” zwraca
-wycinek w odcieniach szarości. Kompozycja, pliki i statusy są prawdziwe.
+zdjęcia), „SAM 2” zwraca okrąg wokół kliknięcia albo wpisany w box, „mflux” zwraca
+wycinek w odcieniach szarości, a „BiRefNet” zostawia elipsę wpisaną w kadr. Kompozycja,
+pliki i statusy są prawdziwe.
 """
 
 from __future__ import annotations
@@ -104,9 +105,27 @@ class GrayscaleEditor:
         self._weights.release()
 
 
+class EllipseRemover:
+    """Pierwszy plan: elipsa wpisana w obraz (felga zwykle wypełnia kadr)."""
+
+    def __init__(self, observer: LoadObserver = NO_OBSERVER) -> None:
+        self._weights = _FakeWeights(observer)
+
+    def foreground(self, image: Image.Image) -> Image.Image:
+        self._weights.load()
+        width, height = image.size
+        yy, xx = np.mgrid[0:height, 0:width]
+        inside = ((xx + 0.5) / width - 0.5) ** 2 + ((yy + 0.5) / height - 0.5) ** 2 <= 0.25
+        return Image.fromarray(inside.astype(np.uint8) * 255)
+
+    def release(self) -> None:
+        self._weights.release()
+
+
 def placeholder_processor(observer: LoadObserver = NO_OBSERVER) -> WheelSwapProcessor:
     return WheelSwapProcessor(
         detector=CornerDetector(observer),
         segmenter=CircleSegmenter(observer=observer),
         editor=GrayscaleEditor(observer),
+        remover=EllipseRemover(observer),
     )

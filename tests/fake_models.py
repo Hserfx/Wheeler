@@ -119,3 +119,38 @@ class SolidEditor:
 
     def release(self) -> None:
         pass
+
+
+@dataclass
+class CenterDiscRemover:
+    """„BiRefNet”: pierwszy plan to dysk o promieniu `radius` wokół środka zdjęcia."""
+
+    radius: int = 30
+    images: list[Image.Image] = field(default_factory=list)
+
+    def foreground(self, image: Image.Image) -> Image.Image:
+        self.images.append(image)
+        return disc_mask(image.size, (image.width // 2, image.height // 2), self.radius)
+
+    def release(self) -> None:
+        pass
+
+
+class OpaqueRemover:
+    """„BiRefNet”, który całe zdjęcie uznaje za pierwszy plan (felga bez zmian)."""
+
+    def foreground(self, image: Image.Image) -> Image.Image:
+        return Image.new("L", image.size, 255)
+
+    def release(self) -> None:
+        pass
+
+
+class NothingRemover:
+    """„BiRefNet”, który nie znalazł na zdjęciu żadnego obiektu (pusta maska)."""
+
+    def foreground(self, image: Image.Image) -> Image.Image:
+        return Image.new("L", image.size, 0)
+
+    def release(self) -> None:
+        pass

@@ -13,7 +13,17 @@ import numpy as np
 import pytest
 from fake_models import BoxDetector, DiscSegmenter, NothingSegmenter, SolidEditor
 from fastapi.testclient import TestClient
-from helpers import click_wheel, drain, encode, fake_processor, generate, noise_photo, upload
+from helpers import (
+    click_wheel,
+    drain,
+    encode,
+    fake_processor,
+    generate,
+    jpeg,
+    library_rim,
+    noise_photo,
+    upload,
+)
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -50,7 +60,9 @@ def test_home_page_asks_for_car_photo_and_rim(client: TestClient) -> None:
     assert '<html lang="pl"' in response.text
     assert TEXTS["upload_heading"] in response.text
     assert 'enctype="multipart/form-data"' in response.text
-    assert 'name="photo"' in response.text and 'name="rim"' in response.text
+    assert 'name="photo"' in response.text
+    # Felga: wybór z biblioteki albo dodanie nowej (z usunięciem tła).
+    assert 'id="rim-picker"' in response.text and 'hx-post="/rims"' in response.text
 
 
 def test_click_shows_mask_overlay_and_generation_changes_only_pixels_inside_it(
@@ -172,16 +184,23 @@ def test_failure_in_generation_marks_job_failed_with_error_on_page(
     assert "hx-trigger" not in status
 
 
-@pytest.mark.parametrize("missing", ["photo", "rim"])
-def test_upload_without_photo_or_rim_shows_error(client: TestClient, missing: str) -> None:
-    files = {
-        "photo": ("auto.jpg", encode(noise_photo()), "image/jpeg"),
-        "rim": ("felga.png", encode(noise_photo()), "image/png"),
-    }
-    files[missing] = ("", b"", "application/octet-stream")
-    response = client.post("/jobs", files=files)
+def test_upload_without_photo_shows_error_and_keeps_chosen_rim(client: TestClient) -> None:
+    rim_id = library_rim(client)
+    response = client.post(
+        "/jobs",
+        files={"photo": ("", b"", "application/octet-stream")},
+        data={"rim_id": str(rim_id)},
+    )
     assert response.status_code == 400
-    assert TEXTS[f"error_no_{missing}"] in response.text
+    assert TEXTS["error_no_photo"] in response.text
+    assert re.search(rf'name="rim_id" value="{rim_id}"[^>]*checked', response.text)
+
+
+def test_upload_without_rim_from_library_shows_error(client: TestClient) -> None:
+    library_rim(client)
+    response = client.post("/jobs", files={"photo": ("auto.jpg", jpeg(), "image/jpeg")})
+    assert response.status_code == 400
+    assert TEXTS["error_no_rim"] in response.text
 
 
 def test_unknown_job_returns_404(client: TestClient) -> None:

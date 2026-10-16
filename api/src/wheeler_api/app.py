@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from wheeler_api import advanced, model_state
+from wheeler_api.rim_routes import router as rim_router
 from wheeler_api.routes import router
 from wheeler_api.settings import ApiSettings
 from wheeler_api.texts import (
@@ -91,6 +92,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.mount("/files", StaticFiles(directory=storage.root, check_dir=False), name="files")
     app.include_router(router)
     app.include_router(model_state.router)
+    app.include_router(rim_router)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(request: Request, exc: StarletteHTTPException) -> Response:

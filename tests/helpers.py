@@ -10,12 +10,13 @@ import io
 import re
 
 import numpy as np
-from fake_models import BoxDetector, DiscSegmenter, SolidEditor
+from fake_models import BoxDetector, DiscSegmenter, OpaqueRemover, SolidEditor
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
 from wheeler_shared.storage import Storage
+from wheeler_worker.background import BackgroundRemover
 from wheeler_worker.runner import run_once
 from wheeler_worker.wheel_swap import WheelSwapProcessor
 
@@ -49,19 +50,60 @@ def fake_processor(radius: int = 10) -> WheelSwapProcessor:
     )
 
 
+def rim_processor(
+    remover: BackgroundRemover | None = None, detector: BoxDetector | None = None
+) -> WheelSwapProcessor:
+    """Procesor z atrapą usuwania tła (domyślnie felga zostaje bez zmian) i detektora kół
+    (domyślnie nic nie znajduje: tło usuwane z całego zdjęcia)."""
+    return WheelSwapProcessor(
+        detector=detector or BoxDetector(),
+        segmenter=DiscSegmenter(),
+        editor=SolidEditor(),
+        remover=remover or OpaqueRemover(),
+    )
+
+
+def library_rim(
+    client: TestClient,
+    rim: bytes | None = None,
+    *,
+    name: str = "",
+    remover: BackgroundRemover | None = None,
+) -> int:
+    """Dodaje felgę do biblioteki przez API: wgranie, usunięcie tła (worker z atrapą,
+    domyślnie felga bez zmian) i akceptacja podglądu. Zwraca id felgi.
+
+    Felgi mają pierwszeństwo w kolejce workera, więc `run_once` nie rusza innych zadań."""
+    state = client.app.state  # type: ignore[attr-defined]
+    response = client.post(
+        "/rims",
+        files={"rim": ("felga.png", rim if rim is not None else rim_png(), "image/png")},
+        data={"name": name, "mode": "manage"},
+    )
+    assert response.status_code == 200, response.text
+    assert run_once(state.session_factory, state.storage, rim_processor(remover))
+    pending = re.findall(r'data-rim-id="(\d+)"', client.get("/rims/picker").text)
+    assert len(pending) == 1, pending
+    response = client.post(f"/rims/{pending[0]}/accept", data={"mode": "manage"})
+    assert response.status_code == 200, response.text
+    return int(pending[0])
+
+
 def upload(
     client: TestClient,
     photo: bytes | None = None,
     *,
     filename: str = "auto.jpg",
     rim: bytes | None = None,
+    rim_id: int | None = None,
 ) -> int:
+    """Nowe zadanie: zdjęcie auta + felga z biblioteki (`rim_id` albo nowa felga `rim`)."""
+    if rim_id is None:
+        rim_id = library_rim(client, rim)
     response = client.post(
         "/jobs",
-        files={
-            "photo": (filename, photo if photo is not None else jpeg(), "image/jpeg"),
-            "rim": ("felga.png", rim if rim is not None else rim_png(), "image/png"),
-        },
+        files={"photo": (filename, photo if photo is not None else jpeg(), "image/jpeg")},
+        data={"rim_id": str(rim_id)},
         follow_redirects=False,
     )
     assert response.status_code == 303, response.text

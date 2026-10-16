@@ -1,12 +1,13 @@
 """Punkt rozszerzenia: przetwarzanie zadań przez worker.
 
-`Processor` ma po jednej metodzie na rodzaj zadania (`wheeler_shared.models.TaskKind`).
+`Processor` ma po jednej metodzie na rodzaj zadania (`wheeler_shared.models.TaskKind`)
+oraz `cut_rim` dla kolejki felg (`wheeler_shared.rim_library`).
 Metody pracują wyłącznie na plikach (wejście w katalogu zadania, wynik do `output_dir`)
 i nie znają bazy. Runner (`runner.py`) pobiera zadanie z kolejki, buduje `*Item`, woła
 właściwą metodę i zapisuje wynik w bazie.
 
 Procesory wybiera się po nazwie (`WHEELER_PROCESSOR`, `build_processor`):
-- `wheel-swap` (domyślny): Florence-2 + SAM 2 + mflux (`wheel_swap.WheelSwapProcessor`),
+- `wheel-swap` (domyślny): Florence-2 + SAM 2 + mflux + BiRefNet (`wheel_swap.WheelSwapProcessor`),
 - `placeholder`: te same kroki z atrapami modeli, bez GPU (`placeholder.py`).
 """
 
@@ -112,6 +113,22 @@ class GenerateResult:
     height: int
 
 
+@dataclass(frozen=True)
+class CutRimItem:
+    """Usunięcie tła ze zdjęcia felgi (biblioteka felg, `wheeler_shared.rim_library`)."""
+
+    rim_id: int
+    original_path: Path  # bezwzględna ścieżka zdjęcia felgi
+    output_dir: Path  # bezwzględny katalog felgi na wolumenie danych (istnieje)
+    # Klik w felgę (piksele po obrocie EXIF): wskazuje koło, gdy na zdjęciu jest ich kilka.
+    click: tuple[float, float] | None = None
+
+
+@dataclass(frozen=True)
+class CutRimResult:
+    cut_path: Path  # RGBA PNG przycięty do felgi, przezroczyste tło; na wolumenie danych
+
+
 class Processor(Protocol):
     def detect(self, item: DetectItem, /) -> DetectResult: ...
 
@@ -121,12 +138,15 @@ class Processor(Protocol):
 
     def regenerate_wheel(self, item: RegenerateWheelItem, /) -> GenerateResult: ...
 
+    def cut_rim(self, item: CutRimItem, /) -> CutRimResult: ...
+
     def release(self) -> None:
         """Zwalnia wszystkie modele z pamięci (po bezczynności; następne zadanie je załaduje)."""
         ...
 
 
 def _wheel_swap(settings: WorkerSettings, observer: LoadObserver) -> Processor:
+    from wheeler_worker.background import BiRefNetRemover
     from wheeler_worker.detector import FlorenceWheelDetector
     from wheeler_worker.rim_editor import MfluxRimEditor
     from wheeler_worker.segmenter import Sam2Segmenter
@@ -136,6 +156,7 @@ def _wheel_swap(settings: WorkerSettings, observer: LoadObserver) -> Processor:
         detector=FlorenceWheelDetector(observer=observer),
         segmenter=Sam2Segmenter(observer=observer),
         editor=MfluxRimEditor(model_path=settings.mflux_model_path, observer=observer),
+        remover=BiRefNetRemover(observer=observer),
     )
 
 

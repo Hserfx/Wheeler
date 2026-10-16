@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 import numpy as np
 from PIL import Image
 
+Box = tuple[float, float, float, float]  # x0, y0, x1, y1 w pikselach zdjęcia
+
 
 def disc_mask(size: tuple[int, int], center: tuple[float, float], radius: int) -> Image.Image:
     width, height = size
@@ -27,6 +29,30 @@ class DiscSegmenter:
         self.clicks.append(point)
         return disc_mask(image.size, point, self.radius)
 
+    def segment_boxes(self, image: Image.Image, boxes: list[Box]) -> list[Image.Image]:
+        """Koło wpisane w box (dysk o średnicy krótszego boku)."""
+        return [
+            disc_mask(
+                image.size,
+                ((x0 + x1) / 2, (y0 + y1) / 2),
+                round(min(x1 - x0, y1 - y0) / 2),
+            )
+            for x0, y0, x1, y1 in boxes
+        ]
+
+    def release(self) -> None:
+        pass
+
+
+@dataclass
+class BoxDetector:
+    """„Florence-2”: zwraca zadane boxy kół niezależnie od zdjęcia."""
+
+    boxes: list[Box] = field(default_factory=list)
+
+    def detect(self, image: Image.Image) -> list[Box]:
+        return list(self.boxes)
+
     def release(self) -> None:
         pass
 
@@ -36,6 +62,9 @@ class NothingSegmenter:
 
     def segment_click(self, image: Image.Image, point: tuple[float, float]) -> Image.Image:
         return Image.new("L", image.size, 0)
+
+    def segment_boxes(self, image: Image.Image, boxes: list[Box]) -> list[Image.Image]:
+        return [Image.new("L", image.size, 0) for _ in boxes]
 
     def release(self) -> None:
         pass

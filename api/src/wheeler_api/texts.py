@@ -46,13 +46,15 @@ TEXTS: Final[dict[str, str]] = {
     # Wybór koła i generowanie
     "wheel_click_hint": "Kliknij koło, w którym chcesz podmienić felgę.",
     "wheel_mask_hint": (
-        "Zaznaczony obszar zostanie wygenerowany na nowo, reszta zdjęcia się nie zmieni. "
-        "Kliknij inne miejsce, aby wybrać koło ponownie."
+        "Zaznaczone koła zostaną wygenerowane na nowo, reszta zdjęcia się nie zmieni. "
+        "Kliknij maskę, aby usunąć koło, albo kliknij koło bez maski, aby je dodać."
     ),
+    "wheels_none_detected": ("Nie wykryto żadnego koła. Kliknij koło na zdjęciu, aby je dodać."),
+    "wheels_selected": "Wybrane koła: {count}",
     "wheel_picker_alt": "Zdjęcie samochodu: kliknij koło",
-    "wheel_mask_alt": "Maska wybranego koła",
+    "wheel_mask_alt": "Maska koła nr {number}",
     "generate_submit": "Generuj",
-    "generate_hint": "Generowanie jednego koła trwa około 2 minut.",
+    "generate_hint": "Generowanie trwa około 2 minut na każde koło.",
     "job_rim": "Felga",
     # Zadanie
     "job_heading": "Zadanie nr {id}",
@@ -69,6 +71,7 @@ TEXTS: Final[dict[str, str]] = {
     "status_label": "Status",
     "status_draft": "Wybór koła",
     "status_segmenting": "Wyznaczanie maski koła…",
+    "status_detecting": "Wykrywanie kół…",
     "status_queued": "W kolejce",
     "status_running": "Przetwarzanie…",
     "status_done": "Gotowe",
@@ -79,6 +82,9 @@ TEXTS: Final[dict[str, str]] = {
     "error_no_wheel": "Najpierw kliknij koło i poczekaj na jego maskę.",
     "error_job_busy": "Zadanie jest teraz przetwarzane albo już zakończone.",
     "error_mask_failed": "Nie udało się zaznaczyć koła w tym miejscu. Kliknij bliżej środka koła.",
+    "error_detection_failed": (
+        "Nie udało się automatycznie wykryć kół. Kliknij koło na zdjęciu, aby je dodać."
+    ),
     "error_not_found": "Nie znaleziono strony.",
     "error_generic": "Wystąpił błąd.",
     "error_back": "Wróć na stronę główną",
@@ -101,4 +107,6 @@ def job_status_label(job: Job) -> str:
     """Status zadania dla użytkownika; praca workera nad maską ma własny opis."""
     if job.status.busy and job.task == TaskKind.SEGMENT:
         return TEXTS["status_segmenting"]
+    if job.status.busy and job.task == TaskKind.DETECT:
+        return TEXTS["status_detecting"]
     return STATUS_LABELS[job.status]

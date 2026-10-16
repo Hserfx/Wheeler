@@ -16,18 +16,37 @@ from sqlalchemy.orm import Session, sessionmaker
 from wheeler_shared.models import TaskKind
 from wheeler_shared.queue import (
     ClaimedJob,
+    SavedMask,
     claim_next_job,
+    complete_detection,
     complete_job,
     complete_segmentation,
     fail_job,
 )
 from wheeler_shared.storage import Storage
-from wheeler_worker.processing import GenerateItem, Processor, SegmentItem
+from wheeler_worker.processing import DetectItem, GenerateItem, MaskFiles, Processor, SegmentItem
 
 log = logging.getLogger(__name__)
 
 SaveResult = Callable[[Session], None]
 Handler = Callable[[ClaimedJob, Storage, Processor], SaveResult]
+
+
+def _saved(storage: Storage, files: MaskFiles) -> SavedMask:
+    return SavedMask(
+        mask_path=storage.relative(files.mask),
+        overlay_path=storage.relative(files.overlay),
+        box=files.box,
+    )
+
+
+def _detect(job: ClaimedJob, storage: Storage, processor: Processor) -> SaveResult:
+    photo = storage.path(job.input_path)
+    result = processor.detect(
+        DetectItem(job_id=job.id, photo_path=photo, output_dir=photo.parent, params=job.params)
+    )
+    wheels = [_saved(storage, files) for files in result.wheels]
+    return lambda session: complete_detection(session, job.id, wheels=wheels)
 
 
 def _segment(job: ClaimedJob, storage: Storage, processor: Processor) -> SaveResult:
@@ -42,10 +61,7 @@ def _segment(job: ClaimedJob, storage: Storage, processor: Processor) -> SaveRes
             clicks=clicks,
         )
     )
-    masks = {
-        wheel_id: (storage.relative(files.mask), storage.relative(files.overlay))
-        for wheel_id, files in result.masks.items()
-    }
+    masks = {wheel_id: _saved(storage, files) for wheel_id, files in result.masks.items()}
     return lambda session: complete_segmentation(session, job.id, masks=masks)
 
 
@@ -71,6 +87,7 @@ def _generate(job: ClaimedJob, storage: Storage, processor: Processor) -> SaveRe
 
 
 HANDLERS: dict[TaskKind, Handler] = {
+    TaskKind.DETECT: _detect,
     TaskKind.SEGMENT: _segment,
     TaskKind.GENERATE: _generate,
 }

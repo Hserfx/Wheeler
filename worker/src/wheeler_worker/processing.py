@@ -6,18 +6,28 @@ i nie znają bazy. Runner (`runner.py`) pobiera zadanie z kolejki, buduje `*Item
 właściwą metodę i zapisuje wynik w bazie.
 
 Procesory wybiera się po nazwie (`WHEELER_PROCESSOR`, `build_processor`):
-- `wheel-swap` (domyślny): SAM 2 + mflux (`wheel_swap.WheelSwapProcessor`),
+- `wheel-swap` (domyślny): Florence-2 + SAM 2 + mflux (`wheel_swap.WheelSwapProcessor`),
 - `placeholder`: te same kroki z atrapami modeli, bez GPU (`placeholder.py`).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
 from wheeler_worker.settings import WorkerSettings
+
+
+@dataclass(frozen=True)
+class DetectItem:
+    """Zdjęcie auta -> maski wszystkich widocznych kół."""
+
+    job_id: int
+    photo_path: Path  # bezwzględna ścieżka zdjęcia auta
+    output_dir: Path  # bezwzględny katalog zadania na wolumenie danych (istnieje)
+    params: Mapping[str, Any]
 
 
 @dataclass(frozen=True)
@@ -35,6 +45,12 @@ class SegmentItem:
 class MaskFiles:
     mask: Path  # L 0/255, rozmiar zdjęcia: dokładnie obszar, który generowanie może zmienić
     overlay: Path  # RGBA do wyświetlenia na zdjęciu (przezroczysty poza maską)
+    box: tuple[int, int, int, int]  # prostokąt obejmujący maskę (left, top, right, bottom)
+
+
+@dataclass(frozen=True)
+class DetectResult:
+    wheels: Sequence[MaskFiles]  # wykryte koła (pusta lista = nie znaleziono żadnego)
 
 
 @dataclass(frozen=True)
@@ -62,18 +78,23 @@ class GenerateResult:
 
 
 class Processor(Protocol):
+    def detect(self, item: DetectItem, /) -> DetectResult: ...
+
     def segment(self, item: SegmentItem, /) -> SegmentResult: ...
 
     def generate(self, item: GenerateItem, /) -> GenerateResult: ...
 
 
 def _wheel_swap(settings: WorkerSettings) -> Processor:
+    from wheeler_worker.detector import FlorenceWheelDetector
     from wheeler_worker.rim_editor import MfluxRimEditor
     from wheeler_worker.segmenter import Sam2Segmenter
     from wheeler_worker.wheel_swap import WheelSwapProcessor
 
     return WheelSwapProcessor(
-        segmenter=Sam2Segmenter(), editor=MfluxRimEditor(model_path=settings.mflux_model_path)
+        detector=FlorenceWheelDetector(),
+        segmenter=Sam2Segmenter(),
+        editor=MfluxRimEditor(model_path=settings.mflux_model_path),
     )
 
 

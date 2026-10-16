@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import re
 import secrets
 import shutil
 from collections.abc import Iterator
-from pathlib import PurePath
 from typing import Annotated
 from urllib.parse import urlencode
 
@@ -18,6 +16,7 @@ from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from wheeler_api.texts import TEXTS
 from wheeler_api.thumbnails import ensure_thumbnail
+from wheeler_api.uploads import UploadRejected, save_image_upload
 from wheeler_shared.editing import (
     EditingError,
     JobBusy,
@@ -58,8 +57,6 @@ SessionFactoryDep = Annotated[sessionmaker[Session], Depends(get_session_factory
 StorageDep = Annotated[Storage, Depends(get_storage)]
 TemplatesDep = Annotated[Jinja2Templates, Depends(get_templates)]
 
-_SAFE_SUFFIX = re.compile(r"\.[a-z0-9]{1,5}")
-
 
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, templates: TemplatesDep) -> Response:
@@ -84,25 +81,19 @@ def create_job(
 
     job_dir = storage.new_job_dir()
     try:
-        input_path = _save_upload(storage, photo, f"{job_dir}/input")
-        rim_path = _save_upload(storage, rim, f"{job_dir}/rim")
+        input_path = save_image_upload(storage, photo, f"{job_dir}/input")
+        rim_path = save_image_upload(storage, rim, f"{job_dir}/rim")
         with session.begin():
             job_id = create_draft_job(session, input_path=input_path, rim_path=rim_path, params={})
+    except UploadRejected as rejected:
+        shutil.rmtree(storage.path(job_dir), ignore_errors=True)
+        return templates.TemplateResponse(
+            request, "index.html", {"error": rejected.message}, status_code=400
+        )
     except BaseException:
         shutil.rmtree(storage.path(job_dir), ignore_errors=True)
         raise
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
-
-
-def _save_upload(storage: Storage, upload: UploadFile, stem: str) -> str:
-    """Zapisuje wgrany plik jako `<stem><rozszerzenie>` i zwraca ścieżkę względną."""
-    suffix = PurePath(upload.filename or "").suffix.lower()
-    if not _SAFE_SUFFIX.fullmatch(suffix):
-        suffix = ".bin"
-    relative = f"{stem}{suffix}"
-    with storage.path(relative).open("wb") as target:
-        shutil.copyfileobj(upload.file, target)
-    return relative
 
 
 @router.post("/jobs/{job_id}/wheels", response_class=HTMLResponse)

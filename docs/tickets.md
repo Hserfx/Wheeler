@@ -198,14 +198,21 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 03
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Akceptowane formaty: JPEG, PNG, WebP i HEIC, a inne są odrzucane z komunikatem
-- [ ] Obrót według orientacji EXIF stosowany przed detekcją i kompozycją
-- [ ] Limity 40 MPx / 50 MB sprawdzane z czytelnym komunikatem
-- [ ] Wgrywanie przez drag & drop, wybór pliku i wklejenie ze schowka
-- [ ] Wynikowy PNG zawiera profil ICC oryginału (np. Display P3) i EXIF bez danych GPS
-- [ ] Test: zdjęcie HEIC z orientacją i GPS daje poprawnie obrócony PNG z ICC i bez GPS
+- [x] Akceptowane formaty: JPEG, PNG, WebP i HEIC, a inne są odrzucane z komunikatem
+- [x] Obrót według orientacji EXIF stosowany przed detekcją i kompozycją
+- [x] Limity 40 MPx / 50 MB sprawdzane z czytelnym komunikatem
+- [x] Wgrywanie przez drag & drop, wybór pliku i wklejenie ze schowka
+- [x] Wynikowy PNG zawiera profil ICC oryginału (np. Display P3) i EXIF bez danych GPS
+- [x] Test: zdjęcie HEIC z orientacją i GPS daje poprawnie obrócony PNG z ICC i bez GPS
+
+**Comments:**
+
+- Walidacja: `wheeler_api/uploads.py` (`save_image_upload`), wspólna dla zdjęcia auta i felgi (i biblioteki felg z 06). Format po zawartości, limity 50 MB (strumieniowo) i 40 MPx (z nagłówka, bez dekodowania).
+- HEIC i zdjęcia z orientacją EXIF dostają obrócony podgląd `<plik>.preview.jpg` w pełnym rozmiarze (filtr `display_path` w szablonach), więc kliknięcia są w tym samym układzie co w workerze niezależnie od tego, jak przeglądarka traktuje EXIF.
+- Wynik: `photos.read_metadata` + `save_png(..., metadata=)` (ICC 1:1, EXIF bez GPS i orientacji). Test bit w bit po obrocie EXIF: `tests/test_photo_input.py`. Testowe pliki z metadanymi generuje `tests/photo_files.py`.
+- Drag & drop i wklejanie (Alpine, `DataTransfer` do zwykłego pola pliku) sprawdzone testem obecności w HTML, bez ręcznego testu w przeglądarce.
 
 ---
 

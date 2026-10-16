@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -16,6 +17,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from wheeler_api.routes import router
 from wheeler_api.settings import ApiSettings
 from wheeler_api.texts import PARAM_LABELS, STATUS_LABELS, TEXTS, job_status_label
+from wheeler_api.uploads import UPLOAD_ACCEPT, display_path
 from wheeler_shared.db import make_engine, make_session_factory
 from wheeler_shared.history import is_deletable
 from wheeler_shared.migrate import migrate
@@ -37,6 +39,7 @@ def create_templates() -> Jinja2Templates:
     templates.env.globals["status_labels"] = STATUS_LABELS
     templates.env.globals["param_labels"] = PARAM_LABELS
     templates.env.globals["job_status_label"] = job_status_label
+    templates.env.globals["upload_accept"] = UPLOAD_ACCEPT
     templates.env.filters["param_value"] = param_value
     templates.env.tests["deletable"] = is_deletable
     return templates
@@ -62,6 +65,8 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.storage = storage
     app.state.templates = create_templates()
+    # Adres obrazu dla przeglądarki (podgląd HEIC / obróconego zdjęcia): `path | display_path`.
+    app.state.templates.env.filters["display_path"] = partial(display_path, storage)
 
     app.mount("/static", StaticFiles(directory=PACKAGE_DIR / "static"), name="static")
     app.mount("/files", StaticFiles(directory=storage.root, check_dir=False), name="files")

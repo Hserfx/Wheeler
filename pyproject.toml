@@ -1,0 +1,33 @@
+# Wirtualny korzeń workspace'u uv (bez [project]): jeden uv.lock dla api/, worker/ i shared/.
+# Katalog spike/ (ticket 01) celowo NIE jest członkiem workspace'u.
+[tool.uv.workspace]
+members = ["shared", "api", "worker"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "httpx2",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["spike"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["wheeler_shared", "wheeler_api", "wheeler_worker"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["shared/src", "api/src", "worker/src", "tests"]

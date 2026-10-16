@@ -1,0 +1,22 @@
+[project]
+name = "wheeler-worker"
+version = "0.1.0"
+description = "Natywny worker AI Wheelera (macOS, MLX)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "wheeler-shared",
+    "pillow>=10.4",
+]
+
+[project.scripts]
+wheeler-worker = "wheeler_worker.__main__:main"
+
+[tool.uv.sources]
+wheeler-shared = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wheeler_worker"]

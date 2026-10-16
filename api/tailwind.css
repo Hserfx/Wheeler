@@ -1,0 +1,7 @@
+/* Wejście dla standalone CLI Tailwinda (`just css`); wynik: src/wheeler_api/static/app.css. */
+@import "tailwindcss" source(none);
+@source "./src/wheeler_api/templates";
+
+[x-cloak] {
+  display: none !important;
+}

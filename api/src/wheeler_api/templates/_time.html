@@ -1,0 +1,4 @@
+{#- Znacznik czasu `when` (UTC z serwera); przeglądarka przelicza go na czas lokalny. -#}
+<time datetime="{{ when.isoformat() }}"
+      x-data x-init="$el.textContent = new Date($el.dateTime).toLocaleString('pl-PL', { dateStyle: 'medium', timeStyle: 'short' })"
+      >{{ when.strftime("%d.%m.%Y %H:%M UTC") }}</time>

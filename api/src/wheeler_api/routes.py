@@ -252,6 +252,21 @@ def job_thumbnail(job_id: int, session: SessionDep, storage: StorageDep) -> Resp
     return FileResponse(thumbnail, media_type="image/jpeg", headers={"Cache-Control": "no-cache"})
 
 
+@router.get("/jobs/{job_id}/download")
+def download_result(job_id: int, session: SessionDep, storage: StorageDep) -> Response:
+    """Wynik jako załącznik PNG (rozdzielczość oryginału, z profilem ICC i EXIF bez GPS)."""
+    job = _load_job(session, job_id)
+    image = job.image(ImageRole.RESULT)
+    if image is None or not storage.path(image.path).is_file():
+        raise HTTPException(status_code=404)
+    return FileResponse(
+        storage.path(image.path),
+        media_type="image/png",
+        filename=f"wheeler-{job.id}.png",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
 @router.get("/history", response_class=HTMLResponse)
 def history(
     request: Request,

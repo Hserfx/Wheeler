@@ -91,6 +91,13 @@ TEXTS: Final[dict[str, str]] = {
     "job_input": "Zdjęcie wejściowe",
     "job_result": "Wynik",
     "job_download": "Pobierz PNG",
+    # Ekran wyniku (suwak przed/po, powiększanie, ponowienie koła)
+    "compare_hint": "Przesuń suwak, aby porównać zdjęcie przed i po. Wybierz koło, aby je powiększyć.",
+    "compare_before": "Przed",
+    "compare_after": "Po",
+    "compare_slider": "Suwak przed/po",
+    "zoom_wheel": "Koło {number}",
+    "zoom_reset": "Cały obraz",
     "job_error": "Błąd",
     "job_new": "Wgraj kolejne zdjęcie",
     "job_delete": "Usuń zadanie",

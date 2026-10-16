@@ -70,6 +70,8 @@
     </form>
     {% endif %}
   </div>
+  {% elif job.status.value == "done" and result_image and input_image %}
+  {% include "_result_compare.html" %}
   {% else %}
   <div class="grid gap-6 sm:grid-cols-2">
     {% if input_image %}

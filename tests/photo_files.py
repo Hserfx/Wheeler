@@ -26,6 +26,7 @@ def display_profile() -> bytes:
     profile = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB"))
     data = bytearray(profile.tobytes())
     data[4:8] = b"WHLR"  # inny „twórca” w nagłówku: profil nie jest domyślnym sRGB Pillow
+    data[24:36] = bytes(12)  # data utworzenia: bez niej każde wywołanie daje te same bajty
     return bytes(data)
 
 

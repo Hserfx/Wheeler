@@ -157,7 +157,7 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Suwak przed/po działa na pełnym obrazie, z możliwością powiększenia okolicy koła
 - [ ] „Ponów to koło” generuje tylko wybrane koło z nowym seedem i podmienia je w wyniku

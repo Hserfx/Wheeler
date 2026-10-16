@@ -32,8 +32,8 @@ def rim_region(box: BoxF, size: tuple[int, int]) -> tuple[int, int, int, int]:
     return (
         max(0, int(x0 - margin)),
         max(0, int(y0 - margin)),
-        min(width, int(round(x1 + margin))),
-        min(height, int(round(y1 + margin))),
+        min(width, round(x1 + margin)),
+        min(height, round(y1 + margin)),
     )
 
 

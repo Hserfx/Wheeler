@@ -23,12 +23,16 @@ from wheeler_api.texts import (
     PARAM_LABELS,
     STATUS_LABELS,
     TEXTS,
+    can_cancel,
+    job_progress,
     job_status_label,
+    progress_label,
 )
 from wheeler_api.uploads import UPLOAD_ACCEPT, display_path
 from wheeler_shared.db import make_engine, make_session_factory
 from wheeler_shared.history import is_deletable
 from wheeler_shared.migrate import migrate
+from wheeler_shared.retry import is_retryable
 from wheeler_shared.storage import Storage
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -49,6 +53,10 @@ def create_templates() -> Jinja2Templates:
     templates.env.globals["status_labels"] = STATUS_LABELS
     templates.env.globals["param_labels"] = PARAM_LABELS
     templates.env.globals["job_status_label"] = job_status_label
+    templates.env.globals["job_progress"] = job_progress
+    templates.env.globals["progress_label"] = progress_label
+    templates.env.tests["cancellable"] = can_cancel
+    templates.env.tests["retryable"] = is_retryable
     templates.env.globals["upload_accept"] = UPLOAD_ACCEPT
     templates.env.globals["model_state_labels"] = MODEL_STATE_LABELS
     templates.env.globals["model_loading_for"] = model_state.model_loading_for

@@ -11,6 +11,7 @@ from collections.abc import Iterator
 import numpy as np
 import pytest
 from fake_models import (
+    BoxDetector,
     CenterDiscRemover,
     DiscSegmenter,
     NothingRemover,
@@ -20,6 +21,7 @@ from fake_models import (
 from fastapi.testclient import TestClient
 from helpers import (
     click_wheel,
+    drain,
     encode,
     finish_job,
     generate,
@@ -128,11 +130,14 @@ def test_model_gets_cut_rim_on_plain_background_not_the_original(
     rim_id = library_rim(client, encode(rim), remover=CenterDiscRemover(radius=32))
     job_id = upload(client, rim_id=rim_id)
     editor = SolidEditor()
-    processor = WheelSwapProcessor(segmenter=DiscSegmenter(radius=10), editor=editor)
+    processor = WheelSwapProcessor(
+        detector=BoxDetector(), segmenter=DiscSegmenter(radius=10), editor=editor
+    )
+    drain(session_factory, storage, processor)  # detekcja kół po wgraniu (atrapa: brak)
     click_wheel(client, job_id)
-    assert run_once(session_factory, storage, processor)
+    assert drain(session_factory, storage, processor)
     generate(client, job_id)
-    assert run_once(session_factory, storage, processor)
+    assert drain(session_factory, storage, processor)
 
     reference = np.asarray(editor.calls[0].images[1].convert("RGB"))
     assert reference.shape == (65, 65, 3)  # przycięta do felgi
@@ -201,7 +206,44 @@ def test_rejected_preview_is_removed_with_its_files(
     assert list(storage.root.glob("rims/*/*")) == []
 
 
-def test_click_on_rim_cuts_out_just_the_wheel_when_background_removal_kept_too_much(
+def test_background_is_removed_around_the_largest_detected_wheel(
+    client: TestClient, session_factory: sessionmaker[Session], storage: Storage
+) -> None:
+    # Zdjęcie felgi na aucie: BiRefNet na całym zdjęciu zostawiłby karoserię, więc dostaje
+    # tylko kadr wokół koła z detektora (box 80 px + 8% marginesu = kadr 93x93 od (103, 3)).
+    rim = noise_photo(200, 100)
+    remover = CenterDiscRemover(radius=40)
+    detector = BoxDetector([(10, 10, 50, 50), (110, 10, 190, 90)])
+    _post_rim(client, rim)
+    assert run_once(session_factory, storage, rim_processor(remover, detector))
+
+    assert [image.size for image in remover.images] == [(93, 93)]
+    cut = _fetch(client, _image_src(client.get("/rims/picker").text, "rim-cut"))
+    assert cut.size == (81, 81)
+    assert tuple(np.asarray(cut)[40, 40, :3]) == rim.getpixel((149, 49))
+
+
+def test_click_on_rim_picks_the_detected_wheel_under_it(
+    client: TestClient, session_factory: sessionmaker[Session], storage: Storage
+) -> None:
+    rim = noise_photo(200, 100)
+    detector = BoxDetector([(10, 10, 50, 50), (110, 10, 190, 90)])
+    _post_rim(client, rim)
+    assert run_once(session_factory, storage, rim_processor(detector=detector))
+    rim_id = _rim_id(client.get("/rims/picker").text)
+
+    client.post(f"/rims/{rim_id}/click", data={"x": 30, "y": 30, "mode": "select"})
+    remover = CenterDiscRemover(radius=15)
+    assert run_once(session_factory, storage, rim_processor(remover, detector))
+
+    # Mały box 40 px + 8% marginesu = kadr 47x47 od (6, 6); felga: dysk wokół (29, 29).
+    assert [image.size for image in remover.images] == [(47, 47)]
+    cut = _fetch(client, _image_src(client.get("/rims/picker").text, "rim-cut"))
+    assert cut.size == (31, 31)
+    assert tuple(np.asarray(cut)[15, 15, :3]) == rim.getpixel((29, 29))
+
+
+def test_click_on_rim_without_detected_wheel_cuts_it_out_from_the_click(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
     rim = noise_photo(100, 80)
@@ -215,7 +257,10 @@ def test_click_on_rim_cuts_out_just_the_wheel_when_background_removal_kept_too_m
     assert cutting.status_code == 200
     assert TEXTS["rim_cutting"] in cutting.text and 'hx-trigger="every 1s"' in cutting.text
     processor = WheelSwapProcessor(
-        segmenter=DiscSegmenter(radius=10), editor=SolidEditor(), remover=CenterDiscRemover()
+        detector=BoxDetector(),
+        segmenter=DiscSegmenter(radius=10),
+        editor=SolidEditor(),
+        remover=CenterDiscRemover(),
     )
     assert run_once(session_factory, storage, processor)
 
@@ -229,7 +274,10 @@ def test_failed_background_removal_shows_error_and_allows_click_or_reject(
 ) -> None:
     _post_rim(client, noise_photo(100, 80))
     nothing = WheelSwapProcessor(
-        segmenter=NothingSegmenter(), editor=SolidEditor(), remover=NothingRemover()
+        detector=BoxDetector(),
+        segmenter=NothingSegmenter(),
+        editor=SolidEditor(),
+        remover=NothingRemover(),
     )
     assert run_once(session_factory, storage, nothing)
 

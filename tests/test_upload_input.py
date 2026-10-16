@@ -9,7 +9,7 @@ from collections.abc import Iterator
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from helpers import click_wheel, drain, encode, fake_processor, generate, jpeg, rim_png, upload
+from helpers import click_wheel, drain, encode, fake_processor, generate, jpeg, library_rim, upload
 from photo_files import GPS_IFD, MAKE, display_profile, phone_file, phone_heic, quadrants
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
@@ -80,21 +80,37 @@ def test_home_page_accepts_heic_by_picker_drop_and_paste(client: TestClient) -> 
 
 
 def _post(client: TestClient, field: str, name: str, data: bytes) -> str:
-    files = {
-        "photo": ("auto.jpg", jpeg(), "image/jpeg"),
-        "rim": ("felga.png", rim_png(), "image/png"),
-    }
-    files[field] = (name, data, "application/octet-stream")
-    response = client.post("/jobs", files=files, follow_redirects=False)
+    """Wgranie złego pliku: zdjęcia auta (`POST /jobs` z felgą z biblioteki) albo nowej felgi
+    do biblioteki (`POST /rims`, fragment biblioteki z komunikatem)."""
+    upload = (name, data, "application/octet-stream")
+    if field == "rim":
+        response = client.post("/rims", files={"rim": upload}, follow_redirects=False)
+    else:
+        response = client.post(
+            "/jobs",
+            files={"photo": upload},
+            data={"rim_id": str(library_rim(client))},
+            follow_redirects=False,
+        )
     assert response.status_code == 400, response.text
     assert 'role="alert"' in response.text
     return response.text
 
 
 def _no_jobs(client: TestClient, storage: Storage) -> bool:
+    """Nic nie zostało zapisane: brak zadań i plików zadań, brak felg czekających na podgląd."""
     jobs_dir = storage.root / "jobs"
     files = [p for p in jobs_dir.rglob("*") if p.is_file()] if jobs_dir.exists() else []
-    return TEXTS["history_empty"] in client.get("/history").text and not files
+    pending = "data-rim-id" in client.get("/rims/picker").text
+    rims = [
+        p for p in storage.root.glob("rims/*/original.*") if not p.with_name("cut.png").exists()
+    ]
+    return (
+        TEXTS["history_empty"] in client.get("/history").text
+        and not files
+        and not pending
+        and not rims
+    )
 
 
 @pytest.mark.parametrize("field", ["photo", "rim"])

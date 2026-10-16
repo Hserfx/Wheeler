@@ -14,6 +14,7 @@ from collections.abc import Callable
 from sqlalchemy.orm import Session, sessionmaker
 
 from wheeler_shared.models import TaskKind
+from wheeler_shared.progress import Progress
 from wheeler_shared.queue import (
     ClaimedJob,
     SavedMask,
@@ -21,7 +22,10 @@ from wheeler_shared.queue import (
     complete_detection,
     complete_job,
     complete_segmentation,
+    fail_interrupted_jobs,
     fail_job,
+    mark_cancelled,
+    report_progress,
 )
 from wheeler_shared.rim_library import claim_next_rim, complete_rim_cut, fail_rim_cut
 from wheeler_shared.storage import Storage
@@ -30,15 +34,19 @@ from wheeler_worker.processing import (
     CutRimItem,
     DetectItem,
     GenerateItem,
+    JobCancelled,
     MaskFiles,
     Processor,
+    ProgressCallback,
     SegmentItem,
 )
 
 log = logging.getLogger(__name__)
 
 SaveResult = Callable[[Session], None]
-Handler = Callable[[ClaimedJob, Storage, Processor], SaveResult]
+# Obsługa dostaje też `report`: zapisuje postęp w bazie i rzuca `JobCancelled`, gdy użytkownik
+# anulował zadanie (procesor woła go między krokami, zob. `GenerateItem.on_progress`).
+Handler = Callable[[ClaimedJob, Storage, Processor, ProgressCallback], SaveResult]
 
 
 def _saved(storage: Storage, files: MaskFiles) -> SavedMask:
@@ -49,7 +57,9 @@ def _saved(storage: Storage, files: MaskFiles) -> SavedMask:
     )
 
 
-def _detect(job: ClaimedJob, storage: Storage, processor: Processor) -> SaveResult:
+def _detect(
+    job: ClaimedJob, storage: Storage, processor: Processor, report: ProgressCallback
+) -> SaveResult:
     photo = storage.path(job.input_path)
     result = processor.detect(
         DetectItem(job_id=job.id, photo_path=photo, output_dir=photo.parent, params=job.params)
@@ -58,7 +68,9 @@ def _detect(job: ClaimedJob, storage: Storage, processor: Processor) -> SaveResu
     return lambda session: complete_detection(session, job.id, wheels=wheels)
 
 
-def _segment(job: ClaimedJob, storage: Storage, processor: Processor) -> SaveResult:
+def _segment(
+    job: ClaimedJob, storage: Storage, processor: Processor, report: ProgressCallback
+) -> SaveResult:
     photo = storage.path(job.input_path)
     clicks = {wheel.id: wheel.click for wheel in job.wheels if wheel.click and not wheel.mask_path}
     result = processor.segment(
@@ -74,7 +86,9 @@ def _segment(job: ClaimedJob, storage: Storage, processor: Processor) -> SaveRes
     return lambda session: complete_segmentation(session, job.id, masks=masks)
 
 
-def _generate(job: ClaimedJob, storage: Storage, processor: Processor) -> SaveResult:
+def _generate(
+    job: ClaimedJob, storage: Storage, processor: Processor, report: ProgressCallback
+) -> SaveResult:
     if job.rim_path is None:
         raise ValueError("Zadanie nie ma felgi referencyjnej")
     photo = storage.path(job.input_path)
@@ -87,6 +101,7 @@ def _generate(job: ClaimedJob, storage: Storage, processor: Processor) -> SaveRe
             output_dir=photo.parent,
             params=job.params,
             masks=masks,
+            on_progress=report,
         )
     )
     result_path = storage.relative(result.result_path)
@@ -118,7 +133,12 @@ def run_once(
 
     log.info("Zadanie %s (%s): start", job.id, job.task)
     try:
-        save = HANDLERS[job.task](job, storage, processor)
+        save = HANDLERS[job.task](job, storage, processor, _reporter(session_factory, job.id))
+    except JobCancelled:
+        log.info("Zadanie %s (%s): anulowane", job.id, job.task)
+        with session_factory.begin() as session:
+            mark_cancelled(session, job.id)
+        return True
     except Exception as exc:
         log.exception("Zadanie %s (%s): błąd", job.id, job.task)
         with session_factory.begin() as session:
@@ -157,6 +177,27 @@ def _cut_next_rim(
     with session_factory.begin() as session:
         complete_rim_cut(session, rim.id, cut_path=cut_path)
     return True
+
+
+def _reporter(session_factory: sessionmaker[Session], job_id: int) -> ProgressCallback:
+    """Postęp zadania do bazy (osobna krótka transakcja na każdy raport, ~raz na krok)."""
+
+    def report(progress: Progress) -> None:
+        with session_factory.begin() as session:
+            cancel_requested = report_progress(session, job_id, progress)
+        if cancel_requested:
+            raise JobCancelled
+
+    return report
+
+
+def recover_interrupted_jobs(session_factory: sessionmaker[Session]) -> list[int]:
+    """Wołane przy starcie workera: zadania przerwane przez awarię/restart -> `failed`."""
+    with session_factory.begin() as session:
+        job_ids = fail_interrupted_jobs(session)
+    if job_ids:
+        log.warning("Zadania przerwane przez awarię lub restart workera: %s", job_ids)
+    return job_ids
 
 
 def run_forever(

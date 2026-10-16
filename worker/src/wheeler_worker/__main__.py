@@ -12,7 +12,7 @@ from wheeler_shared.migrate import migrate
 from wheeler_shared.storage import Storage
 from wheeler_worker.model_lifecycle import ModelLifecycle, db_reporter
 from wheeler_worker.processing import build_processor
-from wheeler_worker.runner import run_forever
+from wheeler_worker.runner import recover_interrupted_jobs, run_forever
 from wheeler_worker.settings import WorkerSettings
 
 log = logging.getLogger("wheeler_worker")
@@ -43,6 +43,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
+    recover_interrupted_jobs(session_factory)
     log.info(
         "Worker gotowy (procesor=%s, dane=%s, zwalnianie modeli po %.0f s bezczynności)",
         settings.processor,

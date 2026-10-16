@@ -280,6 +280,15 @@ wheels = [
 ]
 
 [[package]]
+name = "einops"
+version = "0.8.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/77/850bef8d72ffb9219f0b1aac23fbc1bf7d038ee6ea666f331fa273031aa2/einops-0.8.2.tar.gz", hash = "sha256:609da665570e5e265e27283aab09e7f279ade90c4f01bcfca111f3d3e13f2827", size = 56261, upload-time = "2026-01-26T04:13:17.638Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/09/f8d8f8f31e4483c10a906437b4ce31bdf3d6d417b73fe33f1a8b59e34228/einops-0.8.2-py3-none-any.whl", hash = "sha256:54058201ac7087911181bfec4af6091bb59380360f069276601256a76af08193", size = 65638, upload-time = "2026-01-26T04:13:18.546Z" },
+]
+
+[[package]]
 name = "fastapi"
 version = "0.143.1"
 source = { registry = "https://pypi.org/simple" }
@@ -539,6 +548,33 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a9/c4/1407df7512a5b36cc79840e01710dc575733c461b13ab866cae77eaf87f3/kiwisolver-1.5.1-graalpy312-graalpy250_312_native-macosx_11_0_arm64.whl", hash = "sha256:482676e5bd48d70ac99d9fc78863469845421e01184fa83f1f9366dc49f7e974", size = 134002, upload-time = "2026-08-28T10:28:08.881Z" },
     { url = "https://files.pythonhosted.org/packages/16/45/c37a21ad5c0ab581a93c55ad544721aaa1f0ae94edb29c6a678a23d013e6/kiwisolver-1.5.1-graalpy312-graalpy250_312_native-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:072bdb15a3c19a5b5dbc8f8fb1f4e1884bf4f3507eeb4cc6334401274d37a5c0", size = 194292, upload-time = "2026-08-28T10:28:11.06Z" },
     { url = "https://files.pythonhosted.org/packages/a6/c1/69f00d627949580e43d57af0aa465df46868d7c29801c137a55374101294/kiwisolver-1.5.1-graalpy312-graalpy250_312_native-win_amd64.whl", hash = "sha256:a5a00665d1a0e26763a7338d7e911d4598fbc1d50dd0d6b7919b7dc6c5d6569f", size = 73362, upload-time = "2026-08-28T10:28:12.449Z" },
+]
+
+[[package]]
+name = "kornia"
+version = "0.8.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "kornia-rs" },
+    { name = "packaging" },
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1a/80/460e9dad0c1b68f3e83f198f3983638d62f910a88542b492290010d25f50/kornia-0.8.3.tar.gz", hash = "sha256:c06887374eaf39fb614a77ca054383e6cc2092cb7225e45437111b4984d0f866", size = 727384, upload-time = "2026-05-19T20:23:35.048Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/85/05/0c1cc486e87d2a5ad6649eb96a8ccaa7c6002d8d73d676c13e2102f286c1/kornia-0.8.3-py3-none-any.whl", hash = "sha256:0b15f5d359aeafd7ff54ea631ed1943a3eb295c4a6dae3f745ddeada25e33289", size = 1189381, upload-time = "2026-05-19T20:23:33.209Z" },
+]
+
+[[package]]
+name = "kornia-rs"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2f/e2/c1b589ab540685e72bb30c9089f8bd7a1318fda330b10d9029ec680941fc/kornia_rs-0.2.0-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:b32aaae48c6893e50dd4dbcc10b5e4a77c6df39971d202e035b0f52aed3b1b94", size = 4471054, upload-time = "2026-09-26T20:07:24.261Z" },
+    { url = "https://files.pythonhosted.org/packages/60/6a/6e0cefb9e93dab850e5aaade6cdf880dc845ac36419a0e34107ea7e26bb4/kornia_rs-0.2.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:0e17d8c61836e67c9b5d3ca3227a68c06e52c72e737637795177bb0ca4c33031", size = 4022656, upload-time = "2026-09-26T20:07:05.765Z" },
+    { url = "https://files.pythonhosted.org/packages/07/12/40544b39cb08db8577c7e4b227d41be2ee6f18304627751645572d504f47/kornia_rs-0.2.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:a180fff70120c4558355e52eec7ea40e00a556f0d6bb760e0f511c937847cdf9", size = 4643419, upload-time = "2026-09-26T20:06:29.763Z" },
+    { url = "https://files.pythonhosted.org/packages/1b/01/05a31ef5ed358f9a086626718fb7bafba4a5f60e408ec1bb2309ba307779/kornia_rs-0.2.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a5ccc43e7b54a845c4250dee107b62d221b4a76f6812a8041196784f4add342a", size = 5339861, upload-time = "2026-09-26T20:06:48.018Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/14/a1863c42b142fa7018105e7ef028b700a04c86a7a221d67e83fe2697ff31/kornia_rs-0.2.0-cp312-cp312-win_amd64.whl", hash = "sha256:1a222a68555d1b974f0a96694ed2d3965d0e084860da1ba2d7fcffc541bd9b36", size = 4341139, upload-time = "2026-09-26T20:07:50.386Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/d7/2a4ef1a2abb3426e9ee4e77c615b517b33f6a23bbeda2d117b1cae62af19/kornia_rs-0.2.0-cp312-cp312-win_arm64.whl", hash = "sha256:d77c5e5d789b2bfc3c51b0cd66bf4854705636a1d30fe84b95eb424b5b7eb941", size = 3791857, upload-time = "2026-09-26T20:07:41.147Z" },
 ]
 
 [[package]]
@@ -1454,6 +1490,22 @@ wheels = [
 ]
 
 [[package]]
+name = "timm"
+version = "1.0.30"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "huggingface-hub" },
+    { name = "pyyaml" },
+    { name = "safetensors" },
+    { name = "torch" },
+    { name = "torchvision" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0e/ab/49041213990e48edcb6013463b18ef86d8d3c5d6ac5b408802c480443025/timm-1.0.30.tar.gz", hash = "sha256:1444a3af7e17fdba5440ac2bcf6e4b728da96dd62289ed9e1bcba31a545f5935", size = 2534738, upload-time = "2026-09-22T20:46:13.9Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/85/b897716d0fa016af23b11e6526f5ef76d2013e8bc36b9c7ce15d9200e456/timm-1.0.30-py3-none-any.whl", hash = "sha256:c8e27adf6801a2fdfb570dbbdd171f2f084756eefc673df8cfaab06bd14864f3", size = 2668917, upload-time = "2026-09-22T20:46:12.11Z" },
+]
+
+[[package]]
 name = "tokenizers"
 version = "0.23.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1776,10 +1828,13 @@ name = "wheeler-worker"
 version = "0.1.0"
 source = { editable = "worker" }
 dependencies = [
+    { name = "einops" },
+    { name = "kornia" },
     { name = "mflux" },
     { name = "numpy" },
     { name = "pillow" },
     { name = "pillow-heif" },
+    { name = "timm" },
     { name = "torch" },
     { name = "torchvision" },
     { name = "transformers" },
@@ -1788,10 +1843,13 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "einops", specifier = ">=0.8" },
+    { name = "kornia", specifier = ">=0.8" },
     { name = "mflux", git = "https://github.com/mflux-community/mflux?rev=b534021a9c8c45bb064959d754870fd98322e447" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "pillow", specifier = ">=10.4" },
     { name = "pillow-heif", specifier = ">=1.0" },
+    { name = "timm", specifier = ">=1.0" },
     { name = "torch", specifier = ">=2.13" },
     { name = "torchvision", specifier = ">=0.29.1" },
     { name = "transformers", specifier = ">=5.5,<6" },

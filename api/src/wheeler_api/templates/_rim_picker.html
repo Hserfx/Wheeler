@@ -1,0 +1,152 @@
+{#- Biblioteka felg (fragment HTMX, `rim_routes.py`). `mode`: select (strona główna: radio
+    `rim_id` należy do formularza `#job-form`) albo manage (strona biblioteki: usuwanie).
+    Każde żądanie z wnętrza fragmentu dziedziczy `hx-vals` (mode) i `hx-include` (zaznaczona
+    felga), więc po odświeżeniu wybór zostaje. Odpytywany co sekundę, gdy worker wycina tło. -#}
+<section id="rim-picker" class="flex flex-col gap-5"
+  hx-target="this" hx-swap="outerHTML"
+  hx-vals='{"mode": "{{ mode }}"}'
+  hx-include="#rim-picker [name=rim_id]:checked"
+  {%- if polling %}
+  hx-get="/rims/picker" hx-trigger="every 1s"
+  {%- endif %}>
+
+  {% if rim_error %}
+  <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{{ rim_error }}</p>
+  {% endif %}
+
+  {#- Biblioteka: felgi gotowe do użycia, od ostatnio używanej. -#}
+  <div class="flex flex-col gap-2">
+    <span class="text-sm font-medium">{{ t.library_heading }}</span>
+    {% if library %}
+    <ul class="grid grid-cols-2 gap-3 sm:grid-cols-4" data-role="library">
+      {% for rim in library %}
+      <li data-library-rim-id="{{ rim.id }}">
+        {% set label = rim.name or t.rim_unnamed.format(id=rim.id) %}
+        {% if mode == "select" %}
+        <label class="flex cursor-pointer flex-col gap-1 rounded-lg border-2 border-transparent p-1 has-[:checked]:border-slate-900">
+          <input type="radio" name="rim_id" value="{{ rim.id }}" form="job-form" class="sr-only"
+                 {% if selected == rim.id %}checked{% endif %}>
+          <img src="/files/{{ rim.cut_path }}" alt="{{ label }}" data-role="library-rim"
+               class="checkerboard aspect-square w-full rounded-md object-contain">
+          <span class="truncate text-sm">{{ label }}</span>
+        </label>
+        {% else %}
+        <div class="flex flex-col gap-1 p-1">
+          <img src="/files/{{ rim.cut_path }}" alt="{{ label }}" data-role="library-rim"
+               class="checkerboard aspect-square w-full rounded-md object-contain">
+          <span class="truncate text-sm font-medium">{{ label }}</span>
+          <span class="text-xs text-slate-500">
+            {{ t.rim_used.format(count=rim.use_count) }}{% if rim.last_used_at %},
+            {{ t.rim_last_used }} {% with when=rim.last_used_at %}{% include "_time.html" %}{% endwith %}{% endif %}
+          </span>
+          <button type="button" hx-post="/rims/{{ rim.id }}/delete" hx-confirm="{{ t.rim_delete_confirm }}"
+                  class="self-start text-xs font-medium text-red-600 underline hover:text-red-500">
+            {{ t.rim_delete }}
+          </button>
+        </div>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-slate-500">{{ t.library_empty }}</p>
+    {% endif %}
+  </div>
+
+  {#- Felgi w drodze do biblioteki: wycinanie tła, podgląd do akceptacji, błąd. -#}
+  {% for rim in pending %}
+  <div class="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4"
+       data-rim-id="{{ rim.id }}" data-rim-status="{{ rim.status.value }}">
+    <p class="text-sm font-medium">{{ rim.name or t.rim_new }}</p>
+    {% if rim.status.busy %}
+    <p class="text-sm text-slate-600">{{ t.rim_cutting }}</p>
+    {% else %}
+    {% if rim.status.value == "failed" %}
+    <p class="text-sm text-red-700" role="alert">{{ t.rim_cut_failed }} <span class="text-red-500">({{ rim.error }})</span></p>
+    {% else %}
+    <p class="text-sm">{{ t.rim_review_hint }}</p>
+    {% endif %}
+    <div class="grid grid-cols-2 gap-3">
+      {#- Klik w oryginał: worker wytnie samo koło (SAM 2) wokół klikniętego punktu. -#}
+      <figure class="cursor-crosshair select-none"
+              x-data="{
+                pick(event) {
+                  const img = event.currentTarget, box = img.getBoundingClientRect();
+                  htmx.ajax('POST', '/rims/{{ rim.id }}/click', {
+                    source: img, target: '#rim-picker', swap: 'outerHTML',
+                    values: {
+                      x: ((event.clientX - box.left) * img.naturalWidth / box.width).toFixed(1),
+                      y: ((event.clientY - box.top) * img.naturalHeight / box.height).toFixed(1),
+                    },
+                  });
+                },
+              }">
+        <figcaption class="mb-1 text-xs text-slate-500">{{ t.rim_original }}</figcaption>
+        <img src="/files/{{ rim.original_path | display_path }}" alt="{{ t.rim_original }}" data-role="rim-original"
+             draggable="false" @click="pick($event)" class="w-full rounded-md border border-slate-200">
+      </figure>
+      {% if rim.cut_path and rim.status.value == "review" %}
+      <figure>
+        <figcaption class="mb-1 text-xs text-slate-500">{{ t.rim_cut }}</figcaption>
+        <img src="/files/{{ rim.cut_path }}" alt="{{ t.rim_cut }}" data-role="rim-cut"
+             class="checkerboard w-full rounded-md border border-slate-200 object-contain">
+      </figure>
+      {% endif %}
+    </div>
+    <div class="flex flex-wrap gap-3">
+      {% if rim.status.value == "review" %}
+      <button type="button" hx-post="/rims/{{ rim.id }}/accept"
+              class="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
+        {{ t.rim_accept }}
+      </button>
+      {% endif %}
+      <button type="button" hx-post="/rims/{{ rim.id }}/delete"
+              class="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-100">
+        {{ t.rim_reject }}
+      </button>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  {#- Nowa felga: tło usuwa worker, potem podgląd do akceptacji. Plik można też przeciągnąć
+      albo wkleić (na stronie głównej wklejenie trafia tu, gdy zdjęcie auta jest już wybrane). -#}
+  <form hx-post="/rims" hx-encoding="multipart/form-data" class="flex flex-col gap-2"
+        x-data="{
+          file: '', over: false,
+          put(list) {
+            const file = list?.[0];
+            if (!file) return;
+            const transfer = new DataTransfer();
+            transfer.items.add(file);
+            this.$refs.rim.files = transfer.files;
+            this.file = file.name;
+          },
+        }"
+        {% if mode == "select" %}@rim-paste.window="put($event.detail)"
+        {% else %}@paste.window="$event.clipboardData?.files?.length && ($event.preventDefault(), put($event.clipboardData.files))"{% endif %}>
+    <span class="text-sm font-medium">{{ t.rim_add_heading }}</span>
+    <div class="flex flex-wrap items-center gap-3">
+      <label data-role="drop-zone"
+             class="flex cursor-pointer items-center gap-3 rounded-lg border-2 border-dashed p-3"
+             :class="over ? 'border-slate-900 bg-slate-100' : 'border-slate-300'"
+             @dragover.prevent="over = true" @dragleave="over = false"
+             @drop.prevent="over = false; put($event.dataTransfer.files)">
+        <span class="rounded-md border border-slate-300 bg-slate-100 px-4 py-2 text-sm font-medium hover:bg-slate-200">
+          {{ t.upload_choose }}
+        </span>
+        <span class="text-sm text-slate-600" x-text="file || '{{ t.upload_no_file_chosen }}'">{{ t.upload_no_file_chosen }}</span>
+        <input type="file" name="rim" accept="{{ upload_accept }}" class="sr-only" required
+               x-ref="rim" @change="file = $event.target.files[0]?.name ?? ''">
+      </label>
+      <input type="text" name="name" maxlength="200" placeholder="{{ t.rim_name_placeholder }}"
+             aria-label="{{ t.rim_name_placeholder }}"
+             class="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm">
+      <button type="submit" :disabled="!file"
+              class="rounded-md border border-slate-900 px-4 py-2 text-sm font-semibold hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50">
+        {{ t.rim_add_submit }}
+      </button>
+    </div>
+    <span class="text-xs text-slate-500">{{ t.rim_add_hint }}</span>
+  </form>
+</section>

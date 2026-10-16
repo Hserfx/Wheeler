@@ -15,6 +15,7 @@ TEXTS: Final[dict[str, str]] = {
     "app_tagline": "Podmiana felg na zdjęciu samochodu",
     "nav_home": "Nowe zdjęcie",
     "nav_history": "Historia",
+    "nav_rims": "Biblioteka felg",
     # Historia
     "history_heading": "Historia",
     "history_empty": "Nie ma jeszcze żadnych zadań.",
@@ -38,18 +39,46 @@ TEXTS: Final[dict[str, str]] = {
     "delete_done": "Usunięto zadania: {count}.",
     "delete_skipped": "Pominięto zadania w trakcie przetwarzania: {count}.",
     # Strona główna
-    "upload_heading": "Wgraj zdjęcie samochodu i felgi",
+    "upload_heading": "Wgraj zdjęcie samochodu i wybierz felgę",
     "upload_hint": (
         "Pliki JPEG, PNG, WebP lub HEIC, do 50 MB i 40 MPx. Koło do podmiany wskażesz "
         "w następnym kroku."
     ),
     "upload_drop_hint": "Przeciągnij plik tutaj albo wklej go ze schowka (Ctrl+V / ⌘V).",
     "upload_photo_label": "Zdjęcie samochodu",
-    "upload_rim_label": "Zdjęcie felgi",
+    "upload_rim_label": "Felga",
     "upload_choose": "Wybierz plik",
     "upload_no_file_chosen": "Nie wybrano pliku",
     "upload_submit": "Dalej",
     "upload_sending": "Wysyłanie…",
+    # Biblioteka felg
+    "library_heading": "Biblioteka felg",
+    "library_hint": (
+        "Felgi dodane raz można wybierać przy kolejnych zdjęciach. Tło jest usuwane automatycznie."
+    ),
+    "library_empty": "Biblioteka jest pusta. Dodaj pierwszą felgę poniżej.",
+    "rim_unnamed": "Felga nr {id}",
+    "rim_new": "Nowa felga",
+    "rim_used": "Użycia: {count}",
+    "rim_last_used": "ostatnio",
+    "rim_delete": "Usuń z biblioteki",
+    "rim_delete_confirm": (
+        "Usunąć felgę z biblioteki? Zadania, które jej użyły, zachowają swoją kopię felgi."
+    ),
+    "rim_add_heading": "Dodaj nową felgę",
+    "rim_add_hint": "Zdjęcie felgi (JPEG, PNG, WebP lub HEIC). Tło usuniemy automatycznie.",
+    "rim_name_placeholder": "Nazwa (opcjonalnie)",
+    "rim_add_submit": "Dodaj felgę",
+    "rim_cutting": "Usuwanie tła…",
+    "rim_original": "Oryginał",
+    "rim_cut": "Wycięta felga",
+    "rim_review_hint": (
+        "Sprawdź wyciętą felgę. Jeśli zostało coś poza nią (np. karoseria), kliknij felgę "
+        "na oryginale, a wytniemy samo koło."
+    ),
+    "rim_cut_failed": "Nie udało się wyciąć felgi. Kliknij felgę na oryginale albo odrzuć zdjęcie.",
+    "rim_accept": "Dodaj do biblioteki",
+    "rim_reject": "Odrzuć",
     # Sekcja „Zaawansowane” (parametry edycji)
     "advanced_heading": "Zaawansowane",
     "advanced_hint": "Bez zmian użyte zostaną ustawienia domyślne.",
@@ -127,7 +156,9 @@ TEXTS: Final[dict[str, str]] = {
     "model_loading_job": "Ładowanie modelu do pamięci (pierwsze zadanie po przerwie)…",
     # Błędy
     "error_no_photo": "Wybierz zdjęcie samochodu.",
-    "error_no_rim": "Wybierz zdjęcie felgi.",
+    "error_no_rim": "Wybierz felgę z biblioteki albo dodaj nową.",
+    "error_rim_file": "Wybierz zdjęcie felgi.",
+    "error_rim_busy": "Felga jest teraz przetwarzana albo jej stan się zmienił. Spróbuj ponownie.",
     "error_upload_format": (
         "Plik „{name}” nie jest obsługiwanym zdjęciem. Wgraj plik JPEG, PNG, WebP lub HEIC."
     ),

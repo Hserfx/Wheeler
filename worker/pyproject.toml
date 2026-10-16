@@ -7,12 +7,16 @@ dependencies = [
     "wheeler-shared",
     "pillow>=10.4",
     "numpy>=2.0",
-    # Modele AI (ładowane leniwie, tylko w procesorze `wheel-swap`): mflux (MLX) + SAM 2 (torch).
+    # Modele AI (ładowane leniwie, tylko w procesorze `wheel-swap`): mflux (MLX) + SAM 2 i BiRefNet (torch).
     "mflux",
     "torch>=2.13",
     "torchvision>=0.29.1",
     "transformers>=5.5,<6",
     "pillow-heif>=1.0",
+    # BiRefNet (usuwanie tła felgi) ma kod modelu w repozytorium HF i potrzebuje tych bibliotek.
+    "timm>=1.0",
+    "kornia>=0.8",
+    "einops>=0.8",
 ]
 
 [project.scripts]

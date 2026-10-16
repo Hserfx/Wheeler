@@ -28,6 +28,8 @@ just logs api
   `data/jobs/<hex>` (`Storage.new_job_dir`). Usunięcie zadania w Historii
   (`wheeler_shared.history.delete_jobs`) kasuje ten katalog w całości; pliki poza nim (np. felgi
   z biblioteki) zostają. Automatycznego sprzątania nie ma.
+- Felgi z biblioteki leżą w `data/rims/<hex>/` (`original.<ext>`, `cut.png`). Zadanie dostaje
+  kopię wyciętej felgi (`jobs/<hex>/rim.png`), więc usunięcie felgi z biblioteki nie rusza historii.
 - PID i log workera: `.run/worker.pid`, `.run/worker.log`.
 
 ## Struktura
@@ -72,7 +74,8 @@ draft --„Generuj”------------> generate (mflux, każde koło osobno, ten sam
   (`FOR UPDATE SKIP LOCKED`), woła procesor i zapisuje wynik albo błąd.
 - `WHEELER_PROCESSOR`: `wheel-swap` (domyślny: Florence-2-large + SAM 2.1 + mflux Qwen-Image-2.1-Turbo q8, wagi
   w `WHEELER_MFLUX_MODEL_PATH`, domyślnie `~/.cache/wheeler/qwen-image-2.1-turbo-mflux-q8`) albo
-  `placeholder` (te same kroki z atrapami modeli, bez GPU; do pracy nad UI).
+  `placeholder` (te same kroki z atrapami modeli, bez GPU; do pracy nad UI). Usuwanie tła felgi:
+  BiRefNet (`ZhengPeng7/BiRefNet`).
 - Modele ładują się leniwie przy pierwszym użyciu. Przed generowaniem Florence-2 i SAM 2 są zwalniane.
   Detekcja z ładowaniem modeli 4–6 s (pierwszy odczyt wag z dysku ~20 s), potem ~1 s na zdjęcie.
 - Cykl życia modeli (`wheeler_worker/model_lifecycle.py`): po starcie workera modele nie są
@@ -92,6 +95,28 @@ draft --„Generuj”------------> generate (mflux, każde koło osobno, ten sam
   (`recover_interrupted_jobs`; detekcja i segmentacja wracają do szkicu), bez automatycznych ponowień. Zakłada
   jeden proces workera. „Ponów” (`wheeler_shared/retry.py`) tworzy nowe zadanie z kopiami plików,
   tymi samymi kołami i parametrami (z seedem) i od razu wstawia je do kolejki.
+- Biblioteka felg (`wheeler_shared/rim_library.py`, UI: fragment `_rim_picker.html` na stronie
+  głównej i na `/rims`, trasy w `wheeler_api/rim_routes.py`). Felga (`Rim`) ma własną kolejkę
+  w tabeli `rims`, obsługiwaną przez worker przed zadaniami (`runner._cut_next_rim`,
+  `Processor.cut_rim`):
+
+  ```
+  wgranie felgi -> queued -> worker: usuwanie tła -> review --„Dodaj do biblioteki”--> ready
+  review/failed --klik w felgę na oryginale--> queued (wycięcie koła pod kliknięciem) -> review
+  review/failed --„Odrzuć”, ready --„Usuń z biblioteki”--> wiersz i katalog felgi usunięte
+  ```
+
+  Usuwanie tła (`WheelSwapProcessor.cut_rim`): Florence-2 wykrywa koła, a BiRefNet
+  (`wheeler_worker/background.py`) wycina pierwszy plan z kadru wokół koła (największego albo
+  tego pod kliknięciem; boxy obejmujące inne koło są pomijane). Bez kadru BiRefNet zostawia
+  karoserię, gdy felga jest sfotografowana na aucie. Bez wykrytego koła: BiRefNet na całym zdjęciu
+  albo SAM 2 z kliknięcia. Wynik: RGBA PNG przycięty do felgi (`rim_cut.cut_out`, maks. 1536 px).
+  Model dostaje felgę na białym tle (`rim_cut.load_reference`). Wybór felgi w formularzu zadania
+  (`POST /jobs`, pole `rim_id`) liczy użycie (`use_count`, `last_used_at`); biblioteka jest
+  sortowana od ostatnio użytej (nowa, nieużyta felga liczy się od chwili dodania).
+  Wagi BiRefNet (~0,9 GB, kod modelu z repozytorium HF, przypięta rewizja):
+  `uv run hf download ZhengPeng7/BiRefNet --revision e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4`.
+  Zmierzone na M2 Max: ładowanie + pierwsze zdjęcie ~4,5 s, potem ~0,9 s (z detekcją).
 - Wejście (`wheeler_api/uploads.py`, `save_image_upload`, wspólne dla każdego wgrywanego obrazu):
   JPEG, PNG, WebP, HEIC, do 50 MB i 40 MPx; format rozpoznawany po zawartości. Dla HEIC i zdjęć
   z orientacją EXIF obok pliku powstaje obrócony podgląd `<plik>.preview.jpg` w pełnym rozmiarze

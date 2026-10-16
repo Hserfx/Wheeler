@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 from fake_models import BoxDetector, DiscSegmenter, SolidEditor
 from fastapi.testclient import TestClient
-from helpers import click_wheel, drain, finish_job, generate, jpeg, rim_png
+from helpers import click_wheel, drain, finish_job, generate, jpeg, library_rim
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -60,11 +60,8 @@ def test_advanced_section_is_collapsed_and_prefilled_with_spike_defaults(
 def _submit(client: TestClient, **fields: str) -> Any:  # odpowiedź TestClient (httpx/httpx2)
     return client.post(
         "/jobs",
-        files={
-            "photo": ("auto.jpg", jpeg(), "image/jpeg"),
-            "rim": ("felga.png", rim_png(), "image/png"),
-        },
-        data=fields,
+        files={"photo": ("auto.jpg", jpeg(), "image/jpeg")},
+        data={"rim_id": str(library_rim(client)), **fields},
         follow_redirects=False,
     )
 

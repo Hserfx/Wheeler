@@ -172,3 +172,43 @@ class Wheel(Base):
     @box.setter
     def box(self, value: tuple[int, int, int, int] | None) -> None:
         self.box_left, self.box_top, self.box_right, self.box_bottom = value or (None,) * 4
+
+
+class RimStatus(enum.StrEnum):
+    """Felga w bibliotece: worker usuwa tło, użytkownik akceptuje podgląd (`review` -> `ready`)."""
+
+    QUEUED = "queued"  # czeka na usunięcie tła
+    RUNNING = "running"
+    REVIEW = "review"  # wycięta, czeka na akceptację albo odrzucenie
+    READY = "ready"  # w bibliotece, do wyboru przy nowym zdjęciu
+    FAILED = "failed"
+
+    @property
+    def busy(self) -> bool:
+        return self in (RimStatus.QUEUED, RimStatus.RUNNING)
+
+
+class Rim(Base):
+    """Felga w bibliotece. Pliki w `rims/<hex>/`: oryginał i wycięta felga (RGBA PNG).
+
+    Zadanie dostaje KOPIĘ wyciętej felgi w swoim katalogu (`rim_library.use_rim`), więc
+    usunięcie felgi z biblioteki nie psuje historii.
+    """
+
+    __tablename__ = "rims"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    status: Mapped[RimStatus] = mapped_column(
+        _str_enum(RimStatus, "rim_status"), default=RimStatus.QUEUED, index=True
+    )
+    name: Mapped[str | None] = mapped_column(String(200))
+    original_path: Mapped[str] = mapped_column(String(512))
+    cut_path: Mapped[str | None] = mapped_column(String(512))
+    # Klik w felgę na oryginale (piksele po obrocie EXIF): wycięcie przez SAM 2 zamiast BiRefNet.
+    click_x: Mapped[float | None] = mapped_column(Float)
+    click_y: Mapped[float | None] = mapped_column(Float)
+    error: Mapped[str | None] = mapped_column(Text)
+    use_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -1,4 +1,4 @@
-"""Maska koła z kliknięcia: interfejs i adapter SAM 2.1 (transformers, MPS).
+"""Maski kół (z kliknięcia albo z boxów detektora): interfejs i adapter SAM 2.1 (transformers, MPS).
 
 Ciężkie biblioteki (torch, transformers) importujemy leniwie, przy pierwszym użyciu modelu,
 więc testy i atrapa (`placeholder`) ich nie ładują.
@@ -10,10 +10,18 @@ from typing import Any, Protocol
 
 from PIL import Image
 
+from wheeler_worker.model_lifecycle import NO_OBSERVER, LoadObserver
+
 
 class Segmenter(Protocol):
     def segment_click(self, image: Image.Image, point: tuple[float, float], /) -> Image.Image:
         """Maska L (0/255) całego koła (opona + felga) w rozmiarze `image`, bez poszerzania."""
+        ...
+
+    def segment_boxes(
+        self, image: Image.Image, boxes: list[tuple[float, float, float, float]], /
+    ) -> list[Image.Image]:
+        """Maska L (0/255) całego koła dla każdego boxu (x0, y0, x1, y1), w kolejności boxów."""
         ...
 
     def release(self) -> None:
@@ -33,8 +41,15 @@ class Sam2Segmenter:
     Model ładuje się przy pierwszym kliknięciu i zostaje w pamięci (~3 GB) do `release()`.
     """
 
-    def __init__(self, repo: str = SAM_REPO, revision: str = SAM_REVISION, grow: float = 1.5):
+    def __init__(
+        self,
+        repo: str = SAM_REPO,
+        revision: str = SAM_REVISION,
+        grow: float = 1.5,
+        observer: LoadObserver = NO_OBSERVER,
+    ):
         self.repo = repo
+        self.observer = observer
         self.revision = revision
         self.grow = grow
         self._model: Any = None
@@ -44,14 +59,15 @@ class Sam2Segmenter:
     def _load(self) -> None:
         if self._model is not None:
             return
-        import torch
-        from transformers import Sam2Model, Sam2Processor
+        with self.observer.loading():
+            import torch
+            from transformers import Sam2Model, Sam2Processor
 
-        self._device = "mps" if torch.backends.mps.is_available() else "cpu"
-        kwargs: dict[str, Any] = {"revision": self.revision, "local_files_only": True}
-        self._processor = Sam2Processor.from_pretrained(self.repo, **kwargs)
-        model: Any = Sam2Model.from_pretrained(self.repo, **kwargs)
-        self._model = model.to(self._device).eval()
+            self._device = "mps" if torch.backends.mps.is_available() else "cpu"
+            kwargs: dict[str, Any] = {"revision": self.revision, "local_files_only": True}
+            self._processor = Sam2Processor.from_pretrained(self.repo, **kwargs)
+            model: Any = Sam2Model.from_pretrained(self.repo, **kwargs)
+            self._model = model.to(self._device).eval()
 
     def release(self) -> None:
         """Zwalnia model (np. przed mflux, żeby oba nie zajmowały pamięci naraz)."""
@@ -66,17 +82,48 @@ class Sam2Segmenter:
         if torch.backends.mps.is_available():
             torch.mps.empty_cache()
 
+    def _embed(self, rgb: Image.Image) -> Any:
+        self._load()
+        embedded = self._processor(images=rgb, return_tensors="pt").to(self._device)
+        return self._model.get_image_embeddings(embedded["pixel_values"])
+
+    def segment_boxes(
+        self, image: Image.Image, boxes: list[tuple[float, float, float, float]]
+    ) -> list[Image.Image]:
+        """Wszystkie boxy jednym wywołaniem dekodera (embedding obrazu liczony raz)."""
+        import numpy as np
+        import torch
+
+        if not boxes:
+            return []
+        rgb = image.convert("RGB")
+        with torch.no_grad():
+            embeddings = self._embed(rgb)
+            prompt = [[[float(v) for v in box] for box in boxes]]
+            inputs = self._processor(images=rgb, input_boxes=prompt, return_tensors="pt").to(
+                self._device
+            )
+            out = self._model(
+                image_embeddings=embeddings,
+                input_boxes=inputs["input_boxes"],
+                multimask_output=False,
+            )
+            masks = self._processor.post_process_masks(
+                out.pred_masks.cpu(), inputs["original_sizes"].cpu()
+            )[0]
+        return [
+            Image.fromarray(masks[i, 0].numpy().astype(np.uint8) * 255) for i in range(len(boxes))
+        ]
+
     def segment_click(self, image: Image.Image, point: tuple[float, float]) -> Image.Image:
         import numpy as np
         import torch
 
-        self._load()
-        processor, model, device = self._processor, self._model, self._device
         rgb = image.convert("RGB")
         points, labels = [[[[float(point[0]), float(point[1])]]]], [[[1]]]
         with torch.no_grad():
-            embedded = processor(images=rgb, return_tensors="pt").to(device)
-            embeddings = model.get_image_embeddings(embedded["pixel_values"])
+            embeddings = self._embed(rgb)
+            processor, model, device = self._processor, self._model, self._device
 
             first = processor(
                 images=rgb, input_points=points, input_labels=labels, return_tensors="pt"

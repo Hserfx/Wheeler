@@ -1,4 +1,8 @@
-"""Wspólne kroki testów przepływu: wgranie zdjęć, klik w koło, generowanie (przez HTTP)."""
+"""Wspólne kroki testów przepływu: wgranie zdjęć, klik w koło, generowanie (przez HTTP).
+
+Po wgraniu zadanie czeka w kolejce na detekcję kół (ticket 04): zanim klikniesz koło, przetwórz
+kolejkę (`drain`). Atrapa z `fake_processor` nie wykrywa żadnych kół.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +10,7 @@ import io
 import re
 
 import numpy as np
-from fake_models import DiscSegmenter, OpaqueRemover, SolidEditor
+from fake_models import BoxDetector, DiscSegmenter, OpaqueRemover, SolidEditor
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
@@ -39,14 +43,23 @@ def rim_png() -> bytes:
 
 
 def fake_processor(radius: int = 10) -> WheelSwapProcessor:
-    """Prawdziwy procesor podmiany felgi z atrapami SAM 2 i mflux (zielona felga)."""
-    return WheelSwapProcessor(segmenter=DiscSegmenter(radius=radius), editor=SolidEditor())
-
-
-def rim_processor(remover: BackgroundRemover | None = None) -> WheelSwapProcessor:
-    """Procesor z atrapą usuwania tła (domyślnie felga zostaje bez zmian)."""
+    """Prawdziwy procesor podmiany felgi z atrapami detektora (nic nie znajduje), SAM 2
+    i mflux (zielona felga)."""
     return WheelSwapProcessor(
-        segmenter=DiscSegmenter(), editor=SolidEditor(), remover=remover or OpaqueRemover()
+        detector=BoxDetector(), segmenter=DiscSegmenter(radius=radius), editor=SolidEditor()
+    )
+
+
+def rim_processor(
+    remover: BackgroundRemover | None = None, detector: BoxDetector | None = None
+) -> WheelSwapProcessor:
+    """Procesor z atrapą usuwania tła (domyślnie felga zostaje bez zmian) i detektora kół
+    (domyślnie nic nie znajduje: tło usuwane z całego zdjęcia)."""
+    return WheelSwapProcessor(
+        detector=detector or BoxDetector(),
+        segmenter=DiscSegmenter(),
+        editor=SolidEditor(),
+        remover=remover or OpaqueRemover(),
     )
 
 
@@ -58,15 +71,17 @@ def library_rim(
     remover: BackgroundRemover | None = None,
 ) -> int:
     """Dodaje felgę do biblioteki przez API: wgranie, usunięcie tła (worker z atrapą,
-    domyślnie felga bez zmian) i akceptacja podglądu. Zwraca id felgi."""
-    app = client.app
+    domyślnie felga bez zmian) i akceptacja podglądu. Zwraca id felgi.
+
+    Felgi mają pierwszeństwo w kolejce workera, więc `run_once` nie rusza innych zadań."""
+    state = client.app.state  # type: ignore[attr-defined]
     response = client.post(
         "/rims",
         files={"rim": ("felga.png", rim if rim is not None else rim_png(), "image/png")},
         data={"name": name, "mode": "manage"},
     )
     assert response.status_code == 200, response.text
-    assert run_once(app.state.session_factory, app.state.storage, rim_processor(remover))  # type: ignore[attr-defined]
+    assert run_once(state.session_factory, state.storage, rim_processor(remover))
     pending = re.findall(r'data-rim-id="(\d+)"', client.get("/rims/picker").text)
     assert len(pending) == 1, pending
     response = client.post(f"/rims/{pending[0]}/accept", data={"mode": "manage"})
@@ -108,6 +123,19 @@ def generate(client: TestClient, job_id: int) -> None:
     assert response.status_code == 303, response.text
 
 
+def drain(
+    session_factory: sessionmaker[Session],
+    storage: Storage,
+    processor: WheelSwapProcessor | None = None,
+) -> int:
+    """Przetwarza kolejkę do końca (np. detekcję po wgraniu); zwraca liczbę zadań."""
+    processor = processor or fake_processor()
+    count = 0
+    while run_once(session_factory, storage, processor):
+        count += 1
+    return count
+
+
 def finish_job(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -117,9 +145,12 @@ def finish_job(
     point: tuple[float, float] = WHEEL_CENTER,
     radius: int = 10,
 ) -> None:
-    """Klik w koło -> maska (worker) -> generowanie (worker): zadanie kończy się wynikiem."""
+    """(Detekcja) -> klik w koło -> maska -> generowanie: zadanie kończy się wynikiem.
+
+    Przetwarza całą kolejkę, więc inne oczekujące zadania też posuwają się o krok."""
     processor = fake_processor(radius)
+    drain(session_factory, storage, processor)
     click_wheel(client, job_id, point)
-    assert run_once(session_factory, storage, processor)
+    assert drain(session_factory, storage, processor)
     generate(client, job_id)
-    assert run_once(session_factory, storage, processor)
+    assert drain(session_factory, storage, processor)

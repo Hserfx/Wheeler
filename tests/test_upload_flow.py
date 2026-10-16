@@ -11,10 +11,11 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from fake_models import DiscSegmenter, NothingSegmenter, SolidEditor
+from fake_models import BoxDetector, DiscSegmenter, NothingSegmenter, SolidEditor
 from fastapi.testclient import TestClient
 from helpers import (
     click_wheel,
+    drain,
     encode,
     fake_processor,
     generate,
@@ -68,11 +69,14 @@ def test_click_shows_mask_overlay_and_generation_changes_only_pixels_inside_it(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
     original = noise_photo(320, 200)
-    processor = WheelSwapProcessor(segmenter=DiscSegmenter(radius=40), editor=SolidEditor())
+    processor = WheelSwapProcessor(
+        detector=BoxDetector(), segmenter=DiscSegmenter(radius=40), editor=SolidEditor()
+    )
     job_id = upload(client, encode(original), filename="auto.png")
+    drain(session_factory, storage)
 
     page = client.get(f"/jobs/{job_id}")
-    assert TEXTS["wheel_click_hint"] in page.text
+    assert TEXTS["wheels_none_detected"] in page.text
     assert 'data-role="wheel-picker"' in page.text
     assert f'action="/jobs/{job_id}/generate"' not in page.text  # bez maski nie ma generowania
 
@@ -108,6 +112,7 @@ def test_generation_records_used_seed_in_job_parameters(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
     job_id = upload(client)
+    drain(session_factory, storage)
     click_wheel(client, job_id)
     assert run_once(session_factory, storage, fake_processor())
     generate(client, job_id)
@@ -118,31 +123,21 @@ def test_generation_records_used_seed_in_job_parameters(
     )
 
 
-def test_clicking_again_replaces_the_selected_wheel(
+def test_generation_requires_a_wheel_mask(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
-    processor = fake_processor(radius=8)
     job_id = upload(client)
-    click_wheel(client, job_id, (15, 15))
-    assert run_once(session_factory, storage, processor)
-    click_wheel(client, job_id, (45, 30))
-    assert run_once(session_factory, storage, processor)
-
-    draft = client.get(f"/jobs/{job_id}/status").text
-    assert len(re.findall(r'data-role="mask-overlay"', draft)) == 1
-    alpha = np.asarray(_fetch(client, _image_src(draft, "mask-overlay")))[..., 3]
-    assert alpha[30, 45] > 0 and alpha[15, 15] == 0
-
-
-def test_generation_requires_a_wheel_mask(client: TestClient) -> None:
-    job_id = upload(client)
+    drain(session_factory, storage)
     response = client.post(f"/jobs/{job_id}/generate", follow_redirects=False)
     assert response.status_code == 409
     assert TEXTS["error_no_wheel"] in response.text
 
 
-def test_wheel_cannot_be_clicked_while_mask_is_being_computed(client: TestClient) -> None:
+def test_wheel_cannot_be_clicked_while_mask_is_being_computed(
+    client: TestClient, session_factory: sessionmaker[Session], storage: Storage
+) -> None:
     job_id = upload(client)
+    drain(session_factory, storage)
     click_wheel(client, job_id)
     response = client.post(f"/jobs/{job_id}/wheels", data={"x": 1, "y": 1})
     assert response.status_code == 409
@@ -152,8 +147,11 @@ def test_failed_segmentation_lets_user_click_again(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
     job_id = upload(client)
+    drain(session_factory, storage)
     click_wheel(client, job_id)
-    processor = WheelSwapProcessor(segmenter=NothingSegmenter(), editor=SolidEditor())
+    processor = WheelSwapProcessor(
+        detector=BoxDetector(), segmenter=NothingSegmenter(), editor=SolidEditor()
+    )
     assert run_once(session_factory, storage, processor)
 
     draft = client.get(f"/jobs/{job_id}/status").text
@@ -170,8 +168,11 @@ def test_failure_in_generation_marks_job_failed_with_error_on_page(
         def edit(self, *args: object, **kwargs: object) -> Image.Image:
             raise RuntimeError("model się wyłożył")
 
-    processor = WheelSwapProcessor(segmenter=DiscSegmenter(radius=10), editor=BrokenEditor())
+    processor = WheelSwapProcessor(
+        detector=BoxDetector(), segmenter=DiscSegmenter(radius=10), editor=BrokenEditor()
+    )
     job_id = upload(client)
+    drain(session_factory, storage)
     click_wheel(client, job_id)
     assert run_once(session_factory, storage, processor)
     generate(client, job_id)

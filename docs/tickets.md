@@ -100,13 +100,22 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 03
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Detekcja (detektor wybrany w spike'u) + SAM 2 kończy się w ciągu kilku sekund
-- [ ] Gdy nie wykryto żadnego koła, UI jasno o tym informuje i zachęca do dodania koła kliknięciem
-- [ ] Usuwanie i dodawanie masek działa przed uruchomieniem generowania
-- [ ] Wszystkie wybrane koła trafiają do jednego wyniku, a piksele poza wszystkimi maskami pozostają nienaruszone
-- [ ] Wszystkie koła jednego zadania używają tego samego seeda i promptu
+- [x] Detekcja (detektor wybrany w spike'u) + SAM 2 kończy się w ciągu kilku sekund
+- [x] Gdy nie wykryto żadnego koła, UI jasno o tym informuje i zachęca do dodania koła kliknięciem
+- [x] Usuwanie i dodawanie masek działa przed uruchomieniem generowania
+- [x] Wszystkie wybrane koła trafiają do jednego wyniku, a piksele poza wszystkimi maskami pozostają nienaruszone
+- [x] Wszystkie koła jednego zadania używają tego samego seeda i promptu
+
+**Comments:**
+
+- Detekcja: Florence-2-large (`wheeler_worker/detector.py`) -> SAM 2.1 z promptem box (`Segmenter.segment_boxes`),
+  jako `TaskKind.DETECT` w kolejce zaraz po wgraniu. Na prawdziwych modelach (M2 Max, `docs/spike/samples/`):
+  ciepło 0,8–1,0 s na zdjęcie, zimny start z ładowaniem modeli 4–6 s; pierwszy odczyt wag z dysku (pusty cache
+  stron) ~20 s. Maski obejmują oponę i felgę, jak w spike'u (Golf 2/2, Sorento 2/2 z kawałkiem cienia, Vios 3 koła
+  aut + koło skutera do usunięcia kliknięciem).
+- Klik w zdjęcie: w masce usuwa koło od razu (bez workera), obok masek dodaje koło (SAM 2, dwustopniowo jak w 03).
 
 ---
 
@@ -204,14 +213,21 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 03
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Akceptowane formaty: JPEG, PNG, WebP i HEIC, a inne są odrzucane z komunikatem
-- [ ] Obrót według orientacji EXIF stosowany przed detekcją i kompozycją
-- [ ] Limity 40 MPx / 50 MB sprawdzane z czytelnym komunikatem
-- [ ] Wgrywanie przez drag & drop, wybór pliku i wklejenie ze schowka
-- [ ] Wynikowy PNG zawiera profil ICC oryginału (np. Display P3) i EXIF bez danych GPS
-- [ ] Test: zdjęcie HEIC z orientacją i GPS daje poprawnie obrócony PNG z ICC i bez GPS
+- [x] Akceptowane formaty: JPEG, PNG, WebP i HEIC, a inne są odrzucane z komunikatem
+- [x] Obrót według orientacji EXIF stosowany przed detekcją i kompozycją
+- [x] Limity 40 MPx / 50 MB sprawdzane z czytelnym komunikatem
+- [x] Wgrywanie przez drag & drop, wybór pliku i wklejenie ze schowka
+- [x] Wynikowy PNG zawiera profil ICC oryginału (np. Display P3) i EXIF bez danych GPS
+- [x] Test: zdjęcie HEIC z orientacją i GPS daje poprawnie obrócony PNG z ICC i bez GPS
+
+**Comments:**
+
+- Walidacja: `wheeler_api/uploads.py` (`save_image_upload`), wspólna dla zdjęcia auta i felgi (i biblioteki felg z 06). Format po zawartości, limity 50 MB (strumieniowo) i 40 MPx (z nagłówka, bez dekodowania).
+- HEIC i zdjęcia z orientacją EXIF dostają obrócony podgląd `<plik>.preview.jpg` w pełnym rozmiarze (filtr `display_path` w szablonach), więc kliknięcia są w tym samym układzie co w workerze niezależnie od tego, jak przeglądarka traktuje EXIF.
+- Wynik: `photos.read_metadata` + `save_png(..., metadata=)` (ICC 1:1, EXIF bez GPS i orientacji). Test bit w bit po obrocie EXIF: `tests/test_photo_input.py`. Testowe pliki z metadanymi generuje `tests/photo_files.py`.
+- Drag & drop i wklejanie (Alpine, `DataTransfer` do zwykłego pola pliku) sprawdzone testem obecności w HTML, bez ręcznego testu w przeglądarce.
 
 ---
 
@@ -221,10 +237,20 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 03
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Po starcie workera model nie jest załadowany
-- [ ] Pierwsze zadanie ładuje model, a UI pokazuje stan „ładowanie” zamiast zablokowanego postępu
-- [ ] Po skonfigurowanym czasie bezczynności model jest zwalniany, a pamięć faktycznie wraca do systemu
-- [ ] Czas bezczynności ustawiany przez konfigurację, domyślnie 10 min
-- [ ] Stan modelu (uśpiony / ładowanie / gotowy) widoczny w UI
+- [x] Po starcie workera model nie jest załadowany
+- [x] Pierwsze zadanie ładuje model, a UI pokazuje stan „ładowanie” zamiast zablokowanego postępu
+- [x] Po skonfigurowanym czasie bezczynności model jest zwalniany, a pamięć faktycznie wraca do systemu
+- [x] Czas bezczynności ustawiany przez konfigurację, domyślnie 10 min
+- [x] Stan modelu (uśpiony / ładowanie / gotowy) widoczny w UI
+
+**Comments:**
+
+- Weryfikacja na prawdziwym modelu (M2 Max, SAM 2.1 + mflux q8, generowanie 512 px, czas bezczynności 5 s):
+  `phys_footprint` procesu 0,05 GB po starcie → 3,2 GB po segmentacji → 21,3 GB po generowaniu
+  (MLX active 17,2 GB + cache 2,1 GB) → **1,6 GB po zwolnieniu** (MLX active 0, cache 0; MPS driver 1,0 GB).
+  Ponowne zadanie ładuje SAM 2 znowu (3,8 GB), drugie zwolnienie → 1,4 GB.
+  Stany: asleep → loading → ready → loading (mflux) → ready → asleep → loading → ready → asleep.
+- Stan modelu w tabeli `worker_state`; po awarii workera zostaje ostatni stan aż do restartu
+  (start workera zapisuje „uśpiony”). Brak heartbeatu.

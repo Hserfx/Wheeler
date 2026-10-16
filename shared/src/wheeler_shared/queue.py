@@ -4,14 +4,14 @@ Funkcje nie zatwierdzają transakcji: robi to wywołujący (`with session_factor
 `claim_next_job` blokuje wiersz przez `FOR UPDATE SKIP LOCKED`, więc kilka workerów
 (albo kilka procesów) nigdy nie dostanie tego samego zadania.
 
-Kolejność: najpierw segmentacja (interaktywna, ~1 s), potem generowanie; w obrębie rodzaju
-FIFO po `queued_at` (moment wstawienia do kolejki, nie utworzenia zadania).
+Kolejność: najpierw praca interaktywna (detekcja kół, segmentacja; ~1 s), potem generowanie;
+w obrębie rodzaju FIFO po `queued_at` (moment wstawienia do kolejki, nie utworzenia zadania).
 Zlecanie pracy z UI (klik, „Generuj”) jest w `editing.py`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -19,7 +19,7 @@ from typing import Any
 from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
-from wheeler_shared.models import Image, ImageRole, Job, JobStatus, TaskKind
+from wheeler_shared.models import Image, ImageRole, Job, JobStatus, TaskKind, Wheel, WheelSource
 
 
 @dataclass(frozen=True)
@@ -39,6 +39,15 @@ class ClaimedJob:
     rim_path: str | None
     params: dict[str, Any]
     wheels: tuple[ClaimedWheel, ...]
+
+
+@dataclass(frozen=True)
+class SavedMask:
+    """Maska koła zapisana przez worker (ścieżki względne) i prostokąt, który obejmuje."""
+
+    mask_path: str
+    overlay_path: str
+    box: tuple[int, int, int, int]  # left, top, right, bottom (prawy/dolny wyłącznie)
 
 
 def create_job(
@@ -99,15 +108,29 @@ def claim_next_job(session: Session) -> ClaimedJob | None:
     )
 
 
-def complete_segmentation(
-    session: Session, job_id: int, *, masks: Mapping[int, tuple[str, str]]
-) -> None:
-    """Zapisuje maski kół (`id -> (maska, nakładka)`) i oddaje zadanie użytkownikowi."""
+def complete_segmentation(session: Session, job_id: int, *, masks: Mapping[int, SavedMask]) -> None:
+    """Zapisuje maski klikniętych kół (`id koła -> maska`) i oddaje zadanie użytkownikowi."""
     job = session.get_one(Job, job_id)
     for wheel in job.wheels:
         if wheel.id in masks:
-            wheel.mask_path, wheel.overlay_path = masks[wheel.id]
+            _set_mask(wheel, masks[wheel.id])
     job.status = JobStatus.DRAFT
+
+
+def complete_detection(session: Session, job_id: int, *, wheels: Sequence[SavedMask]) -> None:
+    """Zapisuje wykryte koła (nowe `Wheel` z maskami) i oddaje zadanie użytkownikowi."""
+    job = session.get_one(Job, job_id)
+    for saved in wheels:
+        wheel = Wheel(source=WheelSource.DETECTED)
+        _set_mask(wheel, saved)
+        job.wheels.append(wheel)
+    job.wheels_detected = len(wheels)
+    job.status = JobStatus.DRAFT
+
+
+def _set_mask(wheel: Wheel, saved: SavedMask) -> None:
+    wheel.mask_path, wheel.overlay_path = saved.mask_path, saved.overlay_path
+    wheel.box = saved.box
 
 
 def complete_job(
@@ -126,11 +149,11 @@ def complete_job(
 
 
 def fail_job(session: Session, job_id: int, *, error: str) -> None:
-    """Błąd pracy workera. Nieudana segmentacja wraca do szkicu (można kliknąć ponownie),
-    nieudane generowanie kończy zadanie statusem `failed`."""
+    """Błąd pracy workera. Nieudana detekcja albo segmentacja wraca do szkicu (można kliknąć
+    koło), nieudane generowanie kończy zadanie statusem `failed`."""
     job = session.get_one(Job, job_id)
     job.error = error
-    if job.task == TaskKind.SEGMENT:
+    if job.task in (TaskKind.SEGMENT, TaskKind.DETECT):
         job.status = JobStatus.DRAFT
         for wheel in [w for w in job.wheels if w.mask_path is None]:
             job.wheels.remove(wheel)

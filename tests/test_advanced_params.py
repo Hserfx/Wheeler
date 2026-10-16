@@ -11,9 +11,9 @@ from typing import Any
 
 import numpy as np
 import pytest
-from fake_models import DiscSegmenter, SolidEditor
+from fake_models import BoxDetector, DiscSegmenter, SolidEditor
 from fastapi.testclient import TestClient
-from helpers import click_wheel, finish_job, generate, jpeg, library_rim
+from helpers import click_wheel, drain, finish_job, generate, jpeg, library_rim
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -159,12 +159,15 @@ def test_worker_edits_with_values_from_the_section(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
     editor = SolidEditor()
-    processor = WheelSwapProcessor(segmenter=DiscSegmenter(radius=15), editor=editor)
+    processor = WheelSwapProcessor(
+        detector=BoxDetector(), segmenter=DiscSegmenter(radius=15), editor=editor
+    )
     areas = {}
     for grow in ("0", "10"):
         job_id = _upload(
             client, seed="99", resolution="768", mask_grow=grow, prompt_suffix="Gold rim."
         )
+        drain(session_factory, storage, processor)  # detekcja kół (atrapa: brak)
         click_wheel(client, job_id)
         assert run_once(session_factory, storage, processor)
         areas[grow] = _mask_area(client, job_id)

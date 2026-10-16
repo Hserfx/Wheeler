@@ -7,11 +7,16 @@
     <span class="text-slate-500">{{ t.status_label }}:</span>
     <span class="font-semibold" data-status="{{ job.status.value }}">{{ job_status_label(job) }}</span>
   </p>
+  {% if model_loading_for(job) %}
+  <p class="text-sm text-amber-700" role="status" data-role="model-loading">{{ t.model_loading_job }}</p>
+  {% endif %}
 
   {% if job.error %}
   <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
     {% if job.task and job.task.value == "segment" %}
     {{ t.error_mask_failed }} <span class="text-red-500">({{ job.error }})</span>
+    {% elif job.task and job.task.value == "detect" %}
+    {{ t.error_detection_failed }} <span class="text-red-500">({{ job.error }})</span>
     {% else %}
     {{ t.job_error }}: {{ job.error }}
     {% endif %}
@@ -19,9 +24,18 @@
   {% endif %}
 
   {% if job.status.value == "draft" and input_image %}
-  {#- Wybór koła: klik w zdjęcie wysyła współrzędne w pikselach zdjęcia (naturalWidth/Height). -#}
+  {#- Edycja kół: klik w zdjęcie wysyła współrzędne w pikselach zdjęcia (naturalWidth/Height);
+      serwer usuwa koło, w którego masce jest punkt, albo dodaje nowe koło (SAM 2). -#}
   <div class="flex flex-col gap-3">
-    <p class="text-sm">{{ t.wheel_mask_hint if job.masked_wheels else t.wheel_click_hint }}</p>
+    {% if job.masked_wheels %}
+    <p class="text-sm">{{ t.wheel_mask_hint }}</p>
+    {% elif job.wheels_detected == 0 %}
+    <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status" data-role="no-wheels">
+      {{ t.wheels_none_detected }}
+    </p>
+    {% else %}
+    <p class="text-sm">{{ t.wheel_click_hint }}</p>
+    {% endif %}
     <div class="relative cursor-crosshair select-none" data-role="wheel-picker"
          x-data="{
            pick(event) {
@@ -36,10 +50,11 @@
            },
          }"
          @click="pick($event)">
-      <img x-ref="photo" src="/files/{{ input_image.path }}" alt="{{ t.wheel_picker_alt }}" data-role="input"
+      <img x-ref="photo" src="/files/{{ input_image.path | display_path }}" alt="{{ t.wheel_picker_alt }}" data-role="input"
            draggable="false" class="block w-full rounded-lg border border-slate-200 bg-white">
       {% for wheel in job.masked_wheels %}
-      <img src="/files/{{ wheel.overlay_path }}" alt="{{ t.wheel_mask_alt }}" data-role="mask-overlay"
+      <img src="/files/{{ wheel.overlay_path }}" alt="{{ t.wheel_mask_alt.format(number=loop.index) }}"
+           data-role="mask-overlay" data-wheel-id="{{ wheel.id }}"
            draggable="false" class="pointer-events-none absolute inset-0 h-full w-full rounded-lg">
       {% endfor %}
     </div>
@@ -50,7 +65,8 @@
               class="rounded-md bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
         {{ t.generate_submit }}
       </button>
-      <span class="text-sm text-slate-500">{{ t.generate_hint }}</span>
+      <span class="text-sm text-slate-500" data-role="wheel-count">{{ t.wheels_selected.format(count=job.masked_wheels | length) }}.
+        {{ t.generate_hint }}</span>
     </form>
     {% endif %}
   </div>
@@ -59,7 +75,7 @@
     {% if input_image %}
     <figure>
       <figcaption class="mb-2 text-sm font-medium text-slate-600">{{ t.job_input }}</figcaption>
-      <img src="/files/{{ input_image.path }}" alt="{{ t.job_input }}" data-role="input"
+      <img src="/files/{{ input_image.path | display_path }}" alt="{{ t.job_input }}" data-role="input"
            class="w-full rounded-lg border border-slate-200 bg-white">
     </figure>
     {% endif %}
@@ -79,7 +95,7 @@
   {% if rim_image %}
   <figure class="w-32">
     <figcaption class="mb-2 text-sm font-medium text-slate-600">{{ t.job_rim }}</figcaption>
-    <img src="/files/{{ rim_image.path }}" alt="{{ t.job_rim }}" data-role="rim"
+    <img src="/files/{{ rim_image.path | display_path }}" alt="{{ t.job_rim }}" data-role="rim"
          class="w-full rounded-lg border border-slate-200 bg-white">
   </figure>
   {% endif %}

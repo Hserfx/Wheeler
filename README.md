@@ -47,27 +47,48 @@ Zadanie (`Job`) przechodzi przez kroki użytkownika (status `draft`) i pracę wo
 (`queued`/`running`, rodzaj pracy w `Job.task`):
 
 ```
-wgranie auta + felgi -> draft --klik w koło--> segment (SAM 2) -> draft z maską (nakładka)
-                        draft --„Generuj”----> generate (mflux) -> done | failed
+wgranie auta + felgi -> detect (Florence-2 + SAM 2) -> draft z maskami wykrytych kół (nakładki)
+draft --klik w maskę---------> draft (koło usunięte od razu, bez workera)
+draft --klik obok masek------> segment (SAM 2) -> draft z dodanym kołem
+draft --„Generuj”------------> generate (mflux, każde koło osobno, ten sam seed i prompt) -> done | failed
 ```
 
-- SAM 2 i mflux działają wyłącznie w natywnym workerze, więc maska po kliknięciu też idzie przez
-  kolejkę (`TaskKind.SEGMENT`). Segmentacja ma pierwszeństwo przed generowaniem, w obrębie rodzaju
-  obowiązuje FIFO po `queued_at`. Nieudana segmentacja wraca do szkicu z komunikatem.
-- Działania użytkownika: `wheeler_shared/editing.py` (`select_wheel`, `start_generation`).
+- Detektor, SAM 2 i mflux działają wyłącznie w natywnym workerze, więc detekcja po wgraniu
+  (`TaskKind.DETECT`) i maska po kliknięciu (`TaskKind.SEGMENT`) idą przez kolejkę. Obie mają
+  pierwszeństwo przed generowaniem, w obrębie rodzaju obowiązuje FIFO po `queued_at`. Nieudana
+  detekcja albo segmentacja wraca do szkicu z komunikatem (koło można dodać kliknięciem).
+- Koła (`Wheel`): `source` (`detected` | `click`), maska, nakładka i `box_*` (prostokąt maski,
+  wstępny filtr przy trafianiu kliknięciem). `Job.wheels_detected` = liczba kół z detekcji
+  (0 -> UI mówi „Nie wykryto żadnego koła”). Klik trafia w maskę, gdy plik maski ma w tym punkcie
+  piksel > 0 (`wheeler_api/wheel_masks.py`); przy nakładających się maskach usuwa koło dodane później.
+- Działania użytkownika: `wheeler_shared/editing.py` (`request_detection`, `click_photo`,
+  `start_generation`).
   Kolejka: `wheeler_shared/queue.py`. Parametry edycji, ustawienia domyślne i dozwolone zakresy:
   `wheeler_shared/edit_params.py`. Sekcja „Zaawansowane” na stronie głównej
   (`wheeler_api/advanced.py`) zapisuje w `Job.params` użyte wartości już przy wgraniu zdjęcia;
   pusty seed jest losowany i zapisywany przy „Generuj”.
 - `wheeler_worker/processing.py` definiuje `Processor` z metodą na każdy rodzaj pracy
-  (`segment`, `generate`; tylko pliki, bez bazy). Runner (`runner.py`, `HANDLERS`) pobiera zadanie
+  (`detect`, `segment`, `generate`; tylko pliki, bez bazy). Runner (`runner.py`, `HANDLERS`) pobiera zadanie
   (`FOR UPDATE SKIP LOCKED`), woła procesor i zapisuje wynik albo błąd.
-- `WHEELER_PROCESSOR`: `wheel-swap` (domyślny: SAM 2.1 + mflux Qwen-Image-2.1-Turbo q8, wagi
+- `WHEELER_PROCESSOR`: `wheel-swap` (domyślny: Florence-2-large + SAM 2.1 + mflux Qwen-Image-2.1-Turbo q8, wagi
   w `WHEELER_MFLUX_MODEL_PATH`, domyślnie `~/.cache/wheeler/qwen-image-2.1-turbo-mflux-q8`) albo
   `placeholder` (te same kroki z atrapami modeli, bez GPU; do pracy nad UI).
-- Modele ładują się leniwie przy pierwszym użyciu. Przed generowaniem SAM 2 jest zwalniany.
-- Pliki koła w katalogu zadania: `wheels/<id>/mask.png` (dokładnie obszar, który może się zmienić),
+- Modele ładują się leniwie przy pierwszym użyciu. Przed generowaniem Florence-2 i SAM 2 są zwalniane.
+  Detekcja z ładowaniem modeli 4–6 s (pierwszy odczyt wag z dysku ~20 s), potem ~1 s na zdjęcie.
+- Cykl życia modeli (`wheeler_worker/model_lifecycle.py`): po starcie workera modele nie są
+  załadowane („uśpiony”), pierwsze zadanie je ładuje („ładowanie”, też w statusie zadania),
+  potem zostają w pamięci („gotowy”) i są zwalniane po `WHEELER_MODEL_IDLE_TIMEOUT` sekundach
+  bez zadań (domyślnie 600). Stan leży w tabeli `worker_state` (`wheeler_shared/worker_state.py`),
+  a UI pokazuje go w nagłówku (`GET /model-state`, odświeżane co 2 s).
+- Pliki koła w katalogu zadania: `wheels/<id>/mask.png` (dokładnie obszar, który może się zmienić;
+  dla kół z detekcji maska i nakładka leżą w `wheels/detected-<n>/`),
   `overlay.png`, `crop.png`, `crop_mask.png`, `generated.png`; wynik `result.png`.
+- Wejście (`wheeler_api/uploads.py`, `save_image_upload`, wspólne dla każdego wgrywanego obrazu):
+  JPEG, PNG, WebP, HEIC, do 50 MB i 40 MPx; format rozpoznawany po zawartości. Dla HEIC i zdjęć
+  z orientacją EXIF obok pliku powstaje obrócony podgląd `<plik>.preview.jpg` w pełnym rozmiarze
+  (szablony: filtr `display_path`), bo kliknięcia są w układzie obróconego zdjęcia.
+- Odczyt i zapis zdjęć w workerze: `wheeler_worker/photos.py`. `result.png` dostaje profil ICC
+  i EXIF oryginału (`read_metadata`: bez GPS i orientacji); maski i pliki robocze są bez metadanych.
 
 ## Migracje
 
@@ -96,5 +117,7 @@ Testy integracyjne (`tests/conftest.py`):
 - `WHEELER_TEST_PG_ADMIN_URL` pozwala wskazać istniejący serwer zamiast startować kontener.
 - Test przepływu (`tests/test_upload_flow.py`) używa `TestClient` dla API i `run_once` workera
   z prawdziwym `WheelSwapProcessor` i atrapami modeli (`tests/fake_models.py`); GPU nie jest
-  potrzebne. Kroki „wgraj, kliknij, generuj” są w `tests/helpers.py` (`upload`, `finish_job`).
+  potrzebne. Kroki „wgraj, kliknij, generuj” są w `tests/helpers.py` (`upload`, `drain`,
+  `finish_job`). Po `upload` zadanie czeka w kolejce na detekcję kół: przed kliknięciem koła
+  przetwórz kolejkę (`drain`; atrapa `fake_processor` nie wykrywa kół, `BoxDetector` zwraca zadane boxy).
 - Logika wycinania i kompozycji: `tests/test_compositing.py`, bez modelu.

@@ -16,19 +16,46 @@ from sqlalchemy.orm import Session, sessionmaker
 from wheeler_shared.models import TaskKind
 from wheeler_shared.queue import (
     ClaimedJob,
+    SavedMask,
     claim_next_job,
+    complete_detection,
     complete_job,
     complete_segmentation,
     fail_job,
 )
 from wheeler_shared.rim_library import claim_next_rim, complete_rim_cut, fail_rim_cut
 from wheeler_shared.storage import Storage
-from wheeler_worker.processing import CutRimItem, GenerateItem, Processor, SegmentItem
+from wheeler_worker.model_lifecycle import ModelLifecycle
+from wheeler_worker.processing import (
+    CutRimItem,
+    DetectItem,
+    GenerateItem,
+    MaskFiles,
+    Processor,
+    SegmentItem,
+)
 
 log = logging.getLogger(__name__)
 
 SaveResult = Callable[[Session], None]
 Handler = Callable[[ClaimedJob, Storage, Processor], SaveResult]
+
+
+def _saved(storage: Storage, files: MaskFiles) -> SavedMask:
+    return SavedMask(
+        mask_path=storage.relative(files.mask),
+        overlay_path=storage.relative(files.overlay),
+        box=files.box,
+    )
+
+
+def _detect(job: ClaimedJob, storage: Storage, processor: Processor) -> SaveResult:
+    photo = storage.path(job.input_path)
+    result = processor.detect(
+        DetectItem(job_id=job.id, photo_path=photo, output_dir=photo.parent, params=job.params)
+    )
+    wheels = [_saved(storage, files) for files in result.wheels]
+    return lambda session: complete_detection(session, job.id, wheels=wheels)
 
 
 def _segment(job: ClaimedJob, storage: Storage, processor: Processor) -> SaveResult:
@@ -43,10 +70,7 @@ def _segment(job: ClaimedJob, storage: Storage, processor: Processor) -> SaveRes
             clicks=clicks,
         )
     )
-    masks = {
-        wheel_id: (storage.relative(files.mask), storage.relative(files.overlay))
-        for wheel_id, files in result.masks.items()
-    }
+    masks = {wheel_id: _saved(storage, files) for wheel_id, files in result.masks.items()}
     return lambda session: complete_segmentation(session, job.id, masks=masks)
 
 
@@ -72,6 +96,7 @@ def _generate(job: ClaimedJob, storage: Storage, processor: Processor) -> SaveRe
 
 
 HANDLERS: dict[TaskKind, Handler] = {
+    TaskKind.DETECT: _detect,
     TaskKind.SEGMENT: _segment,
     TaskKind.GENERATE: _generate,
 }
@@ -141,8 +166,13 @@ def run_forever(
     *,
     poll_interval: float,
     stop: threading.Event,
+    lifecycle: ModelLifecycle | None = None,
 ) -> None:
-    """Przetwarza zadania aż do ustawienia `stop`. Pusta kolejka → czeka `poll_interval` s."""
+    """Przetwarza zadania aż do ustawienia `stop`. Pusta kolejka → czeka `poll_interval` s.
+
+    Z `lifecycle`: po każdym zadaniu liczy od nowa czas bezczynności, a przy pustej kolejce
+    zwalnia modele procesora, gdy minie `lifecycle.idle_timeout`.
+    """
     while not stop.is_set():
         try:
             processed = run_once(session_factory, storage, processor)
@@ -150,5 +180,18 @@ def run_forever(
             # Np. chwilowy brak bazy; nie kończymy procesu, tylko próbujemy ponownie.
             log.exception("Błąd pętli workera")
             processed = False
+        if lifecycle is not None:
+            _track_idle(lifecycle, processor, processed=processed)
         if not processed:
             stop.wait(poll_interval)
+
+
+def _track_idle(lifecycle: ModelLifecycle, processor: Processor, *, processed: bool) -> None:
+    if processed:
+        lifecycle.mark_used()
+        return
+    try:
+        if lifecycle.release_if_idle(processor.release):
+            log.info("Modele zwolnione po %.0f s bezczynności", lifecycle.idle_timeout)
+    except Exception:
+        log.exception("Błąd zwalniania modeli")

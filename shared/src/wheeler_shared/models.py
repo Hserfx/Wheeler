@@ -3,7 +3,9 @@
 Zadanie (`Job`) to jedna edycja jednego zdjęcia, widoczna w Historii. Przechodzi przez kroki,
 z których część wykonuje worker (`TaskKind`), a część użytkownik (status `draft`):
 
-    draft --klik w koło--> queued/running (segment) --> draft (maska jako nakładka)
+    wgranie --> queued/running (detect) --> draft (maski wykrytych kół jako nakładki)
+    draft --klik obok masek--> queued/running (segment) --> draft (nowe koło dodane)
+    draft --klik w maskę--> draft (koło usunięte, bez workera)
     draft --„Generuj”----> queued/running (generate) --> done | failed
 
 `Job.task` to rodzaj ostatnio zleconej pracy workera; razem ze statusem mówi UI, co się dzieje.
@@ -43,7 +45,13 @@ class TaskKind(enum.StrEnum):
     """Rodzaj pracy workera; każdy ma swoją metodę w `wheeler_worker.processing.Processor`."""
 
     SEGMENT = "segment"  # kliknięcia -> maski kół (SAM 2), interaktywne: mają pierwszeństwo
+    DETECT = "detect"  # zdjęcie -> wszystkie widoczne koła (Florence-2 + SAM 2), interaktywne
     GENERATE = "generate"  # podmiana felg we wszystkich kołach (mflux)
+
+
+class WheelSource(enum.StrEnum):
+    DETECTED = "detected"  # znalezione przez detektor po wgraniu zdjęcia
+    CLICK = "click"  # dodane kliknięciem użytkownika
 
 
 class ImageRole(enum.StrEnum):
@@ -76,6 +84,8 @@ class Job(Base):
     task: Mapped[TaskKind | None] = mapped_column(_str_enum(TaskKind, "task_kind"))
     params: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     error: Mapped[str | None] = mapped_column(Text)
+    # Liczba kół znalezionych przez detektor (None = detekcja się nie odbyła albo nie udała).
+    wheels_detected: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # Moment ostatniego wstawienia do kolejki: kolejność FIFO (zadanie może długo być szkicem).
     queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -119,15 +129,33 @@ class Wheel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
-    # Kliknięcie w pikselach zdjęcia (po obrocie EXIF); 04 doda koła z detektora (box).
+    source: Mapped[WheelSource | None] = mapped_column(_str_enum(WheelSource, "wheel_source"))
+    # Kliknięcie w pikselach zdjęcia (po obrocie EXIF); tylko dla `WheelSource.CLICK`.
     click_x: Mapped[float | None] = mapped_column(Float)
     click_y: Mapped[float | None] = mapped_column(Float)
     # Ścieżki względne w katalogu zadania (`jobs/<hex>/wheels/<id>/…`).
     mask_path: Mapped[str | None] = mapped_column(String(512))  # L 0/255: obszar do zmiany
     overlay_path: Mapped[str | None] = mapped_column(String(512))  # RGBA nakładka dla UI
+    # Prostokąt obejmujący maskę (piksele zdjęcia, prawy/dolny wyłącznie); None bez maski.
+    box_left: Mapped[int | None] = mapped_column(Integer)
+    box_top: Mapped[int | None] = mapped_column(Integer)
+    box_right: Mapped[int | None] = mapped_column(Integer)
+    box_bottom: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     job: Mapped[Job] = relationship(back_populates="wheels")
+
+    @property
+    def box(self) -> tuple[int, int, int, int] | None:
+        if self.box_left is None or self.box_top is None:
+            return None
+        if self.box_right is None or self.box_bottom is None:
+            return None
+        return self.box_left, self.box_top, self.box_right, self.box_bottom
+
+    @box.setter
+    def box(self, value: tuple[int, int, int, int] | None) -> None:
+        self.box_left, self.box_top, self.box_right, self.box_bottom = value or (None,) * 4
 
 
 class RimStatus(enum.StrEnum):

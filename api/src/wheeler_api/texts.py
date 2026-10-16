@@ -7,6 +7,7 @@ from typing import Final
 
 from wheeler_shared import edit_params
 from wheeler_shared.models import Job, JobStatus, TaskKind
+from wheeler_shared.worker_state import ModelState
 
 TEXTS: Final[dict[str, str]] = {
     "app_name": "Wheeler",
@@ -37,10 +38,14 @@ TEXTS: Final[dict[str, str]] = {
     "delete_done": "Usunięto zadania: {count}.",
     "delete_skipped": "Pominięto zadania w trakcie przetwarzania: {count}.",
     # Strona główna
-    "upload_heading": "Wgraj zdjęcie samochodu i felgi",
-    "upload_hint": "Pliki JPEG, PNG lub WebP. Koło do podmiany wskażesz w następnym kroku.",
+    "upload_heading": "Wgraj zdjęcie samochodu i wybierz felgę",
+    "upload_hint": (
+        "Pliki JPEG, PNG, WebP lub HEIC, do 50 MB i 40 MPx. Koło do podmiany wskażesz "
+        "w następnym kroku."
+    ),
+    "upload_drop_hint": "Przeciągnij plik tutaj albo wklej go ze schowka (Ctrl+V / ⌘V).",
     "upload_photo_label": "Zdjęcie samochodu",
-    "upload_rim_label": "Zdjęcie felgi",
+    "upload_rim_label": "Felga",
     "upload_choose": "Wybierz plik",
     "upload_no_file_chosen": "Nie wybrano pliku",
     "upload_submit": "Dalej",
@@ -60,7 +65,7 @@ TEXTS: Final[dict[str, str]] = {
         "Usunąć felgę z biblioteki? Zadania, które jej użyły, zachowają swoją kopię felgi."
     ),
     "rim_add_heading": "Dodaj nową felgę",
-    "rim_add_hint": "Zdjęcie felgi (JPEG, PNG lub WebP). Tło usuniemy automatycznie.",
+    "rim_add_hint": "Zdjęcie felgi (JPEG, PNG, WebP lub HEIC). Tło usuniemy automatycznie.",
     "rim_name_placeholder": "Nazwa (opcjonalnie)",
     "rim_add_submit": "Dodaj felgę",
     "rim_cutting": "Usuwanie tła…",
@@ -100,13 +105,15 @@ TEXTS: Final[dict[str, str]] = {
     # Wybór koła i generowanie
     "wheel_click_hint": "Kliknij koło, w którym chcesz podmienić felgę.",
     "wheel_mask_hint": (
-        "Zaznaczony obszar zostanie wygenerowany na nowo, reszta zdjęcia się nie zmieni. "
-        "Kliknij inne miejsce, aby wybrać koło ponownie."
+        "Zaznaczone koła zostaną wygenerowane na nowo, reszta zdjęcia się nie zmieni. "
+        "Kliknij maskę, aby usunąć koło, albo kliknij koło bez maski, aby je dodać."
     ),
+    "wheels_none_detected": ("Nie wykryto żadnego koła. Kliknij koło na zdjęciu, aby je dodać."),
+    "wheels_selected": "Wybrane koła: {count}",
     "wheel_picker_alt": "Zdjęcie samochodu: kliknij koło",
-    "wheel_mask_alt": "Maska wybranego koła",
+    "wheel_mask_alt": "Maska koła nr {number}",
     "generate_submit": "Generuj",
-    "generate_hint": "Generowanie jednego koła trwa około 2 minut.",
+    "generate_hint": "Generowanie trwa około 2 minut na każde koło.",
     "job_rim": "Felga",
     # Zadanie
     "job_heading": "Zadanie nr {id}",
@@ -123,18 +130,38 @@ TEXTS: Final[dict[str, str]] = {
     "status_label": "Status",
     "status_draft": "Wybór koła",
     "status_segmenting": "Wyznaczanie maski koła…",
+    "status_detecting": "Wykrywanie kół…",
     "status_queued": "W kolejce",
     "status_running": "Przetwarzanie…",
     "status_done": "Gotowe",
     "status_failed": "Niepowodzenie",
+    # Stan modelu w pamięci workera (nagłówek i zadanie w toku)
+    "model_state_label": "Model",
+    "model_state_asleep": "uśpiony",
+    "model_state_loading": "ładowanie",
+    "model_state_ready": "gotowy",
+    "model_state_hint": (
+        "Model ładuje się przy pierwszym zadaniu i zwalnia pamięć po okresie bezczynności."
+    ),
+    "model_loading_job": "Ładowanie modelu do pamięci (pierwsze zadanie po przerwie)…",
     # Błędy
     "error_no_photo": "Wybierz zdjęcie samochodu.",
     "error_no_rim": "Wybierz felgę z biblioteki albo dodaj nową.",
     "error_rim_file": "Wybierz zdjęcie felgi.",
     "error_rim_busy": "Felga jest teraz przetwarzana albo jej stan się zmienił. Spróbuj ponownie.",
+    "error_upload_format": (
+        "Plik „{name}” nie jest obsługiwanym zdjęciem. Wgraj plik JPEG, PNG, WebP lub HEIC."
+    ),
+    "error_upload_too_large": "Plik „{name}” jest za duży. Limit to {limit} MB.",
+    "error_upload_too_many_pixels": (
+        "Zdjęcie „{name}” ma za dużą rozdzielczość. Limit to {limit} MPx (megapikseli)."
+    ),
     "error_no_wheel": "Najpierw kliknij koło i poczekaj na jego maskę.",
     "error_job_busy": "Zadanie jest teraz przetwarzane albo już zakończone.",
     "error_mask_failed": "Nie udało się zaznaczyć koła w tym miejscu. Kliknij bliżej środka koła.",
+    "error_detection_failed": (
+        "Nie udało się automatycznie wykryć kół. Kliknij koło na zdjęciu, aby je dodać."
+    ),
     "error_not_found": "Nie znaleziono strony.",
     "error_generic": "Wystąpił błąd.",
     "error_back": "Wróć na stronę główną",
@@ -162,4 +189,13 @@ def job_status_label(job: Job) -> str:
     """Status zadania dla użytkownika; praca workera nad maską ma własny opis."""
     if job.status.busy and job.task == TaskKind.SEGMENT:
         return TEXTS["status_segmenting"]
+    if job.status.busy and job.task == TaskKind.DETECT:
+        return TEXTS["status_detecting"]
     return STATUS_LABELS[job.status]
+
+
+MODEL_STATE_LABELS: Final[dict[ModelState, str]] = {
+    ModelState.ASLEEP: TEXTS["model_state_asleep"],
+    ModelState.LOADING: TEXTS["model_state_loading"],
+    ModelState.READY: TEXTS["model_state_ready"],
+}

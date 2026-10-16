@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -13,11 +14,18 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from wheeler_api import advanced
+from wheeler_api import advanced, model_state
 from wheeler_api.rim_routes import router as rim_router
 from wheeler_api.routes import router
 from wheeler_api.settings import ApiSettings
-from wheeler_api.texts import PARAM_LABELS, STATUS_LABELS, TEXTS, job_status_label
+from wheeler_api.texts import (
+    MODEL_STATE_LABELS,
+    PARAM_LABELS,
+    STATUS_LABELS,
+    TEXTS,
+    job_status_label,
+)
+from wheeler_api.uploads import UPLOAD_ACCEPT, display_path
 from wheeler_shared.db import make_engine, make_session_factory
 from wheeler_shared.history import is_deletable
 from wheeler_shared.migrate import migrate
@@ -41,6 +49,9 @@ def create_templates() -> Jinja2Templates:
     templates.env.globals["status_labels"] = STATUS_LABELS
     templates.env.globals["param_labels"] = PARAM_LABELS
     templates.env.globals["job_status_label"] = job_status_label
+    templates.env.globals["upload_accept"] = UPLOAD_ACCEPT
+    templates.env.globals["model_state_labels"] = MODEL_STATE_LABELS
+    templates.env.globals["model_loading_for"] = model_state.model_loading_for
     templates.env.filters["param_value"] = param_value
     templates.env.tests["deletable"] = is_deletable
     return templates
@@ -66,10 +77,13 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.storage = storage
     app.state.templates = create_templates()
+    # Adres obrazu dla przeglądarki (podgląd HEIC / obróconego zdjęcia): `path | display_path`.
+    app.state.templates.env.filters["display_path"] = partial(display_path, storage)
 
     app.mount("/static", StaticFiles(directory=PACKAGE_DIR / "static"), name="static")
     app.mount("/files", StaticFiles(directory=storage.root, check_dir=False), name="files")
     app.include_router(router)
+    app.include_router(model_state.router)
     app.include_router(rim_router)
 
     @app.exception_handler(StarletteHTTPException)

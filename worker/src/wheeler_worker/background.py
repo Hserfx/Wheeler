@@ -12,6 +12,8 @@ from typing import Any, Protocol
 
 from PIL import Image
 
+from wheeler_worker.model_lifecycle import NO_OBSERVER, LoadObserver
+
 
 class BackgroundRemover(Protocol):
     def foreground(self, image: Image.Image, /) -> Image.Image:
@@ -33,24 +35,31 @@ _STD = (0.229, 0.224, 0.225)
 class BiRefNetRemover:
     """BiRefNet (dichotomous image segmentation) w fp16 na MPS: ~1 GB, ~0,5 s na zdjęcie."""
 
-    def __init__(self, repo: str = BIREFNET_REPO, revision: str = BIREFNET_REVISION) -> None:
+    def __init__(
+        self,
+        repo: str = BIREFNET_REPO,
+        revision: str = BIREFNET_REVISION,
+        observer: LoadObserver = NO_OBSERVER,
+    ) -> None:
         self.repo = repo
         self.revision = revision
+        self.observer = observer
         self._model: Any = None
         self._device = "cpu"
 
     def _load(self) -> None:
         if self._model is not None:
             return
-        import torch
-        from transformers import AutoModelForImageSegmentation
+        with self.observer.loading():
+            import torch
+            from transformers import AutoModelForImageSegmentation
 
-        self._device = "mps" if torch.backends.mps.is_available() else "cpu"
-        model: Any = AutoModelForImageSegmentation.from_pretrained(
-            self.repo, revision=self.revision, trust_remote_code=True, local_files_only=True
-        )
-        model = model.to(self._device).eval()
-        self._model = model.half() if self._device == "mps" else model
+            self._device = "mps" if torch.backends.mps.is_available() else "cpu"
+            model: Any = AutoModelForImageSegmentation.from_pretrained(
+                self.repo, revision=self.revision, trust_remote_code=True, local_files_only=True
+            )
+            model = model.to(self._device).eval()
+            self._model = model.half() if self._device == "mps" else model
 
     def release(self) -> None:
         if self._model is None:

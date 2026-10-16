@@ -20,9 +20,9 @@ from wheeler_api.routes import (
     SessionFactoryDep,
     StorageDep,
     TemplatesDep,
-    _save_upload,
 )
 from wheeler_api.texts import TEXTS
+from wheeler_api.uploads import UploadRejected, save_image_upload
 from wheeler_shared.rim_library import (
     RimBusy,
     RimError,
@@ -90,9 +90,20 @@ def create_rim(
         )
     rim_dir = new_rim_dir(storage)
     try:
-        original = _save_upload(storage, rim, f"{rim_dir}/original")
+        original = save_image_upload(storage, rim, f"{rim_dir}/original")
         with session.begin():
             add_rim(session, original_path=original, name=name)
+    except UploadRejected as rejected:
+        shutil.rmtree(storage.path(rim_dir), ignore_errors=True)
+        return _picker(
+            request,
+            session,
+            templates,
+            mode=mode,
+            selected=rim_id,
+            error=rejected.message,
+            status_code=400,
+        )
     except BaseException:
         shutil.rmtree(storage.path(rim_dir), ignore_errors=True)
         raise

@@ -12,6 +12,7 @@ dependencies = [
     "torch>=2.13",
     "torchvision>=0.29.1",
     "transformers>=5.5,<6",
+    "pillow-heif>=1.0",
     # BiRefNet (usuwanie tła felgi) ma kod modelu w repozytorium HF i potrzebuje tych bibliotek.
     "timm>=1.0",
     "kornia>=0.8",

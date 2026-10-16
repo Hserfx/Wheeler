@@ -10,18 +10,42 @@
 
   {#- Felgę wybiera radio `rim_id` z biblioteki (`_rim_picker.html`), a pola „Zaawansowane”
       leżą pod nią: wszystkie należą do formularza przez atrybut `form="job-form"`, bo
-      biblioteka ma własne formularze (dodawanie felgi), których nie można zagnieździć. -#}
+      biblioteka ma własne formularze (dodawanie felgi), których nie można zagnieździć.
+      Zdjęcie auta można wybrać, przeciągnąć na pole albo wkleić ze schowka; gdy już jest
+      wybrane, wklejony plik trafia do pola nowej felgi (zdarzenie `rim-paste`). -#}
   <form id="job-form" action="/jobs" method="post" enctype="multipart/form-data" class="mt-6 flex flex-col gap-4"
-        x-data="{ photo: '' }" @submit="$dispatch('job-sending')">
+        x-data="{
+          photo: '', over: false,
+          put(list) {
+            const file = list?.[0];
+            if (!file) return;
+            const transfer = new DataTransfer();
+            transfer.items.add(file);
+            this.$refs.photo.files = transfer.files;
+            this.photo = file.name;
+          },
+          pasted(event) {
+            const list = event.clipboardData?.files;
+            if (!list?.length) return;
+            event.preventDefault();
+            if (this.photo) this.$dispatch('rim-paste', list); else this.put(list);
+          },
+        }"
+        @paste.window="pasted($event)" @submit="$dispatch('job-sending')">
+    <p class="text-sm text-slate-500">{{ t.upload_drop_hint }}</p>
     <div class="flex flex-col gap-1">
       <span class="text-sm font-medium">{{ t.upload_photo_label }}</span>
-      <label class="flex cursor-pointer items-center gap-3">
+      <label data-role="drop-zone"
+             class="flex cursor-pointer items-center gap-3 rounded-lg border-2 border-dashed p-3"
+             :class="over ? 'border-slate-900 bg-slate-100' : 'border-slate-300'"
+             @dragover.prevent="over = true" @dragleave="over = false"
+             @drop.prevent="over = false; put($event.dataTransfer.files)">
         <span class="rounded-md border border-slate-300 bg-slate-100 px-4 py-2 text-sm font-medium hover:bg-slate-200">
           {{ t.upload_choose }}
         </span>
         <span class="text-sm text-slate-600" x-text="photo || '{{ t.upload_no_file_chosen }}'">{{ t.upload_no_file_chosen }}</span>
-        <input type="file" name="photo" accept="image/*" class="sr-only" required
-               @change="photo = $event.target.files[0]?.name ?? ''">
+        <input type="file" name="photo" accept="{{ upload_accept }}" class="sr-only" required
+               x-ref="photo" @change="photo = $event.target.files[0]?.name ?? ''">
       </label>
     </div>
   </form>

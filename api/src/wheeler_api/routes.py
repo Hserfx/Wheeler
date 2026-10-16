@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import re
 import secrets
 import shutil
 from collections.abc import Iterator
-from pathlib import PurePath
 from typing import Annotated
 from urllib.parse import urlencode
 
@@ -20,12 +18,15 @@ from wheeler_api import advanced
 from wheeler_api.rim_picker import picker_context
 from wheeler_api.texts import TEXTS
 from wheeler_api.thumbnails import ensure_thumbnail
+from wheeler_api.uploads import UploadRejected, save_image_upload
+from wheeler_api.wheel_masks import mask_contains
 from wheeler_shared import edit_params
 from wheeler_shared.editing import (
     EditingError,
     JobBusy,
     NoWheelSelected,
-    select_wheel,
+    click_photo,
+    request_detection,
     start_generation,
 )
 from wheeler_shared.history import delete_jobs, is_deletable
@@ -61,8 +62,6 @@ SessionDep = Annotated[Session, Depends(get_session)]
 SessionFactoryDep = Annotated[sessionmaker[Session], Depends(get_session_factory)]
 StorageDep = Annotated[Storage, Depends(get_storage)]
 TemplatesDep = Annotated[Jinja2Templates, Depends(get_templates)]
-
-_SAFE_SUFFIX = re.compile(r"\.[a-z0-9]{1,5}")
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -148,13 +147,25 @@ def create_job(
 
     job_dir = storage.new_job_dir()
     try:
-        input_path = _save_upload(storage, photo, f"{job_dir}/input")
+        input_path = save_image_upload(storage, photo, f"{job_dir}/input")
         with session.begin():
             # Zadanie dostaje własną kopię wyciętej felgi (usunięcie z biblioteki jej nie rusza).
             rim_path = use_rim(session, storage, rim_id, job_dir=job_dir)
             job_id = create_draft_job(
                 session, input_path=input_path, rim_path=rim_path, params=params
             )
+            request_detection(session, job_id)
+    except UploadRejected as rejected:
+        shutil.rmtree(storage.path(job_dir), ignore_errors=True)
+        return _home_page(
+            request,
+            session,
+            templates,
+            rim_id=rim_id,
+            error=rejected.message,
+            values=values if any(values.values()) else None,
+            status_code=400,
+        )
     except RimNotReady:
         shutil.rmtree(storage.path(job_dir), ignore_errors=True)
         return _home_page(
@@ -171,31 +182,21 @@ def create_job(
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 
-def _save_upload(storage: Storage, upload: UploadFile, stem: str) -> str:
-    """Zapisuje wgrany plik jako `<stem><rozszerzenie>` i zwraca ścieżkę względną."""
-    suffix = PurePath(upload.filename or "").suffix.lower()
-    if not _SAFE_SUFFIX.fullmatch(suffix):
-        suffix = ".bin"
-    relative = f"{stem}{suffix}"
-    with storage.path(relative).open("wb") as target:
-        shutil.copyfileobj(upload.file, target)
-    return relative
-
-
 @router.post("/jobs/{job_id}/wheels", response_class=HTMLResponse)
 def click_wheel(
     job_id: int,
     request: Request,
     session: SessionDep,
+    storage: StorageDep,
     templates: TemplatesDep,
     x: Annotated[float, Form()],
     y: Annotated[float, Form()],
 ) -> Response:
-    """Klik w koło na zdjęciu (piksele zdjęcia): worker wyznaczy maskę (SAM 2)."""
+    """Klik w zdjęcie (piksele zdjęcia): w masce usuwa koło, obok masek dodaje koło (SAM 2)."""
     status_code = 200
     try:
         with session.begin():
-            select_wheel(session, job_id, (x, y))
+            click_photo(session, job_id, (x, y), mask_contains=mask_contains(storage))
     except LookupError:
         raise HTTPException(status_code=404) from None
     except JobBusy:

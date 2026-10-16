@@ -69,7 +69,8 @@ Obserwacje:
   (~4,4 GB). Kolejne kroki liczą tylko 4096 tokenów celu.
 - **1536 px odpada**: 3× wolniej, q8 przekracza 32 GB (swap), a jakość na wycinku koła nie jest wyraźnie lepsza.
 - **Bez kafelkowego VAE** dekoder dokłada ~14 GB (szczyt 32,4 GB przy q8 1024, zmierzony swap do 11,7 GB).
-- **fp16 compute** (`compute_precision=mx.float16`, PR mflux #820): krok 8,8 s zamiast 12,1 s (q4) / ~15 s (q8).
+- **fp16 compute** (`compute_precision=mx.float16`, PR mflux #820): krok 8,8 s zamiast 12,1 s w bf16
+  (q8, z kafelkowym VAE). Bez kafelkowego VAE i bez limitu cache q8 w bf16 dochodziło do ~15 s na krok przez swap.
 - **Szczyt 26,9 GB przy q8 to dużo jak na 32 GB.** Z VM Podmana (2 GB) i przeglądarką mieści się, ale bez dużego
   zapasu. Jeśli w praktyce pojawi się swap, ustawienie q4 jest bezpiecznym zapasowym trybem (19 GB).
 
@@ -89,11 +90,34 @@ poza maską jest identyczny z oryginałem.
 
 ## Punkt odniesienia: diffusers bf16
 
-DIFFUSERS_PLACEHOLDER
+Ta sama edycja (te same wycinki, felgi, prompt, kolejność `[wycinek, felga]`, 1024 px, seed 42) w istniejącym
+pipeline'ie diffusers bf16 na MPS z `../image-gen-model-test` (dwuetapowe ładowanie i obejście `F.pad`).
+Diffusers nie ma maski, więc otoczenie koła chroni tylko nasza kompozycja. Skrypt:
+`spike/scripts/diffusers_baseline.py` (uruchamiany venv-em tamtego projektu, bez zmian w nim).
+
+| | diffusers bf16 (MPS) | mflux q8 (fp16 compute) |
+| --- | --- | --- |
+| Ładowanie | text encoder 16,8 s + transformer/VAE 8,9 s, przy każdej zmianie etapu | 4,4 s raz |
+| Kodowanie promptu z 2 obrazami | 7,7 s (pierwszy raz 22,8 s) | ~7 s |
+| Generowanie (8 kroków + VAE) | 147–214 s, 16–20 s na krok | ~92 s (30 s + 7 × 8,8 s) + ~11 s VAE |
+| Szczyt pamięci | 20,9 GB (etap 1), **36,9 GB** (etap 2, swap) | 26,9 GB |
+
+Jakość jest porównywalna (kolumna „diffusers” w `configs.jpg`, druga kolumna w `composite.jpg`). Różnice wynikają
+z innego generatora liczb losowych, a nie z jakości modelu. Diffusers nie mieści się w 32 GB przy dwóch
+referencjach (swap w etapie 2) i nie może trzymać całego modelu w pamięci między zadaniami. To potwierdza wybór mflux.
 
 ## Kolejność referencji i maska
 
-VARIANTS_PLACEHOLDER
+Q8, 1024 px, te same 3 koła i seed. Czasy prawie identyczne we wszystkich wariantach z fp16 (108–114 s na koło),
+różni się wynik:
+
+- **`[wycinek, felga]` + maska** (domyślne): felga podmieniona, otoczenie wycinka zachowane.
+- **`[wycinek, felga]` bez maski**: wynik prawie taki sam, ale model może też ruszyć nadkole i tło wycinka.
+  Ostatecznie i tak decyduje nasza kompozycja, więc maska mflux to głównie ochrona brzegów koła.
+- **`[felga, wycinek]` bez maski** (kolejność z pierwotnego DESIGN): **w 2 z 3 przypadków model oddał zdjęcie
+  felgi zamiast edytować wycinek** (Golf, Vios). Ta kolejność odpada.
+- **Obliczenia w bf16** zamiast fp16: brak widocznej różnicy jakości, ale krok 12,1 s zamiast 8,8 s
+  (całe koło ~143 s zamiast ~113 s).
 
 ![Warianty](img/variants.jpg)
 
@@ -144,7 +168,17 @@ także przy kole częściowo zasłoniętym. Detekcja + maski to razem poniżej 1
 
 ![Maski SAM](img/sam_masks.jpg)
 
-SAM_POINT_PLACEHOLDER
+**„Dodaj koło” jednym kliknięciem (ticket 04).** Symulowaliśmy klik w środek każdego wykrytego koła (8 kół,
+razem z kołem skutera) i porównaliśmy maskę z maską z boxa (IoU):
+
+| Sposób | IoU ≥ 0,95 | Typowy błąd |
+| --- | --- | --- |
+| punkt, `multimask_output=True`, najwyższe `iou_scores` | 2/8 | sama felga albo samo logo na kołpaku |
+| punkt, największa z 3 masek | 0/8 | całe auto |
+| **punkt → maska felgi → box 1,5× wokół niej → SAM z boxem i punktem** | **6/8** | klik w logo piasty (Golf), koło skutera |
+
+Zalecenie dla ticketu 04: dwustopniowy prompt (trzeci wiersz). Gdy pierwsza maska jest bardzo mała (np. samo logo),
+można powtórzyć z większym współczynnikiem albo uruchomić detektor na wycinku wokół kliknięcia.
 
 ## Szablon promptu
 

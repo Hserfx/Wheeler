@@ -75,8 +75,33 @@ def main() -> None:
                     best = out.iou_scores.argmax(dim=-1)
                     point_masks = processor.post_process_masks(out.pred_masks.cpu(), prompt["original_sizes"].cpu())[0]
                     entry["point_decode_s"] = round(time.perf_counter() - t0, 3)
+                    # Klik -> maska felgi (best IoU) -> box powiększony 1,5x wokół jej środka -> drugi prompt
+                    # box + ten sam punkt. Felga zajmuje ~2/3 średnicy koła, więc 1,5x obejmuje oponę.
+                    t0 = time.perf_counter()
+                    grown_boxes = []
+                    for i in range(len(boxes)):
+                        m = point_masks[i, int(best[0, i])].numpy()
+                        ys, xs = np.nonzero(m)
+                        cx, cy = (xs.min() + xs.max()) / 2, (ys.min() + ys.max()) / 2
+                        half = max(xs.max() - xs.min(), ys.max() - ys.min()) * 0.75
+                        grown_boxes.append([float(cx - half), float(cy - half), float(cx + half), float(cy + half)])
+                    prompt = processor(
+                        images=image, input_boxes=[grown_boxes], input_points=centers,
+                        input_labels=[[[1] for _ in boxes]], return_tensors="pt",
+                    ).to(DEVICE)
+                    out = model(
+                        image_embeddings=embeddings,
+                        input_boxes=prompt["input_boxes"],
+                        input_points=prompt["input_points"],
+                        input_labels=prompt["input_labels"],
+                        multimask_output=False,
+                    )
+                    click_masks = processor.post_process_masks(out.pred_masks.cpu(), prompt["original_sizes"].cpu())[0]
+                    entry["click_box_decode_s"] = round(time.perf_counter() - t0, 3)
             stem = Path(car).stem
             for i in range(len(boxes)):
+                cm = click_masks[i, 0].numpy().astype(np.uint8) * 255
+                Image.fromarray(cm).save(OUT / "masks" / f"{stem}_{i}_clickbox.png")
                 m = masks[i, 0].numpy().astype(np.uint8) * 255
                 Image.fromarray(m).save(OUT / "masks" / f"{stem}_{i}.png")
                 pm = point_masks[i, int(best[0, i])].numpy().astype(np.uint8) * 255

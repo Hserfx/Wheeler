@@ -7,6 +7,7 @@ from typing import Final
 
 from wheeler_shared import edit_params
 from wheeler_shared.models import Job, JobStatus, TaskKind
+from wheeler_shared.progress import Progress
 from wheeler_shared.worker_state import ModelState
 
 TEXTS: Final[dict[str, str]] = {
@@ -113,6 +114,15 @@ TEXTS: Final[dict[str, str]] = {
     "status_running": "Przetwarzanie…",
     "status_done": "Gotowe",
     "status_failed": "Niepowodzenie",
+    # Postęp, anulowanie, kolejka, ponawianie (ticket 05)
+    "progress_wheel": "Koło {wheel} z {wheels}: przygotowanie modelu…",
+    "progress_step": "Koło {wheel} z {wheels}, krok {step} z {steps}",
+    "status_cancelling": "Anulowanie…",
+    "status_cancelled": "Anulowane",
+    "job_cancel": "Anuluj",
+    "queue_position": "Pozycja w kolejce: {position}",
+    "job_retry": "Ponów",
+    "job_retry_hint": "Nowe zadanie z tym samym zdjęciem, felgą, kołami i parametrami.",
     # Stan modelu w pamięci workera (nagłówek i zadanie w toku)
     "model_state_label": "Model",
     "model_state_asleep": "uśpiony",
@@ -139,6 +149,7 @@ TEXTS: Final[dict[str, str]] = {
         "Nie udało się automatycznie wykryć kół. Kliknij koło na zdjęciu, aby je dodać."
     ),
     "error_not_found": "Nie znaleziono strony.",
+    "error_not_retryable": "Ponowić można tylko zadanie zakończone niepowodzeniem lub anulowane.",
     "error_generic": "Wystąpił błąd.",
     "error_back": "Wróć na stronę główną",
 }
@@ -158,6 +169,7 @@ STATUS_LABELS: Final[dict[JobStatus, str]] = {
     JobStatus.RUNNING: TEXTS["status_running"],
     JobStatus.DONE: TEXTS["status_done"],
     JobStatus.FAILED: TEXTS["status_failed"],
+    JobStatus.CANCELLED: TEXTS["status_cancelled"],
 }
 
 
@@ -167,7 +179,29 @@ def job_status_label(job: Job) -> str:
         return TEXTS["status_segmenting"]
     if job.status.busy and job.task == TaskKind.DETECT:
         return TEXTS["status_detecting"]
+    if job.status.busy and job.cancel_requested:
+        return TEXTS["status_cancelling"]
     return STATUS_LABELS[job.status]
+
+
+def job_progress(job: Job) -> Progress | None:
+    """Postęp generowania, gdy worker nad nim pracuje."""
+    if job.status != JobStatus.RUNNING or job.task != TaskKind.GENERATE:
+        return None
+    return Progress.from_json(job.progress)
+
+
+def progress_label(progress: Progress) -> str:
+    if progress.steps is None:
+        return TEXTS["progress_wheel"].format(wheel=progress.wheel, wheels=progress.wheels)
+    return TEXTS["progress_step"].format(
+        wheel=progress.wheel, wheels=progress.wheels, step=progress.step, steps=progress.steps
+    )
+
+
+def can_cancel(job: Job) -> bool:
+    """Przycisk „Anuluj”: generowanie w kolejce albo w trakcie, bez wcześniejszej prośby."""
+    return job.status.busy and job.task == TaskKind.GENERATE and not job.cancel_requested
 
 
 MODEL_STATE_LABELS: Final[dict[ModelState, str]] = {

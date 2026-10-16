@@ -50,7 +50,7 @@ Zadanie (`Job`) przechodzi przez kroki użytkownika (status `draft`) i pracę wo
 wgranie auta + felgi -> detect (Florence-2 + SAM 2) -> draft z maskami wykrytych kół (nakładki)
 draft --klik w maskę---------> draft (koło usunięte od razu, bez workera)
 draft --klik obok masek------> segment (SAM 2) -> draft z dodanym kołem
-draft --„Generuj”------------> generate (mflux, każde koło osobno, ten sam seed i prompt) -> done | failed
+draft --„Generuj”------------> generate (mflux, każde koło osobno, ten sam seed i prompt) -> done | failed | cancelled
 ```
 
 - Detektor, SAM 2 i mflux działają wyłącznie w natywnym workerze, więc detekcja po wgraniu
@@ -62,7 +62,7 @@ draft --„Generuj”------------> generate (mflux, każde koło osobno, ten sam
   (0 -> UI mówi „Nie wykryto żadnego koła”). Klik trafia w maskę, gdy plik maski ma w tym punkcie
   piksel > 0 (`wheeler_api/wheel_masks.py`); przy nakładających się maskach usuwa koło dodane później.
 - Działania użytkownika: `wheeler_shared/editing.py` (`request_detection`, `click_photo`,
-  `start_generation`).
+  `start_generation`, `cancel_job`).
   Kolejka: `wheeler_shared/queue.py`. Parametry edycji, ustawienia domyślne i dozwolone zakresy:
   `wheeler_shared/edit_params.py`. Sekcja „Zaawansowane” na stronie głównej
   (`wheeler_api/advanced.py`) zapisuje w `Job.params` użyte wartości już przy wgraniu zdjęcia;
@@ -83,6 +83,15 @@ draft --„Generuj”------------> generate (mflux, każde koło osobno, ten sam
 - Pliki koła w katalogu zadania: `wheels/<id>/mask.png` (dokładnie obszar, który może się zmienić;
   dla kół z detekcji maska i nakładka leżą w `wheels/detected-<n>/`),
   `overlay.png`, `crop.png`, `crop_mask.png`, `generated.png`; wynik `result.png`.
+- Postęp i anulowanie: procesor raportuje `Progress` (`wheeler_shared/progress.py`: koło, krok
+  denoisingu) przed każdym kołem i po każdym kroku (`GenerateItem.on_progress`, w mflux przez
+  `RimEditor.edit(on_step=...)`). Runner zapisuje go w `Job.progress` i przy okazji czyta
+  `Job.cancel_requested`; ustawiona flaga przerywa pracę wyjątkiem `JobCancelled` (najpóźniej po
+  bieżącym kroku), a zadanie dostaje status `cancelled`. Zadanie w kolejce jest anulowane od razu.
+- Awaria lub restart workera: przy starcie worker oznacza zadania `running` jako `failed`
+  (`recover_interrupted_jobs`; detekcja i segmentacja wracają do szkicu), bez automatycznych ponowień. Zakłada
+  jeden proces workera. „Ponów” (`wheeler_shared/retry.py`) tworzy nowe zadanie z kopiami plików,
+  tymi samymi kołami i parametrami (z seedem) i od razu wstawia je do kolejki.
 - Wejście (`wheeler_api/uploads.py`, `save_image_upload`, wspólne dla każdego wgrywanego obrazu):
   JPEG, PNG, WebP, HEIC, do 50 MB i 40 MPx; format rozpoznawany po zawartości. Dla HEIC i zdjęć
   z orientacją EXIF obok pliku powstaje obrócony podgląd `<plik>.preview.jpg` w pełnym rozmiarze

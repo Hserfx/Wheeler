@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
 from PIL import Image
+
+from wheeler_worker.rim_editor import StepCallback
 
 Box = tuple[float, float, float, float]  # x0, y0, x1, y1 w pikselach zdjęcia
 
@@ -81,10 +84,18 @@ class EditCall:
 
 @dataclass
 class SolidEditor:
-    """„mflux”: zwraca jednolity kolor w żądanym rozmiarze i zapamiętuje wywołania."""
+    """„mflux”: zwraca jednolity kolor w żądanym rozmiarze i zapamiętuje wywołania.
+
+    Udaje `steps` kroków denoisingu: po każdym woła `on_step`, a potem `after_step(krok)`
+    (np. test zagląda wtedy do UI albo klika „Anuluj”, jak użytkownik w trakcie kroku).
+    `steps_run` liczy wykonane (rozpoczęte) kroki.
+    """
 
     color: tuple[int, int, int] = (10, 200, 30)
     calls: list[EditCall] = field(default_factory=list)
+    steps: int = 1
+    after_step: Callable[[int], None] | None = None
+    steps_run: int = 0
 
     def edit(
         self,
@@ -95,8 +106,15 @@ class SolidEditor:
         seed: int,
         size: tuple[int, int],
         resolution: int,
+        on_step: StepCallback | None = None,
     ) -> Image.Image:
         self.calls.append(EditCall(list(images), mask, prompt, seed, size))
+        for step in range(1, self.steps + 1):
+            self.steps_run += 1
+            if on_step is not None:
+                on_step(step, self.steps)
+            if self.after_step is not None:
+                self.after_step(step)
         return Image.new("RGBA", size, (*self.color, 255))
 
     def release(self) -> None:

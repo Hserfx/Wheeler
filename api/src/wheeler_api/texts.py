@@ -5,6 +5,7 @@ Szablony odwołują się do nich przez `t.<klucz>`; w szablonach nie wpisujemy t
 
 from typing import Final
 
+from wheeler_shared import edit_params
 from wheeler_shared.models import Job, JobStatus, TaskKind
 
 TEXTS: Final[dict[str, str]] = {
@@ -43,6 +44,30 @@ TEXTS: Final[dict[str, str]] = {
     "upload_no_file_chosen": "Nie wybrano pliku",
     "upload_submit": "Dalej",
     "upload_sending": "Wysyłanie…",
+    # Sekcja „Zaawansowane” (parametry edycji)
+    "advanced_heading": "Zaawansowane",
+    "advanced_hint": "Bez zmian użyte zostaną ustawienia domyślne.",
+    "param_seed": "Seed",
+    "param_seed_placeholder": "losowy",
+    "param_seed_hint": (
+        "Puste pole oznacza losowy seed. Użyty seed zobaczysz w szczegółach zadania."
+    ),
+    "param_resolution": "Rozdzielczość robocza (px)",
+    "param_resolution_hint": (
+        "Wielokrotność {step}, od {min} do {max}. Wyższa jest wolniejsza i zajmuje więcej pamięci."
+    ),
+    "param_mask_grow": "Poszerzenie maski (%)",
+    "param_mask_grow_hint": "Procent boku koła, od {min} do {max}.",
+    "param_prompt_suffix": "Dopisek do promptu",
+    "param_prompt_suffix_placeholder": "np. Glossy black finish.",
+    "param_prompt_suffix_hint": "Po angielsku; doklejany na końcu promptu.",
+    "param_empty": "(brak)",
+    "error_param_seed": "Seed musi być liczbą całkowitą od 0 do {seed_max} albo pustym polem.",
+    "error_param_resolution": (
+        "Rozdzielczość robocza musi być wielokrotnością {step} px, od {min} do {max} px."
+    ),
+    "error_param_mask_grow": "Poszerzenie maski musi być liczbą od {grow_min} do {grow_max}%.",
+    "error_param_prompt_suffix": "Dopisek do promptu może mieć najwyżej {length} znaków.",
     # Wybór koła i generowanie
     "wheel_click_hint": "Kliknij koło, w którym chcesz podmienić felgę.",
     "wheel_mask_hint": (
@@ -86,7 +111,12 @@ TEXTS: Final[dict[str, str]] = {
 
 # Etykiety parametrów zadania (`Job.params`) w szczegółach zadania. Parametr bez etykiety
 # wyświetla się pod swoim kluczem, więc nowe parametry są widoczne bez zmian w szablonach.
-PARAM_LABELS: Final[dict[str, str]] = {}
+PARAM_LABELS: Final[dict[str, str]] = {
+    edit_params.SEED: TEXTS["param_seed"],
+    edit_params.RESOLUTION: "Rozdzielczość robocza",
+    edit_params.MASK_GROW: "Poszerzenie maski",
+    edit_params.PROMPT_SUFFIX: TEXTS["param_prompt_suffix"],
+}
 
 STATUS_LABELS: Final[dict[JobStatus, str]] = {
     JobStatus.DRAFT: TEXTS["status_draft"],

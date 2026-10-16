@@ -8,13 +8,12 @@ Każde działanie, które wymaga modelu (SAM 2, mflux), wstawia zadanie do kolej
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session, selectinload
 
 from wheeler_shared import edit_params
-from wheeler_shared.models import Job, JobStatus, TaskKind, Wheel, WheelSource
-from wheeler_shared.queue import enqueue
+from wheeler_shared.models import ImageRole, Job, JobStatus, TaskKind, Wheel, WheelSource
+from wheeler_shared.queue import enqueue, mark_cancelled
 
 
 class EditingError(Exception):
@@ -30,7 +29,7 @@ class NoWheelSelected(EditingError):
 
 
 class NotCancellable(EditingError):
-    """Anulować można tylko generowanie w kolejce albo w trakcie."""
+    """Anulować można tylko generowanie (albo ponowienie koła) w kolejce lub w trakcie."""
 
 
 Point = tuple[float, float]
@@ -100,13 +99,46 @@ def cancel_job(session: Session, job_id: int) -> None:
     (`queue.report_progress`), a potem oznacza je jako `cancelled` (`queue.mark_cancelled`).
     """
     job = _lock(session, job_id)
-    if job.task != TaskKind.GENERATE or not job.status.busy:
+    if job.task is None or not job.task.generates or not job.status.busy:
         raise NotCancellable
     if job.status == JobStatus.QUEUED:
-        job.status = JobStatus.CANCELLED
-        job.finished_at = datetime.now(UTC)
+        mark_cancelled(session, job.id)
     else:
         job.cancel_requested = True
+
+
+def regenerate_wheel(session: Session, job_id: int, wheel_id: int, *, seed: int) -> None:
+    """„Ponów to koło”: zleca wygenerowanie jednego koła gotowego wyniku od nowa z innym
+    seedem. Worker składa je na bieżącym wyniku, więc reszta obrazu się nie zmienia.
+
+    `seed` (np. losowy) zastępuje `seed + 1`, gdy jest równy obecnemu seedowi koła.
+    """
+    job = session.get(
+        Job,
+        job_id,
+        with_for_update=True,
+        options=[selectinload(Job.wheels), selectinload(Job.images)],
+        populate_existing=True,
+    )
+    if job is None:
+        raise LookupError(job_id)
+    wheel = next((w for w in job.masked_wheels if w.id == wheel_id), None)
+    if wheel is None:
+        raise LookupError(wheel_id)
+    if job.status != JobStatus.DONE or job.image(ImageRole.RESULT) is None:
+        raise JobBusy
+    if seed == wheel_seed(job, wheel):
+        seed = (seed + 1) % (edit_params.SEED_MAX + 1)
+    wheel.pending_seed = seed
+    enqueue(job, TaskKind.REGENERATE_WHEEL)
+
+
+def wheel_seed(job: Job, wheel: Wheel) -> int | None:
+    """Seed, z którym koło jest w bieżącym wyniku (własny po „ponów to koło” albo zadania)."""
+    if wheel.seed is not None:
+        return wheel.seed
+    seed = job.params.get(edit_params.SEED)
+    return None if seed is None else int(seed)
 
 
 def _lock_draft(session: Session, job_id: int) -> Job:

@@ -88,6 +88,25 @@ class GenerateItem:
 
 
 @dataclass(frozen=True)
+class RegenerateWheelItem:
+    """„Ponów to koło”: jedno koło od nowa z nowym seedem, złożone na bieżącym wyniku.
+
+    Piksele poza maską tego koła (w tym pozostałe koła) zostają takie jak w `result_path`.
+    """
+
+    job_id: int
+    photo_path: Path  # zdjęcie wejściowe (źródło ICC/EXIF wyniku)
+    result_path: Path  # bieżący wynik, na którym składamy nowe koło (nie jest nadpisywany)
+    rim_path: Path
+    output_dir: Path
+    params: Mapping[str, Any]  # prompt i rozdzielczość jak przy generowaniu; seed jest w `seed`
+    wheel_id: int
+    mask_path: Path
+    seed: int
+    on_progress: ProgressCallback = _ignore_progress
+
+
+@dataclass(frozen=True)
 class GenerateResult:
     result_path: Path  # PNG w rozdzielczości zdjęcia; musi leżeć na wolumenie danych
     width: int
@@ -116,6 +135,8 @@ class Processor(Protocol):
     def segment(self, item: SegmentItem, /) -> SegmentResult: ...
 
     def generate(self, item: GenerateItem, /) -> GenerateResult: ...
+
+    def regenerate_wheel(self, item: RegenerateWheelItem, /) -> GenerateResult: ...
 
     def cut_rim(self, item: CutRimItem, /) -> CutRimResult: ...
 

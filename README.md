@@ -53,6 +53,7 @@ wgranie auta + felgi -> detect (Florence-2 + SAM 2) -> draft z maskami wykrytych
 draft --klik w maskę---------> draft (koło usunięte od razu, bez workera)
 draft --klik obok masek------> segment (SAM 2) -> draft z dodanym kołem
 draft --„Generuj”------------> generate (mflux, każde koło osobno, ten sam seed i prompt) -> done | failed | cancelled
+done --„Ponów to koło”-------> regenerate_wheel (jedno koło, nowy seed) -> done (błąd/anulowanie: poprzedni wynik)
 ```
 
 - Detektor, SAM 2 i mflux działają wyłącznie w natywnym workerze, więc detekcja po wgraniu
@@ -64,13 +65,13 @@ draft --„Generuj”------------> generate (mflux, każde koło osobno, ten sam
   (0 -> UI mówi „Nie wykryto żadnego koła”). Klik trafia w maskę, gdy plik maski ma w tym punkcie
   piksel > 0 (`wheeler_api/wheel_masks.py`); przy nakładających się maskach usuwa koło dodane później.
 - Działania użytkownika: `wheeler_shared/editing.py` (`request_detection`, `click_photo`,
-  `start_generation`, `cancel_job`).
+  `start_generation`, `cancel_job`, `regenerate_wheel`).
   Kolejka: `wheeler_shared/queue.py`. Parametry edycji, ustawienia domyślne i dozwolone zakresy:
   `wheeler_shared/edit_params.py`. Sekcja „Zaawansowane” na stronie głównej
   (`wheeler_api/advanced.py`) zapisuje w `Job.params` użyte wartości już przy wgraniu zdjęcia;
   pusty seed jest losowany i zapisywany przy „Generuj”.
 - `wheeler_worker/processing.py` definiuje `Processor` z metodą na każdy rodzaj pracy
-  (`detect`, `segment`, `generate`; tylko pliki, bez bazy). Runner (`runner.py`, `HANDLERS`) pobiera zadanie
+  (`detect`, `segment`, `generate`, `regenerate_wheel`; tylko pliki, bez bazy). Runner (`runner.py`, `HANDLERS`) pobiera zadanie
   (`FOR UPDATE SKIP LOCKED`), woła procesor i zapisuje wynik albo błąd.
 - `WHEELER_PROCESSOR`: `wheel-swap` (domyślny: Florence-2-large + SAM 2.1 + mflux Qwen-Image-2.1-Turbo q8, wagi
   w `WHEELER_MFLUX_MODEL_PATH`, domyślnie `~/.cache/wheeler/qwen-image-2.1-turbo-mflux-q8`) albo
@@ -86,6 +87,16 @@ draft --„Generuj”------------> generate (mflux, każde koło osobno, ten sam
 - Pliki koła w katalogu zadania: `wheels/<id>/mask.png` (dokładnie obszar, który może się zmienić;
   dla kół z detekcji maska i nakładka leżą w `wheels/detected-<n>/`),
   `overlay.png`, `crop.png`, `crop_mask.png`, `generated.png`; wynik `result.png`.
+- Ekran wyniku (`_result_compare.html`): suwak przed/po na pełnym obrazie (warstwa „przed”
+  przycinana `clip-path`), powiększanie okolicy koła (prostokąt `Wheel.box`, jedna transformacja
+  CSS dla obu obrazów), pobieranie `GET /jobs/{id}/download` (PNG jako załącznik, rozdzielczość
+  oryginału). „Ponów to koło” (`POST /jobs/{id}/wheels/{wheel_id}/regenerate`, tylko w `done`)
+  zapisuje nowy seed w `Wheel.pending_seed`; worker (`TaskKind.REGENERATE_WHEEL`, w kolejce jak
+  generowanie, z postępem i anulowaniem) generuje tylko to koło i składa je na BIEŻĄCYM wyniku,
+  więc piksele poza maską tego koła (także inne koła) zostają bit w bit. Nowy wynik trafia do
+  nowego pliku `result-<n>.png` (poprzedni zostaje; nowa nazwa omija cache przeglądarki),
+  `Image(result)` wskazuje nowy plik, a koło dostaje `Wheel.seed` (pokazywany przy kole).
+  Błąd, anulowanie albo awaria workera w trakcie wracają do `done` z poprzednim wynikiem.
 - Postęp i anulowanie: procesor raportuje `Progress` (`wheeler_shared/progress.py`: koło, krok
   denoisingu) przed każdym kołem i po każdym kroku (`GenerateItem.on_progress`, w mflux przez
   `RimEditor.edit(on_step=...)`). Runner zapisuje go w `Job.progress` i przy okazji czyta

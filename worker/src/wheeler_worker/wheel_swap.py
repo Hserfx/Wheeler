@@ -35,6 +35,7 @@ from wheeler_worker.processing import (
     GenerateItem,
     GenerateResult,
     MaskFiles,
+    RegenerateWheelItem,
     SegmentItem,
     SegmentResult,
 )
@@ -133,22 +134,8 @@ class WheelSwapProcessor:
         params = EditParams.from_params(item.params)
         if params.seed is None:
             raise ValueError("Brak seeda w parametrach zadania")
-        # Florence-2 i SAM 2 (~3 GB każdy) z mflux (szczyt ~27 GB) nie mieszczą się w 32 GB.
-        self.detector.release()
-        self.segmenter.release()
-        if self.remover is not None:
-            self.remover.release()
-        photo = load_photo(item.photo_path)
-        # Felga z biblioteki ma przezroczyste tło: model widzi ją na jednolitym tle.
-        rim = load_reference(item.rim_path)
-        edit = _WheelEdit(
-            editor=self.editor,
-            rim=rim,
-            prompt=build_prompt(params.prompt_suffix),
-            seed=params.seed,
-            resolution=params.resolution,
-        )
-        result = photo
+        edit = self._prepare_edit(params, item.rim_path, seed=params.seed)
+        result = load_photo(item.photo_path)
         wheels = len(item.masks)
         # Koła po kolei, każde osobnym wywołaniem modelu, z tym samym seedem i promptem.
         # Raport przed kołem i po każdym kroku: tu odbiorca może przerwać pracę (anulowanie).
@@ -165,6 +152,41 @@ class WheelSwapProcessor:
             result, item.output_dir / "result.png", metadata=read_metadata(item.photo_path)
         )
         return GenerateResult(result_path=target, width=result.width, height=result.height)
+
+    def regenerate_wheel(self, item: RegenerateWheelItem) -> GenerateResult:
+        """Jedno koło z nowym seedem na bieżącym wyniku; zapis do nowego pliku `result-<n>.png`
+        (poprzedni wynik zostaje, a nowa nazwa omija pamięć podręczną przeglądarki)."""
+        params = EditParams.from_params(item.params)
+        edit = self._prepare_edit(params, item.rim_path, seed=item.seed)
+        item.on_progress(Progress(wheel=1, wheels=1))
+        with Image.open(item.mask_path) as mask_file:
+            mask = mask_file.convert("L")
+
+        def on_step(step: int, steps: int) -> None:
+            item.on_progress(Progress(wheel=1, wheels=1, step=step, steps=steps))
+
+        result = edit.apply(
+            load_photo(item.result_path), mask, wheel_dir(item.output_dir, item.wheel_id), on_step
+        )
+        target = save_png(
+            result, _next_result_path(item.output_dir), metadata=read_metadata(item.photo_path)
+        )
+        return GenerateResult(result_path=target, width=result.width, height=result.height)
+
+    def _prepare_edit(self, params: EditParams, rim_path: Path, *, seed: int) -> _WheelEdit:
+        # Florence-2 i SAM 2 (~3 GB każdy) z mflux (szczyt ~27 GB) nie mieszczą się w 32 GB.
+        self.detector.release()
+        self.segmenter.release()
+        if self.remover is not None:
+            self.remover.release()
+        return _WheelEdit(
+            editor=self.editor,
+            # Felga z biblioteki ma przezroczyste tło: model widzi ją na jednolitym tle.
+            rim=load_reference(rim_path),
+            prompt=build_prompt(params.prompt_suffix),
+            seed=seed,
+            resolution=params.resolution,
+        )
 
     def release(self) -> None:
         self.detector.release()
@@ -231,6 +253,13 @@ def _save_mask(raw: Image.Image, params: EditParams, target: Path) -> MaskFiles 
         overlay=save_png(_overlay(mask), target / "overlay.png"),
         box=grown,
     )
+
+
+def _next_result_path(output_dir: Path) -> Path:
+    number = 2
+    while (output_dir / f"result-{number}.png").exists():
+        number += 1
+    return output_dir / f"result-{number}.png"
 
 
 def build_prompt(suffix: str = "") -> str:

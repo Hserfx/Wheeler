@@ -28,6 +28,7 @@ class ClaimedWheel:
     id: int
     click: tuple[float, float] | None
     mask_path: str | None
+    pending_seed: int | None = None  # „ponów to koło”: seed nowej wersji tego koła
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class ClaimedJob:
     rim_path: str | None
     params: dict[str, Any]
     wheels: tuple[ClaimedWheel, ...]
+    result_path: str | None = None  # bieżący wynik (podstawa „ponów to koło”)
 
 
 @dataclass(frozen=True)
@@ -74,7 +76,7 @@ def enqueue(job: Job, task: TaskKind) -> None:
 
 
 def _generate_last() -> ColumnElement[int]:
-    return case((Job.task == TaskKind.GENERATE, 1), else_=0)
+    return case((Job.task.in_([TaskKind.GENERATE, TaskKind.REGENERATE_WHEEL]), 1), else_=0)
 
 
 def claim_next_job(session: Session) -> ClaimedJob | None:
@@ -96,6 +98,7 @@ def claim_next_job(session: Session) -> ClaimedJob | None:
     if input_image is None:
         raise RuntimeError(f"Zadanie {job.id} nie ma obrazu wejściowego")
     rim = job.image(ImageRole.RIM)
+    result = job.image(ImageRole.RESULT)
     return ClaimedJob(
         id=job.id,
         task=job.task,
@@ -109,9 +112,11 @@ def claim_next_job(session: Session) -> ClaimedJob | None:
                 if wheel.click_x is None or wheel.click_y is None
                 else (wheel.click_x, wheel.click_y),
                 mask_path=wheel.mask_path,
+                pending_seed=wheel.pending_seed,
             )
             for wheel in job.wheels
         ),
+        result_path=result.path if result else None,
     )
 
 
@@ -119,7 +124,7 @@ def queue_position(session: Session, job: Job) -> int | None:
     """Pozycja zadania w kolejce (1 = następne do pobrania), w kolejności `claim_next_job`."""
     if job.status != JobStatus.QUEUED or job.task is None or job.queued_at is None:
         return None
-    mine = (1 if job.task == TaskKind.GENERATE else 0, job.queued_at, job.id)
+    mine = (1 if job.task.generates else 0, job.queued_at, job.id)
     ahead = session.scalar(
         select(func.count())
         .select_from(Job)
@@ -183,11 +188,46 @@ def complete_job(
     job.finished_at = _now()
 
 
+def complete_wheel_regeneration(
+    session: Session,
+    job_id: int,
+    *,
+    result_path: str,
+    width: int | None = None,
+    height: int | None = None,
+) -> None:
+    """Kończy „ponów to koło”: nowy plik wyniku zastępuje poprzedni, koło dostaje nowy seed."""
+    job = session.get_one(Job, job_id)
+    result = job.image(ImageRole.RESULT)
+    if result is None:
+        job.images.append(
+            Image(role=ImageRole.RESULT, path=result_path, width=width, height=height)
+        )
+    else:
+        result.path, result.width, result.height = result_path, width, height
+    for wheel in job.wheels:
+        if wheel.pending_seed is not None:
+            wheel.seed, wheel.pending_seed = wheel.pending_seed, None
+    job.status = JobStatus.DONE
+    job.finished_at = _now()
+
+
+def _back_to_result(job: Job) -> None:
+    """Ponowienie koła nie doszło do skutku: zadanie wraca do poprzedniego wyniku."""
+    for wheel in job.wheels:
+        wheel.pending_seed = None
+    job.status = JobStatus.DONE
+
+
 def fail_job(session: Session, job_id: int, *, error: str) -> None:
     """Błąd pracy workera. Nieudana detekcja albo segmentacja wraca do szkicu (można kliknąć
-    koło), nieudane generowanie kończy zadanie statusem `failed`."""
+    koło), nieudane ponowienie koła wraca do poprzedniego wyniku (`done` z błędem), nieudane
+    generowanie kończy zadanie statusem `failed`."""
     job = session.get_one(Job, job_id)
     job.error = error
+    if job.task == TaskKind.REGENERATE_WHEEL:
+        _back_to_result(job)
+        return
     if job.task in (TaskKind.SEGMENT, TaskKind.DETECT):
         job.status = JobStatus.DRAFT
         for wheel in [w for w in job.wheels if w.mask_path is None]:
@@ -219,8 +259,13 @@ def fail_interrupted_jobs(session: Session) -> list[int]:
 
 
 def mark_cancelled(session: Session, job_id: int) -> None:
-    """Worker przerwał zadanie na prośbę użytkownika (`Job.cancel_requested`)."""
+    """Zadanie anulowane przez użytkownika (w kolejce albo przez worker po `cancel_requested`).
+
+    Anulowane ponowienie koła wraca do poprzedniego wyniku (`done`)."""
     job = session.get_one(Job, job_id)
+    if job.task == TaskKind.REGENERATE_WHEEL:
+        _back_to_result(job)
+        return
     job.status = JobStatus.CANCELLED
     job.finished_at = _now()
 

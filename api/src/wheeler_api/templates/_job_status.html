@@ -51,6 +51,8 @@
     {{ t.error_mask_failed }} <span class="text-red-500">({{ job.error }})</span>
     {% elif job.task and job.task.value == "detect" %}
     {{ t.error_detection_failed }} <span class="text-red-500">({{ job.error }})</span>
+    {% elif job.task and job.task.value == "regenerate_wheel" %}
+    {{ t.error_regenerate_failed }} <span class="text-red-500">({{ job.error }})</span>
     {% else %}
     {{ t.job_error }}: {{ job.error }}
     {% endif %}
@@ -104,6 +106,8 @@
     </form>
     {% endif %}
   </div>
+  {% elif job.status.value == "done" and result_image and input_image %}
+  {% include "_result_compare.html" %}
   {% else %}
   <div class="grid gap-6 sm:grid-cols-2">
     {% if input_image %}
@@ -117,7 +121,7 @@
     <figure>
       <figcaption class="mb-2 flex items-baseline justify-between text-sm font-medium text-slate-600">
         <span>{{ t.job_result }}</span>
-        <a href="/files/{{ result_image.path }}" download class="underline hover:text-slate-900">{{ t.job_download }}</a>
+        <a href="/jobs/{{ job.id }}/download" class="underline hover:text-slate-900">{{ t.job_download }}</a>
       </figcaption>
       <img src="/files/{{ result_image.path }}" alt="{{ t.job_result }}" data-role="result"
            class="w-full rounded-lg border border-slate-200 bg-white">

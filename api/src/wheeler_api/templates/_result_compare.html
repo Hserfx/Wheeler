@@ -1,0 +1,63 @@
+{#- Ekran wyniku (ticket 07): suwak przed/po na pełnym obrazie, powiększanie okolicy koła,
+    pobieranie PNG. Oba obrazy mają ten sam rozmiar (wynik = rozdzielczość oryginału), więc
+    jedna transformacja (`view`) powiększa je identycznie; suwak przycina warstwę „przed”
+    w układzie ramki, niezależnie od powiększenia. -#}
+<div class="flex flex-col gap-3"
+     x-data="{
+       pos: 50,
+       view: '',
+       zoom(box) {
+         const [l, t, r, b] = box.split(',').map(Number);
+         const img = this.$refs.after, W = img.naturalWidth, H = img.naturalHeight;
+         if (!W || !H) return;
+         const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+         const z = clamp(Math.min(W / ((r - l) * 1.6), H / ((b - t) * 1.6)), 1, 8);
+         const tx = clamp(0.5 - (l + r) / 2 / W * z, 1 - z, 0);
+         const ty = clamp(0.5 - (t + b) / 2 / H * z, 1 - z, 0);
+         this.view = `transform: translate(${tx * 100}%, ${ty * 100}%) scale(${z})`;
+       },
+     }">
+  <div class="flex flex-wrap items-baseline justify-between gap-3 text-sm">
+    <p class="text-slate-600">{{ t.compare_hint }}</p>
+    <a href="/jobs/{{ job.id }}/download" data-role="download"
+       class="rounded-md bg-slate-900 px-4 py-2 font-semibold text-white hover:bg-slate-700">{{ t.job_download }}</a>
+  </div>
+  <div class="relative select-none overflow-hidden rounded-lg border border-slate-200 bg-white" data-role="compare">
+    <img x-ref="after" src="/files/{{ result_image.path }}" alt="{{ t.job_result }}" data-role="result"
+         draggable="false" :style="view"
+         class="block w-full origin-top-left transition-transform duration-300">
+    <div class="absolute inset-0" :style="`clip-path: inset(0 ${100 - pos}% 0 0)`">
+      <img src="/files/{{ input_image.path | display_path }}" alt="{{ t.job_input }}" data-role="input"
+           draggable="false" :style="view"
+           class="block w-full origin-top-left transition-transform duration-300">
+    </div>
+    <div class="pointer-events-none absolute inset-y-0 w-0.5 -translate-x-1/2 bg-white shadow" :style="`left: ${pos}%`"></div>
+    <span class="pointer-events-none absolute left-2 top-2 rounded bg-black/60 px-2 py-0.5 text-xs text-white">{{ t.compare_before }}</span>
+    <span class="pointer-events-none absolute right-2 top-2 rounded bg-black/60 px-2 py-0.5 text-xs text-white">{{ t.compare_after }}</span>
+    <input type="range" min="0" max="100" step="0.1" x-model="pos" aria-label="{{ t.compare_slider }}"
+           class="absolute inset-0 h-full w-full cursor-ew-resize opacity-0">
+  </div>
+  <!-- /compare -->
+  <ul class="flex flex-wrap items-center gap-2 text-sm" data-role="wheels">
+    <li>
+      <button type="button" data-role="zoom-reset" @click="view = ''"
+              class="rounded-md border border-slate-300 bg-white px-3 py-1.5 hover:bg-slate-100">{{ t.zoom_reset }}</button>
+    </li>
+    {% for wheel in job.masked_wheels if wheel.box %}
+    <li class="flex items-center gap-1 rounded-md border border-slate-200 bg-white p-1" data-wheel-id="{{ wheel.id }}">
+      <button type="button" data-role="zoom-wheel" data-box="{{ wheel.box | join(',') }}"
+              @click="zoom($el.dataset.box)"
+              class="rounded px-2 py-1 hover:bg-slate-100">{{ t.zoom_wheel.format(number=loop.index) }}</button>
+      {%- set seed = wheel_seed(job, wheel) %}
+      {%- if seed is not none %}
+      <span class="text-xs text-slate-500">{{ t.wheel_seed }} <span data-role="wheel-seed" class="font-mono">{{ seed }}</span></span>
+      {%- endif %}
+      <form action="/jobs/{{ job.id }}/wheels/{{ wheel.id }}/regenerate" method="post"
+            x-data="{ sending: false }" @submit="sending = true">
+        <button type="submit" data-role="regenerate-wheel" :disabled="sending" title="{{ t.wheel_regenerate_hint }}"
+                class="rounded bg-slate-900 px-2 py-1 font-medium text-white hover:bg-slate-700 disabled:opacity-50">{{ t.wheel_regenerate }}</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+</div>

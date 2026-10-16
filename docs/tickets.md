@@ -17,15 +17,23 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** None (can start immediately)
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Przykładowe zdjęcia są w repo wraz ze źródłem i licencją każdego z nich
-- [ ] Wagi Qwen-Image-2.1-Turbo są skonwertowane do mflux q8 i q4 z lokalnego cache bf16
-- [ ] Zmierzone czasy i szczytowa pamięć dla kombinacji: q8 / q4 × 1024 / 1536 px, z rozbiciem na ładowanie modelu i generowanie
-- [ ] Ta sama edycja wykonana bazowym pipeline'em diffusers bf16 (dwuetapowe ładowanie z `image-gen-model-test`) jako punkt odniesienia
-- [ ] Porównanie Florence-2 i Grounding DINO pod kątem trafności i czasu wykrywania kół na zdjęciach przykładowych
-- [ ] Sprawdzone, czy siatka dokładnie 1024 px daje szum (porównanie z 992/1056)
-- [ ] Wyniki i obrazy porównawcze w raporcie, a wybrane ustawienia domyślne (kwantyzacja, rozdzielczość robocza, detektor, szablon promptu) dopisane do DESIGN.md
+- [x] Przykładowe zdjęcia są w repo wraz ze źródłem i licencją każdego z nich
+- [x] Wagi Qwen-Image-2.1-Turbo są skonwertowane do mflux q8 i q4 z lokalnego cache bf16
+- [x] Zmierzone czasy i szczytowa pamięć dla kombinacji: q8 / q4 × 1024 / 1536 px, z rozbiciem na ładowanie modelu i generowanie
+- [x] Ta sama edycja wykonana bazowym pipeline'em diffusers bf16 (dwuetapowe ładowanie z `image-gen-model-test`) jako punkt odniesienia
+- [x] Porównanie Florence-2 i Grounding DINO pod kątem trafności i czasu wykrywania kół na zdjęciach przykładowych
+- [x] Sprawdzone, czy siatka dokładnie 1024 px daje szum (porównanie z 992/1056)
+- [x] Wyniki i obrazy porównawcze w raporcie, a wybrane ustawienia domyślne (kwantyzacja, rozdzielczość robocza, detektor, szablon promptu) dopisane do DESIGN.md
+
+**Comments:**
+
+- 2026-10-16: Raport w `docs/spike/README.md`, kod w `spike/`. Ustawienia domyślne: mflux z gita (commit `b534021a`,
+  bo Turbo nie ma w wydanym 0.22.0), q8 + fp16 compute + kafelkowy VAE, 1024 px, `[wycinek, felga]` z maską,
+  Florence-2-large + SAM 2.1 large. Kolejność `[felga, wycinek]` z pierwotnego DESIGN w 2 z 3 przypadków zwracała
+  zdjęcie felgi, więc DESIGN poprawiony. Kod wycinania i kompozycji (`spike/src/wheeler_spike/wheel_crop.py`,
+  z testami) do przeniesienia w tickecie 03.
 
 ---
 

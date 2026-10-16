@@ -1,0 +1,28 @@
+[project]
+name = "wheeler-spike"
+version = "0.1.0"
+description = "Jednorazowy spike pomiarowy (ticket 01): mflux Qwen-Image-2.1-Turbo, detektory kół, SAM 2."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "mflux",
+    "numpy>=2.0",
+    "pillow>=12.3.0",
+    "torch>=2.13",
+    "transformers>=5.5,<6",
+    "psutil>=6",
+    "torchvision>=0.29.1",
+]
+
+[dependency-groups]
+dev = ["pytest>=9.1"]
+
+[tool.uv.sources]
+# Wsparcie Qwen-Image-2.1-Turbo jest na main (PR #859), jeszcze nie w wydanej 0.22.0.
+mflux = { git = "https://github.com/mflux-community/mflux", rev = "b534021a9c8c45bb064959d754870fd98322e447" }
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

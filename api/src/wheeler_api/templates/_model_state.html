@@ -1,0 +1,8 @@
+{#- Stan modelu w pamięci workera (fragment HTMX w nagłówku), odświeżany co 2 s. -#}
+{%- set dot = {"asleep": "bg-slate-300", "loading": "bg-amber-400 animate-pulse", "ready": "bg-emerald-500"} -%}
+<span id="model-state" class="flex items-center gap-1.5 text-xs text-slate-500"
+      hx-get="/model-state" hx-trigger="every 2s" hx-swap="outerHTML"
+      data-model-state="{{ model_state.value }}" title="{{ t.model_state_hint }}">
+  <span class="inline-block h-2 w-2 rounded-full {{ dot[model_state.value] }}" aria-hidden="true"></span>
+  {{ t.model_state_label }}: {{ model_state_labels[model_state] }}
+</span>

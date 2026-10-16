@@ -64,6 +64,11 @@ wgranie auta + felgi -> draft --klik w koło--> segment (SAM 2) -> draft z mask�
   w `WHEELER_MFLUX_MODEL_PATH`, domyślnie `~/.cache/wheeler/qwen-image-2.1-turbo-mflux-q8`) albo
   `placeholder` (te same kroki z atrapami modeli, bez GPU; do pracy nad UI).
 - Modele ładują się leniwie przy pierwszym użyciu. Przed generowaniem SAM 2 jest zwalniany.
+- Cykl życia modeli (`wheeler_worker/model_lifecycle.py`): po starcie workera modele nie są
+  załadowane („uśpiony”), pierwsze zadanie je ładuje („ładowanie”, też w statusie zadania),
+  potem zostają w pamięci („gotowy”) i są zwalniane po `WHEELER_MODEL_IDLE_TIMEOUT` sekundach
+  bez zadań (domyślnie 600). Stan leży w tabeli `worker_state` (`wheeler_shared/worker_state.py`),
+  a UI pokazuje go w nagłówku (`GET /model-state`, odświeżane co 2 s).
 - Pliki koła w katalogu zadania: `wheels/<id>/mask.png` (dokładnie obszar, który może się zmienić),
   `overlay.png`, `crop.png`, `crop_mask.png`, `generated.png`; wynik `result.png`.
 

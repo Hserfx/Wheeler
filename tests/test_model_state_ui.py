@@ -9,9 +9,9 @@ import threading
 from collections.abc import Callable, Iterator
 
 import pytest
-from fake_models import SolidEditor, disc_mask
+from fake_models import Box, BoxDetector, SolidEditor, disc_mask
 from fastapi.testclient import TestClient
-from helpers import click_wheel, upload
+from helpers import click_wheel, drain, upload
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -90,6 +90,9 @@ class LazyDiscSegmenter:
                 self.loads += 1
         return disc_mask(image.size, point, 10)
 
+    def segment_boxes(self, image: Image.Image, boxes: list[Box]) -> list[Image.Image]:
+        return []  # detektor atrapa (`BoxDetector()`) nie znajduje kół
+
     def release(self) -> None:
         if self.loaded:
             self.loaded = False
@@ -104,6 +107,7 @@ def test_first_task_shows_model_loading_instead_of_stalled_progress(
 ) -> None:
     lifecycle = lifecycle_factory()
     job_id = upload(client)
+    drain(session_factory, storage)  # detekcja kół po wgraniu (atrapa bez modelu)
     click_wheel(client, job_id)
     assert TEXTS["model_loading_job"] not in client.get(f"/jobs/{job_id}/status").text
 
@@ -112,7 +116,9 @@ def test_first_task_shows_model_loading_instead_of_stalled_progress(
         lifecycle,
         on_load=lambda: seen_while_loading.append(client.get(f"/jobs/{job_id}/status").text),
     )
-    processor = WheelSwapProcessor(segmenter=segmenter, editor=SolidEditor())
+    processor = WheelSwapProcessor(
+        detector=BoxDetector(), segmenter=segmenter, editor=SolidEditor()
+    )
     assert run_once(session_factory, storage, processor)
 
     [during_load] = seen_while_loading
@@ -140,8 +146,11 @@ def test_worker_loop_releases_models_after_idle_timeout(
 
     lifecycle = lifecycle_factory(idle_timeout=600.0, clock=clock)
     segmenter = LazyDiscSegmenter(lifecycle)
-    processor = WheelSwapProcessor(segmenter=segmenter, editor=SolidEditor())
+    processor = WheelSwapProcessor(
+        detector=BoxDetector(), segmenter=segmenter, editor=SolidEditor()
+    )
     job_id = upload(client)
+    drain(session_factory, storage)  # detekcja kół po wgraniu (atrapa bez modelu)
     click_wheel(client, job_id)
 
     original_release = segmenter.release

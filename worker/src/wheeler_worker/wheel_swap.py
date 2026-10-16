@@ -1,13 +1,15 @@
-"""Podmiana felgi: maska z kliknięcia (SAM 2) i edycja każdego koła osobno (mflux).
+"""Podmiana felg: maski kół (Florence-2 + SAM 2) i edycja każdego koła osobno (mflux).
 
 Pipeline (docs/DESIGN.md, „Pipeline edycji”):
-1. `segment`: klik -> maska SAM całego koła -> poszerzenie o `mask_grow` razy bok koła.
-   Zapisana maska to dokładnie obszar, który generowanie może zmienić.
+1. `detect` (po wgraniu): boxy kół z detektora -> maski SAM z promptem box. `segment` (klik
+   w miejsce bez maski): klik -> maska SAM całego koła. Obie maski są poszerzane o `mask_grow`
+   razy bok koła; zapisana maska to dokładnie obszar, który generowanie może zmienić.
 2. `generate`: dla każdego koła kwadratowy wycinek z marginesem 25%, przeskalowany do
    rozdzielczości roboczej; model dostaje `[wycinek, felga]` i maskę wycinka; wynik wraca do
    rozmiaru wycinka i jest wklejany w zdjęcie z krawędzią wygładzaną do wewnątrz maski.
 
-Pliki w katalogu zadania: `wheels/<id>/mask.png`, `overlay.png` (segment) oraz `crop.png`,
+Pliki w katalogu zadania: `wheels/<id>/mask.png`, `overlay.png` (segment; dla kół z detekcji
+`wheels/detected-<n>/`, bo id koła powstaje dopiero przy zapisie) oraz `crop.png`,
 `crop_mask.png`, `generated.png` (generate), wynik `result.png`.
 """
 
@@ -21,8 +23,11 @@ from PIL import Image
 
 from wheeler_shared.edit_params import EditParams
 from wheeler_worker.compositing import composite, crop_box_for, grow_mask, mask_box, working_size
+from wheeler_worker.detector import WheelDetector
 from wheeler_worker.photos import load_photo, read_metadata, save_png
 from wheeler_worker.processing import (
+    DetectItem,
+    DetectResult,
     GenerateItem,
     GenerateResult,
     MaskFiles,
@@ -52,9 +57,23 @@ def wheel_dir(output_dir: Path, wheel_id: int) -> Path:
 
 
 class WheelSwapProcessor:
-    def __init__(self, *, segmenter: Segmenter, editor: RimEditor) -> None:
+    def __init__(self, *, detector: WheelDetector, segmenter: Segmenter, editor: RimEditor) -> None:
+        self.detector = detector
         self.segmenter = segmenter
         self.editor = editor
+
+    def detect(self, item: DetectItem) -> DetectResult:
+        photo = load_photo(item.photo_path)
+        params = EditParams.from_params(item.params)
+        boxes = self.detector.detect(photo)
+        raw_masks = self.segmenter.segment_boxes(photo, boxes) if boxes else []
+        wheels: list[MaskFiles] = []
+        for raw in raw_masks:
+            target = item.output_dir / "wheels" / f"detected-{len(wheels) + 1}"
+            files = _save_mask(raw, params, target)
+            if files is not None:  # SAM nic nie znalazł w boxie: pomijamy
+                wheels.append(files)
+        return DetectResult(wheels=wheels)
 
     def segment(self, item: SegmentItem) -> SegmentResult:
         photo = load_photo(item.photo_path)
@@ -62,23 +81,18 @@ class WheelSwapProcessor:
         masks: dict[int, MaskFiles] = {}
         for wheel_id, point in item.clicks.items():
             raw = self.segmenter.segment_click(photo, point)
-            box = mask_box(raw)
-            if box is None:
+            files = _save_mask(raw, params, wheel_dir(item.output_dir, wheel_id))
+            if files is None:
                 raise ValueError("Nie udało się wyznaczyć maski koła w klikniętym miejscu")
-            side = max(box.width, box.height)
-            mask = grow_mask(raw, pixels=round(side * params.mask_grow))
-            target = wheel_dir(item.output_dir, wheel_id)
-            masks[wheel_id] = MaskFiles(
-                mask=save_png(mask, target / "mask.png"),
-                overlay=save_png(_overlay(mask), target / "overlay.png"),
-            )
+            masks[wheel_id] = files
         return SegmentResult(masks=masks)
 
     def generate(self, item: GenerateItem) -> GenerateResult:
         params = EditParams.from_params(item.params)
         if params.seed is None:
             raise ValueError("Brak seeda w parametrach zadania")
-        # SAM 2 (~3 GB) i mflux (szczyt ~27 GB) razem nie mieszczą się wygodnie w 32 GB.
+        # Florence-2 i SAM 2 (~3 GB każdy) z mflux (szczyt ~27 GB) nie mieszczą się w 32 GB.
+        self.detector.release()
         self.segmenter.release()
         photo = load_photo(item.photo_path)
         rim = load_photo(item.rim_path)
@@ -101,6 +115,7 @@ class WheelSwapProcessor:
         return GenerateResult(result_path=target, width=result.width, height=result.height)
 
     def release(self) -> None:
+        self.detector.release()
         self.segmenter.release()
         self.editor.release()
 
@@ -136,6 +151,25 @@ class _WheelEdit:
         save_png(generated, out / "generated.png")
         feather = max(2, round(side * FEATHER))
         return composite(photo, generated, crop, mask, feather=feather)
+
+
+def _save_mask(raw: Image.Image, params: EditParams, target: Path) -> MaskFiles | None:
+    """Poszerza surową maskę SAM o `mask_grow` boku koła i zapisuje ją z nakładką.
+
+    Zwraca None dla pustej maski (nic nie zapisuje)."""
+    box = mask_box(raw)
+    if box is None:
+        return None
+    side = max(box.width, box.height)
+    mask = grow_mask(raw, pixels=round(side * params.mask_grow))
+    target.mkdir(parents=True, exist_ok=True)
+    grown = mask_box(mask)
+    assert grown is not None
+    return MaskFiles(
+        mask=save_png(mask, target / "mask.png"),
+        overlay=save_png(_overlay(mask), target / "overlay.png"),
+        box=grown,
+    )
 
 
 def build_prompt(suffix: str = "") -> str:

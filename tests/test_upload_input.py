@@ -9,7 +9,7 @@ from collections.abc import Iterator
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from helpers import click_wheel, encode, fake_processor, generate, jpeg, rim_png, upload
+from helpers import click_wheel, drain, encode, fake_processor, generate, jpeg, rim_png, upload
 from photo_files import GPS_IFD, MAKE, display_profile, phone_file, phone_heic, quadrants
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
@@ -55,6 +55,7 @@ def test_iphone_heic_is_shown_upright_and_gives_png_with_icc_and_without_gps(
     assert client.get(f"/jobs/{job_id}/thumbnail").status_code == 200
 
     processor = fake_processor(radius=6)
+    drain(session_factory, storage, processor)  # detekcja kół (atrapa: brak)
     click_wheel(client, job_id, (48, 36))
     assert run_once(session_factory, storage, processor)
     generate(client, job_id)

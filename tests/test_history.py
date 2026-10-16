@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from helpers import click_wheel, finish_job, jpeg, rim_png, upload
+from helpers import click_wheel, drain, finish_job, jpeg, rim_png, upload
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -205,11 +205,13 @@ def test_bulk_delete_removes_selected_jobs_and_skips_running_ones(
     done = _upload(client)
     finish_job(client, session_factory, storage, done)
     running = _upload(client)
+    drain(session_factory, storage)
     click_wheel(client, running)
     with session_factory.begin() as session:
         claimed = claim_next_job(session)
         assert claimed is not None and claimed.id == running
     queued = _upload(client)
+    drain(session_factory, storage)
     click_wheel(client, queued)
     untouched = _upload(client)
     dirs = {job: _job_dir(client, job, storage) for job in (done, running, queued, untouched)}

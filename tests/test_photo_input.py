@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from fake_models import DiscSegmenter, SolidEditor
+from fake_models import BoxDetector, DiscSegmenter, SolidEditor
 from helpers import noise_photo
 from photo_files import (
     GPS_IFD,
@@ -24,7 +24,9 @@ from wheeler_worker.wheel_swap import WheelSwapProcessor
 
 def _swap(photo: Path, out: Path, click: tuple[float, float], radius: int) -> tuple[Path, Path]:
     """Klik -> maska -> generowanie; zwraca (maska, wynik)."""
-    processor = WheelSwapProcessor(segmenter=DiscSegmenter(radius=radius), editor=SolidEditor())
+    processor = WheelSwapProcessor(
+        detector=BoxDetector(), segmenter=DiscSegmenter(radius=radius), editor=SolidEditor()
+    )
     mask = (
         processor.segment(
             SegmentItem(job_id=1, photo_path=photo, output_dir=out, params={}, clicks={1: click})

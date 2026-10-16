@@ -1,4 +1,5 @@
-"""Działania użytkownika na szkicu zadania: wybór koła kliknięciem i start generowania.
+"""Działania użytkownika na szkicu zadania: detekcja kół, edycja masek kliknięciem i start
+generowania.
 
 Każde działanie, które wymaga modelu (SAM 2, mflux), wstawia zadanie do kolejki z właściwym
 `TaskKind`; resztę robi worker. Funkcje nie zatwierdzają transakcji (jak `queue.py`).
@@ -6,10 +7,12 @@ Każde działanie, które wymaga modelu (SAM 2, mflux), wstawia zadanie do kolej
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from sqlalchemy.orm import Session, selectinload
 
 from wheeler_shared import edit_params
-from wheeler_shared.models import Job, JobStatus, TaskKind, Wheel
+from wheeler_shared.models import Job, JobStatus, TaskKind, Wheel, WheelSource
 from wheeler_shared.queue import enqueue
 
 
@@ -25,19 +28,52 @@ class NoWheelSelected(EditingError):
     """Generowanie bez żadnej gotowej maski koła."""
 
 
-def select_wheel(session: Session, job_id: int, point: tuple[float, float]) -> int:
-    """Klik w koło: zastępuje wybrane koło nowym i zleca workerowi wyznaczenie maski.
+Point = tuple[float, float]
+# Czy maska (ścieżka względna pliku L 0/255) obejmuje punkt? Odczyt pliku robi wywołujący (API).
+MaskContains = Callable[[str, Point], bool]
 
-    Ticket 03 obsługuje jedno koło, więc kolejny klik zastępuje poprzedni wybór.
-    Zwraca id nowego koła. Pliki starych masek zostają w katalogu zadania.
+
+def click_photo(
+    session: Session, job_id: int, point: Point, *, mask_contains: MaskContains
+) -> None:
+    """Klik w zdjęcie szkicu: w masce koła usuwa to koło (od razu, bez workera), w pustym
+    miejscu dodaje nowe koło i zleca workerowi wyznaczenie jego maski (SAM 2).
+
+    Przy nakładających się maskach usuwane jest koło dodane najpóźniej (rysowane na wierzchu).
+    Pliki usuniętych masek zostają w katalogu zadania do jego usunięcia.
     """
     job = _lock_draft(session, job_id)
-    job.wheels.clear()
-    wheel = Wheel(click_x=float(point[0]), click_y=float(point[1]))
-    job.wheels.append(wheel)
+    hit = next(
+        (
+            wheel
+            for wheel in reversed(job.masked_wheels)
+            if _wheel_contains(wheel, point, mask_contains)
+        ),
+        None,
+    )
+    if hit is not None:
+        job.wheels.remove(hit)
+        job.error = None
+        return
+    job.wheels.append(
+        Wheel(source=WheelSource.CLICK, click_x=float(point[0]), click_y=float(point[1]))
+    )
     enqueue(job, TaskKind.SEGMENT)
-    session.flush()
-    return wheel.id
+
+
+def _wheel_contains(wheel: Wheel, point: Point, mask_contains: MaskContains) -> bool:
+    assert wheel.mask_path is not None
+    box = wheel.box
+    if box is not None:
+        left, top, right, bottom = box
+        if not (left <= point[0] < right and top <= point[1] < bottom):
+            return False
+    return mask_contains(wheel.mask_path, point)
+
+
+def request_detection(session: Session, job_id: int) -> None:
+    """Po wgraniu zdjęcia: zleca workerowi wykrycie wszystkich kół (detektor + SAM 2)."""
+    enqueue(_lock_draft(session, job_id), TaskKind.DETECT)
 
 
 def start_generation(session: Session, job_id: int, *, seed: int) -> None:

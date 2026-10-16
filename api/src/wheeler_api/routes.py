@@ -18,12 +18,14 @@ from wheeler_api import advanced
 from wheeler_api.texts import TEXTS
 from wheeler_api.thumbnails import ensure_thumbnail
 from wheeler_api.uploads import UploadRejected, save_image_upload
+from wheeler_api.wheel_masks import mask_contains
 from wheeler_shared import edit_params
 from wheeler_shared.editing import (
     EditingError,
     JobBusy,
     NoWheelSelected,
-    select_wheel,
+    click_photo,
+    request_detection,
     start_generation,
 )
 from wheeler_shared.history import delete_jobs, is_deletable
@@ -141,6 +143,7 @@ def create_job(
             job_id = create_draft_job(
                 session, input_path=input_path, rim_path=rim_path, params=params
             )
+            request_detection(session, job_id)
     except UploadRejected as rejected:
         shutil.rmtree(storage.path(job_dir), ignore_errors=True)
         return _home_page(
@@ -161,15 +164,16 @@ def click_wheel(
     job_id: int,
     request: Request,
     session: SessionDep,
+    storage: StorageDep,
     templates: TemplatesDep,
     x: Annotated[float, Form()],
     y: Annotated[float, Form()],
 ) -> Response:
-    """Klik w koło na zdjęciu (piksele zdjęcia): worker wyznaczy maskę (SAM 2)."""
+    """Klik w zdjęcie (piksele zdjęcia): w masce usuwa koło, obok masek dodaje koło (SAM 2)."""
     status_code = 200
     try:
         with session.begin():
-            select_wheel(session, job_id, (x, y))
+            click_photo(session, job_id, (x, y), mask_contains=mask_contains(storage))
     except LookupError:
         raise HTTPException(status_code=404) from None
     except JobBusy:

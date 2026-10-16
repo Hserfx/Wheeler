@@ -82,3 +82,15 @@ def test_job_locked_by_another_transaction_is_skipped(
 
     assert claimed_a is not None and claimed_a.id == first
     assert claimed_b is not None and claimed_b.id == second
+
+
+def test_wheel_detection_jumps_ahead_of_queued_generation(
+    session_factory: sessionmaker[Session],
+) -> None:
+    generating = _job(session_factory, "a", {})
+    uploaded = _job(session_factory, "b", {})
+    _enqueue(session_factory, generating, TaskKind.GENERATE)
+    _enqueue(session_factory, uploaded, TaskKind.DETECT)
+
+    assert _claim(session_factory) == (uploaded, TaskKind.DETECT)
+    assert _claim(session_factory) == (generating, TaskKind.GENERATE)

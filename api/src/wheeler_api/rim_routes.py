@@ -8,12 +8,13 @@ albo `manage` (strona biblioteki, z usuwaniem). `rim_id` to felga zaznaczona w f
 from __future__ import annotations
 
 import shutil
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 
+from wheeler_api.rim_picker import Mode, picker_context
 from wheeler_api.routes import (
     SessionDep,
     SessionFactoryDep,
@@ -28,29 +29,11 @@ from wheeler_shared.rim_library import (
     accept_rim,
     add_rim,
     delete_rim,
-    library,
     new_rim_dir,
-    pending_rims,
     refine_rim,
 )
 
 router = APIRouter()
-
-Mode = Literal["select", "manage"]
-
-
-def picker_context(
-    session: Session, *, mode: Mode, selected: int | None = None, error: str | None = None
-) -> dict[str, object]:
-    pending = pending_rims(session)
-    return {
-        "mode": mode,
-        "selected": selected,
-        "library": library(session),
-        "pending": pending,
-        "polling": any(rim.status.busy for rim in pending),
-        "rim_error": error,
-    }
 
 
 def _picker(

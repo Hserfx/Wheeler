@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from wheeler_api import advanced
 from wheeler_api.rim_routes import router as rim_router
 from wheeler_api.routes import router
 from wheeler_api.settings import ApiSettings
@@ -25,8 +26,10 @@ from wheeler_shared.storage import Storage
 PACKAGE_DIR = Path(__file__).resolve().parent
 
 
-def param_value(value: object) -> str:
-    """Wartość parametru zadania do wyświetlenia (struktury jako JSON)."""
+def param_value(value: object, key: str = "") -> str:
+    """Wartość parametru zadania do wyświetlenia (znane z jednostką, struktury jako JSON)."""
+    if (shown := advanced.display_value(key, value)) is not None:
+        return shown
     if isinstance(value, str):
         return value
     return json.dumps(value, ensure_ascii=False)

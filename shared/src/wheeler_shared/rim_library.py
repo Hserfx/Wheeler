@@ -140,6 +140,20 @@ def delete_rim(session_factory: sessionmaker[Session], storage: Storage, rim_id:
         storage.remove_tree(rim_dir)
 
 
+def use_rim(session: Session, storage: Storage, rim_id: int, *, job_dir: str) -> str:
+    """Wybór felgi z biblioteki dla zadania: kopiuje wyciętą felgę do katalogu zadania
+    (`<job_dir>/rim.png`), liczy użycie i zwraca ścieżkę kopii. `RimNotReady`, gdy felgi
+    nie ma w bibliotece. Blokada wiersza wyklucza równoległe usunięcie felgi."""
+    rim = session.get(Rim, rim_id, with_for_update=True, populate_existing=True)
+    if rim is None or rim.status != RimStatus.READY or rim.cut_path is None:
+        raise RimNotReady(rim_id)
+    target = f"{job_dir}/rim.png"
+    _copy(storage, rim.cut_path, target)
+    rim.use_count += 1
+    rim.last_used_at = _now()
+    return target
+
+
 def pending_rims(session: Session) -> list[Rim]:
     """Felgi, które jeszcze nie są w bibliotece (wycinane, do akceptacji, nieudane)."""
     return list(

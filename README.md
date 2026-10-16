@@ -55,8 +55,10 @@ wgranie auta + felgi -> draft --klik w koło--> segment (SAM 2) -> draft z mask�
   kolejkę (`TaskKind.SEGMENT`). Segmentacja ma pierwszeństwo przed generowaniem, w obrębie rodzaju
   obowiązuje FIFO po `queued_at`. Nieudana segmentacja wraca do szkicu z komunikatem.
 - Działania użytkownika: `wheeler_shared/editing.py` (`select_wheel`, `start_generation`).
-  Kolejka: `wheeler_shared/queue.py`. Parametry edycji i ustawienia domyślne:
-  `wheeler_shared/edit_params.py`.
+  Kolejka: `wheeler_shared/queue.py`. Parametry edycji, ustawienia domyślne i dozwolone zakresy:
+  `wheeler_shared/edit_params.py`. Sekcja „Zaawansowane” na stronie głównej
+  (`wheeler_api/advanced.py`) zapisuje w `Job.params` użyte wartości już przy wgraniu zdjęcia;
+  pusty seed jest losowany i zapisywany przy „Generuj”.
 - `wheeler_worker/processing.py` definiuje `Processor` z metodą na każdy rodzaj pracy
   (`segment`, `generate`; tylko pliki, bez bazy). Runner (`runner.py`, `HANDLERS`) pobiera zadanie
   (`FOR UPDATE SKIP LOCKED`), woła procesor i zapisuje wynik albo błąd.

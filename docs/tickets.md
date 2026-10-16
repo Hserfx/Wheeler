@@ -183,12 +183,18 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 03
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Sekcja domyślnie zwinięta, z ustawieniami domyślnymi z wyników spike'a
-- [ ] Puste pole seed oznacza losowy seed, a wylosowana wartość jest zapisywana w zadaniu
-- [ ] Walidacja zakresów (rozdzielczość jako wielokrotność 32, rozsądne granice poszerzenia maski) z czytelnym komunikatem
-- [ ] Użyte wartości widoczne w szczegółach zadania w historii
+- [x] Sekcja domyślnie zwinięta, z ustawieniami domyślnymi z wyników spike'a
+- [x] Puste pole seed oznacza losowy seed, a wylosowana wartość jest zapisywana w zadaniu
+- [x] Walidacja zakresów (rozdzielczość jako wielokrotność 32, rozsądne granice poszerzenia maski) z czytelnym komunikatem
+- [x] Użyte wartości widoczne w szczegółach zadania w historii
+
+**Comments:**
+
+- Zakresy (`wheeler_shared/edit_params.py`): rozdzielczość 768–1152 px co 32 (1536 px przy q8 wchodzi w swap; 1152 px ma pole 1,27 razy większe niż 1024, szacunkowo ~29 GB), poszerzenie maski 0–10% boku koła (w formularzu w procentach, w `Job.params` jako ułamek), seed 0–2³¹−1, dopisek do 300 znaków. Walidacja w przeglądarce (atrybuty `min`/`max`/`step`) i na serwerze (400 z komunikatem, sekcja otwarta, wpisane wartości zachowane).
+- Zadanie zapisuje w `params` użyte wartości (także domyślne) już przy wgraniu zdjęcia, więc historia nie zależy od późniejszych zmian ustawień domyślnych. Komunikat „Użyto parametrów domyślnych” zostaje dla zadań bez zapisanych parametrów.
+- Weryfikacja testami z atrapami modeli (bez prawdziwego modelu), w tym przepływ przez workera: rozdzielczość, seed i dopisek trafiają do edytora, poszerzenie maski zmienia maskę przy segmentacji.
 
 ---
 

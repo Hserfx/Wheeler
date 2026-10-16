@@ -53,7 +53,7 @@ TEXTS: Final[dict[str, str]] = {
     "library_empty": "Biblioteka jest pusta. Dodaj pierwszą felgę poniżej.",
     "rim_unnamed": "Felga nr {id}",
     "rim_new": "Nowa felga",
-    "rim_used": "Użyto: {count}×",
+    "rim_used": "Użycia: {count}",
     "rim_last_used": "ostatnio",
     "rim_delete": "Usuń z biblioteki",
     "rim_delete_confirm": (

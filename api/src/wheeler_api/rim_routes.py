@@ -47,16 +47,12 @@ def _picker(
     status_code: int = 200,
 ) -> Response:
     context = picker_context(session, mode=mode, selected=selected, error=error)
-    return templates.TemplateResponse(
-        request, "_rim_picker.html", context, status_code=status_code
-    )
+    return templates.TemplateResponse(request, "_rim_picker.html", context, status_code=status_code)
 
 
 @router.get("/rims", response_class=HTMLResponse)
 def rims_page(request: Request, session: SessionDep, templates: TemplatesDep) -> Response:
-    return templates.TemplateResponse(
-        request, "rims.html", picker_context(session, mode="manage")
-    )
+    return templates.TemplateResponse(request, "rims.html", picker_context(session, mode="manage"))
 
 
 @router.get("/rims/picker", response_class=HTMLResponse)

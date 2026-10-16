@@ -106,9 +106,12 @@ class WheelSwapProcessor:
             raise ValueError("Brak seeda w parametrach zadania")
         # SAM 2 (~3 GB) i mflux (szczyt ~27 GB) razem nie mieszczą się wygodnie w 32 GB.
         self.segmenter.release()
+        if self.remover is not None:
+            self.remover.release()
         photo = load_photo(item.photo_path)
+        # Felga z biblioteki ma przezroczyste tło: model widzi ją na jednolitym tle.
         with Image.open(item.rim_path) as rim_file:
-            rim = rim_file.convert("RGB")
+            rim = reference(rim_file)
         edit = _WheelEdit(
             editor=self.editor,
             rim=rim,

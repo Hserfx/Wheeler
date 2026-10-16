@@ -169,9 +169,7 @@ def library(session: Session) -> list[Rim]:
     recency = func.coalesce(Rim.last_used_at, Rim.created_at)
     return list(
         session.scalars(
-            select(Rim)
-            .where(Rim.status == RimStatus.READY)
-            .order_by(recency.desc(), Rim.id.desc())
+            select(Rim).where(Rim.status == RimStatus.READY).order_by(recency.desc(), Rim.id.desc())
         )
     )
 

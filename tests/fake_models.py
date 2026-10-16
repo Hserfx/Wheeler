@@ -97,3 +97,13 @@ class OpaqueRemover:
 
     def release(self) -> None:
         pass
+
+
+class NothingRemover:
+    """„BiRefNet”, który nie znalazł na zdjęciu żadnego obiektu (pusta maska)."""
+
+    def foreground(self, image: Image.Image) -> Image.Image:
+        return Image.new("L", image.size, 0)
+
+    def release(self) -> None:
+        pass

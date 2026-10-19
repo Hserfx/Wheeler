@@ -389,3 +389,21 @@ Rozmiarem steruje geometria, nie prompt (sam prompt model ignoruje, zob. komenta
   wycina teraz z oryginału (wcześniej z bieżącego wyniku), bo to jedna ścieżka kodu. Adapter SAM 2
   (`Sam2Segmenter.segment_rim`) nie był uruchamiany na prawdziwym modelu (zgodnie z grillingiem:
   tylko atrapy).
+- 2026-10-19 (agent, poprawki po code review, gałąź `review-fixes-12-warp`): wybór kandydata SAM tylko
+  z zakresu reguły z `rim_ellipse/NOTES.md` (ρ_y 45–92%, `RIM_CANDIDATE_RANGE`); 40–95%
+  (`RIM_DIAMETER_RANGE`) zostaje jako ostateczny warunek elipsy dopasowanej do brzegu przy oponie
+  (`rim_size_unavailable`). Warp tylko w masce koła, którą zmienia model (`Image.composite` z `crop_mask`
+  w rozdzielczości roboczej): krawędź opony = felga × k potrafiła wyjść poza maskę, a model widział tam
+  przeskalowany bok opony, który kompozycja odcinała (szew). Nowe testy: kandydat w pasie 40–45% / 92–95%
+  przegrywa z typową felgą mimo wyższej oceny SAM; poza maską wycinek dla modelu = wycinek bez warpu;
+  SAM mierzy felgę i jest zwalniany przed pierwszym krokiem mflux (atrapa `DiscSegmenter.log`); zgodność
+  `Ellipse` z konwencją OpenCV przy obrocie. Refaktory: `RimGeometry.k` -> `tire_ratio` (stałe
+  `TIRE_RATIO_RANGE`, `TYPICAL_TIRE_RATIO`, `TIRE_RATIO_PERCENTILE`), `_WheelEdit.apply(..., rim_geometry=)`,
+  `_measure_rims(..., rim_size=, mask_grow=)` zamiast całego `EditParams`; `grow_wheel_mask`
+  i `ungrown_wheel_mask` w `compositing.py` ze wspólnym wzorem poszerzenia; `Ellipse.to_unit`/`from_unit`
+  (obrót i normalizacja w jednym miejscu) i `wheel_ellipse` (elipsa wpisana w bbox maski koła) używane
+  przez pomiar, `Sam2Segmenter`, placeholder i atrapy; `RimCandidate` zamiast `tuple[Image.Image, float]`;
+  wspólne `ellipse_inside`/`wheel_photo` w `tests/helpers.py`. Bez łączenia rozmiaru felgi z geometrią
+  w jeden typ: stopień jest jeden na zadanie (`_WheelEdit.rim_size`), geometria na koło, więc wspólny typ
+  tylko by je powielał. Punkty negatywne i box felgi dla SAM przesunięte o pół piksela (środek bboxa
+  w układzie środków pikseli, jak centroid) — pomijalne.

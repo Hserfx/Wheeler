@@ -12,6 +12,7 @@ from PIL import Image
 
 from wheeler_shared.failures import Failure, ProcessingFailed
 from wheeler_worker.model_lifecycle import NO_OBSERVER, LoadObserver
+from wheeler_worker.torch_models import free_torch_memory, torch_device
 
 
 class Segmenter(Protocol):
@@ -61,10 +62,9 @@ class Sam2Segmenter:
         if self._model is not None:
             return
         with self.observer.loading():
-            import torch
             from transformers import Sam2Model, Sam2Processor
 
-            self._device = "mps" if torch.backends.mps.is_available() else "cpu"
+            self._device = torch_device()
             kwargs: dict[str, Any] = {"revision": self.revision, "local_files_only": True}
             self._processor = Sam2Processor.from_pretrained(self.repo, **kwargs)
             model: Any = Sam2Model.from_pretrained(self.repo, **kwargs)
@@ -74,14 +74,8 @@ class Sam2Segmenter:
         """Zwalnia model (np. przed mflux, żeby oba nie zajmowały pamięci naraz)."""
         if self._model is None:
             return
-        import gc
-
-        import torch
-
         self._model = self._processor = None
-        gc.collect()
-        if torch.backends.mps.is_available():
-            torch.mps.empty_cache()
+        free_torch_memory()
 
     def _embed(self, rgb: Image.Image) -> Any:
         self._load()

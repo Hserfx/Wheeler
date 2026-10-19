@@ -11,6 +11,7 @@ from typing import Any, Protocol
 from PIL import Image
 
 from wheeler_worker.model_lifecycle import NO_OBSERVER, LoadObserver
+from wheeler_worker.torch_models import free_torch_memory, torch_device
 
 BoxF = tuple[float, float, float, float]  # x0, y0, x1, y1 w pikselach zdjęcia
 
@@ -61,9 +62,8 @@ class FlorenceWheelDetector:
             import torch
             from transformers import AutoProcessor, Florence2ForConditionalGeneration
 
-            mps = torch.backends.mps.is_available()
-            self._device = "mps" if mps else "cpu"
-            self._dtype = torch.float16 if mps else torch.float32
+            self._device = torch_device()
+            self._dtype = torch.float16 if self._device == "mps" else torch.float32
             kwargs: dict[str, Any] = {"revision": self.revision, "local_files_only": True}
             auto_processor: Any = AutoProcessor  # bez typów w transformers
             self._processor = auto_processor.from_pretrained(self.repo, **kwargs)
@@ -75,14 +75,8 @@ class FlorenceWheelDetector:
     def release(self) -> None:
         if self._model is None:
             return
-        import gc
-
-        import torch
-
         self._model = self._processor = None
-        gc.collect()
-        if torch.backends.mps.is_available():
-            torch.mps.empty_cache()
+        free_torch_memory()
 
     def detect(self, image: Image.Image) -> list[BoxF]:
         import torch

@@ -13,6 +13,7 @@ from typing import Any, Protocol
 from PIL import Image
 
 from wheeler_worker.model_lifecycle import NO_OBSERVER, LoadObserver
+from wheeler_worker.torch_models import free_torch_memory, torch_device
 
 
 class BackgroundRemover(Protocol):
@@ -51,10 +52,9 @@ class BiRefNetRemover:
         if self._model is not None:
             return
         with self.observer.loading():
-            import torch
             from transformers import AutoModelForImageSegmentation
 
-            self._device = "mps" if torch.backends.mps.is_available() else "cpu"
+            self._device = torch_device()
             model: Any = AutoModelForImageSegmentation.from_pretrained(
                 self.repo, revision=self.revision, trust_remote_code=True, local_files_only=True
             )
@@ -64,14 +64,8 @@ class BiRefNetRemover:
     def release(self) -> None:
         if self._model is None:
             return
-        import gc
-
-        import torch
-
         self._model = None
-        gc.collect()
-        if torch.backends.mps.is_available():
-            torch.mps.empty_cache()
+        free_torch_memory()
 
     def foreground(self, image: Image.Image) -> Image.Image:
         import numpy as np

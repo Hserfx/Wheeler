@@ -1,13 +1,14 @@
 """Wycinanie okolicy koła i kompozycja wyniku modelu z powrotem w oryginał.
 
-Czysty numpy + Pillow, bez modelu (przeniesione ze spike'a 01, `spike/.../wheel_crop.py`).
-Gwarancja projektu: `composite` nie zmienia żadnego piksela poza maską.
+Czysty numpy + Pillow (erozja maski: OpenCV), bez modelu (przeniesione ze spike'a 01,
+`spike/.../wheel_crop.py`). Gwarancja projektu: `composite` nie zmienia żadnego piksela poza maską.
 """
 
 from __future__ import annotations
 
 from typing import NamedTuple
 
+import cv2
 import numpy as np
 import numpy.typing as npt
 from PIL import Image, ImageFilter
@@ -84,6 +85,31 @@ def composite(
     if original.mode in ("RGBA", "LA"):
         result.putalpha(original.getchannel("A"))
     return result
+
+
+def grow_wheel_mask(mask: Image.Image, mask_grow: float) -> Image.Image:
+    """Maska koła z SAM poszerzona o `mask_grow` razy bok koła: obszar, który generowanie
+    może zmienić. Pusta maska zostaje pusta."""
+    box = mask_box(mask)
+    side = 0 if box is None else max(box.width, box.height)
+    return grow_mask(mask, pixels=_grow_pixels(side, mask_grow))
+
+
+def ungrown_wheel_mask(mask: Image.Image, mask_grow: float) -> Image.Image:
+    """Odwrotność `grow_wheel_mask` (w przybliżeniu maska z SAM: jej brzeg to zewnętrzna
+    krawędź opony). Bok koła sprzed poszerzenia odtwarzamy z boku `mask`."""
+    inside = np.asarray(mask.convert("L")) > 0
+    box = mask_box(mask)
+    if box is not None:
+        pixels = _grow_pixels(max(box.width, box.height) / (1 + 2 * mask_grow), mask_grow)
+        if pixels > 0:
+            disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * pixels + 1, 2 * pixels + 1))
+            inside = cv2.erode(inside.astype(np.uint8), disk) > 0
+    return Image.fromarray(inside.astype(np.uint8) * 255)
+
+
+def _grow_pixels(wheel_side: float, mask_grow: float) -> int:
+    return round(wheel_side * mask_grow)
 
 
 def grow_mask(mask: Image.Image, pixels: int) -> Image.Image:

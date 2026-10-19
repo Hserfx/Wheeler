@@ -31,7 +31,14 @@ from wheeler_shared.edit_params import EditParams
 from wheeler_shared.failures import Failure, ProcessingFailed
 from wheeler_shared.progress import Progress
 from wheeler_worker.background import BackgroundRemover
-from wheeler_worker.compositing import composite, crop_box_for, grow_mask, mask_box, working_size
+from wheeler_worker.compositing import (
+    composite,
+    crop_box_for,
+    grow_wheel_mask,
+    mask_box,
+    ungrown_wheel_mask,
+    working_size,
+)
 from wheeler_worker.detector import WheelDetector
 from wheeler_worker.photos import load_original, load_photo, read_metadata, save_png
 from wheeler_worker.processing import (
@@ -52,7 +59,6 @@ from wheeler_worker.rim_geometry import (
     RimGeometry,
     measure_rim,
     outline_rim,
-    ungrown_wheel_mask,
     warp_rim,
 )
 from wheeler_worker.segmenter import Segmenter
@@ -308,14 +314,11 @@ def _save_mask(raw: Image.Image, params: EditParams, target: Path) -> MaskFiles 
     """Poszerza surową maskę SAM o `mask_grow` boku koła i zapisuje ją z nakładką.
 
     Zwraca None dla pustej maski (nic nie zapisuje)."""
-    box = mask_box(raw)
-    if box is None:
-        return None
-    side = max(box.width, box.height)
-    mask = grow_mask(raw, pixels=round(side * params.mask_grow))
-    target.mkdir(parents=True, exist_ok=True)
+    mask = grow_wheel_mask(raw, params.mask_grow)
     grown = mask_box(mask)
-    assert grown is not None
+    if grown is None:
+        return None
+    target.mkdir(parents=True, exist_ok=True)
     return MaskFiles(
         mask=save_png(mask, target / "mask.png"),
         overlay=save_png(_overlay(mask), target / "overlay.png"),

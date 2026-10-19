@@ -240,21 +240,6 @@ def _tire_k(rim: Ellipse, wheel: BoolArray) -> float:
     return k if low <= k <= high else TYPICAL_K
 
 
-def ungrown_wheel_mask(mask: Image.Image, mask_grow: float) -> Image.Image:
-    """Maska koła bez poszerzenia o `mask_grow` boku koła (`wheel_swap._save_mask`), czyli
-    w przybliżeniu maska SAM: jej brzeg to zewnętrzna krawędź opony."""
-    inside = np.asarray(mask.convert("L")) > 0
-    ys, xs = np.nonzero(inside)
-    if xs.size == 0:
-        return Image.fromarray(inside.astype(np.uint8) * 255)
-    side = max(xs.max() + 1 - xs.min(), ys.max() + 1 - ys.min())
-    pixels = round(side / (1 + 2 * mask_grow) * mask_grow)
-    if pixels > 0:
-        disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * pixels + 1, 2 * pixels + 1))
-        inside = cv2.erode(inside.astype(np.uint8), disk) > 0
-    return Image.fromarray(inside.astype(np.uint8) * 255)
-
-
 def outline_rim(image: Image.Image, geometry: RimGeometry) -> Image.Image:
     """Obraz diagnostyczny: elipsa felgi (zielona) i zewnętrzna krawędź opony (żółta)."""
     rgb = np.array(image.convert("RGB"))  # kopia zapisywalna dla cv2

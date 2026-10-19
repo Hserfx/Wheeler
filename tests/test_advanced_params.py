@@ -21,7 +21,7 @@ from wheeler_shared.storage import Storage
 from wheeler_worker.runner import run_once
 from wheeler_worker.wheel_swap import WheelSwapProcessor
 
-RESOLUTION_ERROR = "Rozdzielczość robocza musi być wielokrotnością 32 px, od 768 do 1152 px."
+RESOLUTION_ERROR = "Rozdzielczość robocza musi być wielokrotnością 32 px, od 992 do 1152 px."
 MASK_GROW_ERROR = "Poszerzenie maski musi być liczbą od 0 do 10%."
 SEED_ERROR = "Seed musi być liczbą całkowitą od 0 do 2147483647 albo pustym polem."
 
@@ -75,11 +75,11 @@ def test_values_from_advanced_section_are_saved_and_shown_in_job_details(
     client: TestClient,
 ) -> None:
     job_id = _upload(
-        client, seed="42", resolution="896", mask_grow="5", prompt_suffix="Chrome finish."
+        client, seed="42", resolution="1088", mask_grow="5", prompt_suffix="Chrome finish."
     )
     assert _shown_params(client, job_id) == {
         PARAM_LABELS["seed"]: "42",
-        PARAM_LABELS["resolution"]: "896 px",
+        PARAM_LABELS["resolution"]: "1088 px",
         PARAM_LABELS["mask_grow"]: "5%",
         PARAM_LABELS["prompt_suffix"]: "Chrome finish.",
     }
@@ -108,6 +108,7 @@ def test_untouched_section_saves_defaults_and_empty_seed_is_drawn_at_generation(
         ("resolution", "1000", RESOLUTION_ERROR),  # nie jest wielokrotnością 32
         ("resolution", "1536", RESOLUTION_ERROR),  # swap przy q8 (spike 01)
         ("resolution", "512", RESOLUTION_ERROR),
+        ("resolution", "960", RESOLUTION_ERROR),  # Turbo traci detal poniżej ~1024 px
         ("resolution", "duża", RESOLUTION_ERROR),
         ("mask_grow", "-1", MASK_GROW_ERROR),
         ("mask_grow", "12.5", MASK_GROW_ERROR),
@@ -137,6 +138,11 @@ def test_mask_grow_accepts_decimal_comma_and_bounds(client: TestClient) -> None:
         assert params[PARAM_LABELS["resolution"]] == "1152 px"
 
 
+def test_lowest_resolution_is_992_px(client: TestClient) -> None:
+    job_id = _upload(client, resolution="992")
+    assert _shown_params(client, job_id)[PARAM_LABELS["resolution"]] == "992 px"
+
+
 def _mask_area(client: TestClient, job_id: int) -> int:
     status = client.get(f"/jobs/{job_id}/status").text
     src = re.search(r'<img[^>]+src="(/files/[^"]+)"[^>]*data-role="mask-overlay"', status)
@@ -155,7 +161,7 @@ def test_worker_edits_with_values_from_the_section(
     areas = {}
     for grow in ("0", "10"):
         job_id = _upload(
-            client, seed="99", resolution="768", mask_grow=grow, prompt_suffix="Gold rim."
+            client, seed="99", resolution="1152", mask_grow=grow, prompt_suffix="Gold rim."
         )
         drain(session_factory, storage, processor)  # detekcja kół (atrapa: brak)
         click_wheel(client, job_id)
@@ -167,7 +173,7 @@ def test_worker_edits_with_values_from_the_section(
     assert areas["10"] > areas["0"]  # poszerzenie maski działa już przy segmentacji
     for call in editor.calls:
         width, height = call.size
-        assert abs(width * height - 768 * 768) / (768 * 768) < 0.15, call.size
+        assert abs(width * height - 1152 * 1152) / (1152 * 1152) < 0.1, call.size
         assert call.seed == 99
         assert call.prompt.endswith(" Gold rim.")
 

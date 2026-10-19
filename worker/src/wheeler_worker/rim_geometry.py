@@ -11,11 +11,14 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import cv2
 import numpy as np
 import numpy.typing as npt
 from PIL import Image
+
+from wheeler_worker.compositing import mask_box
 
 # Zmiana średnicy felgi na cal stopnia jako ułamek średnicy koła (zewnętrznej krawędzi opony).
 # Cale są przybliżone: obecnego rozmiaru felgi nie znamy, sterujemy proporcją felga/koło.
@@ -30,19 +33,20 @@ RIM_CANDIDATE_RANGE = (0.45, 0.92)
 RIM_DIAMETER_RANGE = (0.40, 0.95)
 # Maska kandydata musi leżeć w masce koła (SAM czasem dokleja kawałek karoserii).
 RIM_INSIDE_WHEEL = 0.95
-# Zewnętrzna krawędź opony = elipsa felgi * k. k z profilu maski koła; poza zakresem
-# (zasłonięte lico opony, maska z nadkolem) przyjmujemy typowe k (rozpoznanie na 10 kołach).
-K_RANGE = (1.15, 1.6)
-TYPICAL_K = 1.32
+# Zewnętrzna krawędź opony = elipsa felgi * k (`RimGeometry.tire_ratio`). k z profilu maski koła;
+# poza zakresem (zasłonięte lico opony, maska z nadkolem) przyjmujemy typowe k (rozpoznanie na
+# 10 kołach).
+TIRE_RATIO_RANGE = (1.15, 1.6)
+TYPICAL_TIRE_RATIO = 1.32
 # k = ten percentyl profilu promieniowego: strona lica (bieżnik po drugiej stronie wydłuża
 # profil w ujęciu 3/4 do 2,3-2,6).
-K_PERCENTILE = 20
+TIRE_RATIO_PERCENTILE = 20
 # Brzeg felgi graniczy z oponą, gdy w pasie tej szerokości (ułamek wysokości koła) za nim jest
 # opona; brzegi ucięte zasłonięciem odpadają.
 TIRE_BAND = 0.02
 MIN_EDGE_POINTS = 20
 
-FloatArray = npt.NDArray[np.float32]
+FloatArray = npt.NDArray[np.floating[Any]]
 BoolArray = npt.NDArray[np.bool_]
 # Kandydat na maskę samej felgi (SAM 2, multimask): maska L (>0 = felga) i ocena IoU modelu.
 RimCandidate = tuple[Image.Image, float]
@@ -66,14 +70,22 @@ class Ellipse:
     def shifted(self, dx: float, dy: float) -> Ellipse:
         return Ellipse(self.cx + dx, self.cy + dy, self.width, self.height, self.angle)
 
+    def to_unit(self, xs: FloatArray, ys: FloatArray) -> tuple[FloatArray, FloatArray]:
+        """Punkty obrazu (`xs`, `ys`) w układzie tej elipsy: obrót do jej osi i podział przez
+        półosie, więc brzeg elipsy to okrąg jednostkowy."""
+        cos, sin = math.cos(math.radians(self.angle)), math.sin(math.radians(self.angle))
+        dx, dy = xs - self.cx, ys - self.cy
+        return (dx * cos + dy * sin) / (self.width / 2), (dy * cos - dx * sin) / (self.height / 2)
+
+    def from_unit(self, us: FloatArray, vs: FloatArray) -> tuple[FloatArray, FloatArray]:
+        """Odwrotność `to_unit`: punkty układu elipsy w pikselach obrazu."""
+        cos, sin = math.cos(math.radians(self.angle)), math.sin(math.radians(self.angle))
+        du, dv = us * (self.width / 2), vs * (self.height / 2)
+        return self.cx + du * cos - dv * sin, self.cy + du * sin + dv * cos
+
     def radius(self, xs: FloatArray, ys: FloatArray) -> FloatArray:
         """Promień znormalizowany do tej elipsy (1 = na brzegu) w punktach (`xs`, `ys`)."""
-        angle = math.radians(self.angle)
-        dx, dy = xs - self.cx, ys - self.cy
-        u = dx * math.cos(angle) + dy * math.sin(angle)
-        v = -dx * math.sin(angle) + dy * math.cos(angle)
-        rho = np.sqrt((u / (self.width / 2)) ** 2 + (v / (self.height / 2)) ** 2)
-        return np.asarray(rho, dtype=np.float32)
+        return np.hypot(*self.to_unit(xs, ys))
 
     def half_height(self) -> float:
         """Połowa pionowej rozpiętości (obróconej) elipsy."""
@@ -87,18 +99,28 @@ class Ellipse:
 
 @dataclass(frozen=True)
 class RimGeometry:
-    """Felga koła na zdjęciu: jej elipsa i zewnętrzna krawędź opony = elipsa felgi * `k`
-    (felga i ściana boczna opony są koncentryczne, także w ujęciu 3/4)."""
+    """Felga koła na zdjęciu: jej elipsa i zewnętrzna krawędź opony = elipsa felgi
+    * `tire_ratio` (k; felga i ściana boczna opony są koncentryczne, także w ujęciu 3/4)."""
 
     rim: Ellipse
-    k: float
+    tire_ratio: float
 
     @property
     def tire(self) -> Ellipse:
-        return self.rim.scaled(self.k)
+        return self.rim.scaled(self.tire_ratio)
 
     def shifted(self, dx: float, dy: float) -> RimGeometry:
-        return RimGeometry(self.rim.shifted(dx, dy), self.k)
+        return RimGeometry(self.rim.shifted(dx, dy), self.tire_ratio)
+
+
+def wheel_ellipse(wheel_mask: Image.Image) -> Ellipse | None:
+    """Elipsa (bez obrotu) wpisana w bbox maski koła, w układzie środków pikseli jak
+    `cv2.fitEllipse`; `None` dla pustej maski."""
+    box = mask_box(wheel_mask)
+    if box is None:
+        return None
+    center_x, center_y = (box.left + box.right - 1) / 2, (box.top + box.bottom - 1) / 2
+    return Ellipse(center_x, center_y, box.width, box.height, 0.0)
 
 
 def warp_rim(image: Image.Image, geometry: RimGeometry, *, rim_size: int) -> Image.Image:
@@ -115,7 +137,7 @@ def warp_rim(image: Image.Image, geometry: RimGeometry, *, rim_size: int) -> Ima
     tire = geometry.tire
     ys, xs = np.mgrid[0:height, 0:width].astype(np.float32)
     rho = tire.radius(xs, ys)
-    rho_rim = 1 / geometry.k
+    rho_rim = 1 / geometry.tire_ratio
     rho_new = rho_rim + rim_size * RIM_FRACTION_PER_INCH
     # Odwzorowanie odwrotne (cel -> źródło), jak wymaga `cv2.remap`.
     source = np.where(
@@ -141,11 +163,11 @@ def measure_rim(wheel_mask: Image.Image, candidates: Sequence[RimCandidate]) -> 
     brzegu felgi graniczącego z oponą (odporność na zasłonięcie) i musi mieścić się
     w `RIM_DIAMETER_RANGE`. `None`: felgi nie wyznaczono.
     """
-    wheel = np.asarray(wheel_mask.convert("L")) > 0
-    rows = np.nonzero(wheel.any(axis=1))[0]
-    if rows.size == 0:
+    wheel_box = wheel_ellipse(wheel_mask)
+    if wheel_box is None:
         return None
-    wheel_half_height = (rows[-1] + 1 - rows[0]) / 2
+    wheel = np.asarray(wheel_mask.convert("L")) > 0
+    wheel_half_height = wheel_box.height / 2
     best: tuple[float, BoolArray] | None = None
     for mask_image, score in candidates:
         rim = _largest_component(np.asarray(mask_image.convert("L")) > 0)
@@ -162,15 +184,15 @@ def measure_rim(wheel_mask: Image.Image, candidates: Sequence[RimCandidate]) -> 
             best = (quality, rim)
     if best is None:
         return None
-    ellipse_or_none = _fit_tire_edge(best[1], wheel, band=wheel_half_height * 2 * TIRE_BAND)
-    if ellipse_or_none is None or not _within(
-        ellipse_or_none, wheel_half_height, RIM_DIAMETER_RANGE
-    ):
+    rim_ellipse = _fit_tire_edge(best[1], wheel, band=wheel_half_height * 2 * TIRE_BAND)
+    if rim_ellipse is None or not _within(rim_ellipse, wheel_half_height, RIM_DIAMETER_RANGE):
         return None
-    return RimGeometry(ellipse_or_none, _tire_k(ellipse_or_none, wheel))
+    return RimGeometry(rim_ellipse, _tire_ratio(rim_ellipse, wheel))
 
 
-def _within(ellipse: Ellipse, wheel_half_height: float, diameter_range: tuple[float, float]) -> bool:
+def _within(
+    ellipse: Ellipse, wheel_half_height: float, diameter_range: tuple[float, float]
+) -> bool:
     low, high = diameter_range
     return low <= ellipse.half_height() / wheel_half_height <= high
 
@@ -216,28 +238,25 @@ def _fit_tire_edge(rim: BoolArray, wheel: BoolArray, *, band: float) -> Ellipse 
     return _fit(edge)
 
 
-def _tire_k(rim: Ellipse, wheel: BoolArray) -> float:
+def _tire_ratio(rim: Ellipse, wheel: BoolArray) -> float:
     """Odległość od środka felgi do brzegu maski koła w jednostkach elipsy felgi (1 = brzeg
-    felgi), percentyl `K_PERCENTILE` po kątach; poza `K_RANGE`: `TYPICAL_K`."""
+    felgi), percentyl `TIRE_RATIO_PERCENTILE` po kątach; poza `TIRE_RATIO_RANGE`:
+    `TYPICAL_TIRE_RATIO`."""
     height, width = wheel.shape
     angles = np.deg2rad(np.arange(0, 360, 10))[:, None]
     steps = np.arange(1.0, 3.0, 0.005)[None, :]
-    turn = math.radians(rim.angle)
-    dx, dy = rim.width / 2 * np.cos(angles), rim.height / 2 * np.sin(angles)
-    vx = dx * math.cos(turn) - dy * math.sin(turn)
-    vy = dx * math.sin(turn) + dy * math.cos(turn)
-    xs = np.rint(rim.cx + steps * vx).astype(int)
-    ys = np.rint(rim.cy + steps * vy).astype(int)
+    ray_xs, ray_ys = rim.from_unit(steps * np.cos(angles), steps * np.sin(angles))
+    xs, ys = np.rint(ray_xs).astype(int), np.rint(ray_ys).astype(int)
     on_image = (xs >= 0) & (xs < width) & (ys >= 0) & (ys < height)
     in_wheel = on_image & wheel[np.clip(ys, 0, height - 1), np.clip(xs, 0, width - 1)]
     # Pierwszy krok poza kołem; kąt, w którym już brzeg felgi jest poza kołem, pomijamy.
     leaves = np.where(in_wheel.all(axis=1), steps.shape[1], np.argmin(in_wheel, axis=1))
     profile = steps[0, np.maximum(leaves - 1, 0)][leaves > 0]
     if profile.size == 0:
-        return TYPICAL_K
-    k = float(np.percentile(profile, K_PERCENTILE))
-    low, high = K_RANGE
-    return k if low <= k <= high else TYPICAL_K
+        return TYPICAL_TIRE_RATIO
+    ratio = float(np.percentile(profile, TIRE_RATIO_PERCENTILE))
+    low, high = TIRE_RATIO_RANGE
+    return ratio if low <= ratio <= high else TYPICAL_TIRE_RATIO
 
 
 def outline_rim(image: Image.Image, geometry: RimGeometry) -> Image.Image:

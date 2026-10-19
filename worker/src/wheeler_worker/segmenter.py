@@ -12,6 +12,7 @@ from PIL import Image
 
 from wheeler_shared.failures import Failure, ProcessingFailed
 from wheeler_worker.model_lifecycle import NO_OBSERVER, LoadObserver
+from wheeler_worker.rim_geometry import RimCandidate, wheel_ellipse
 from wheeler_worker.torch_models import free_torch_memory, torch_device
 
 
@@ -26,9 +27,7 @@ class Segmenter(Protocol):
         """Maska L (0/255) całego koła dla każdego boxu (x0, y0, x1, y1), w kolejności boxów."""
         ...
 
-    def segment_rim(
-        self, image: Image.Image, wheel_mask: Image.Image, /
-    ) -> list[tuple[Image.Image, float]]:
+    def segment_rim(self, image: Image.Image, wheel_mask: Image.Image, /) -> list[RimCandidate]:
         """Kandydaci na maskę samej felgi koła `wheel_mask` (L, maska SAM bez poszerzenia):
         maski L (0/255) w rozmiarze `image` z oceną modelu; wybiera z nich
         `rim_geometry.measure_rim`. Pusta lista: nic nie znaleziono."""
@@ -40,11 +39,11 @@ class Segmenter(Protocol):
 
 
 SAM_REPO = "facebook/sam2.1-hiera-large"
+SAM_REVISION = "665f8e2ad61cf5f53d65644ff27c8ee525124610"
 # Felga (ticket 12): punkty negatywne na oponie, na tym promieniu elipsy wpisanej w bbox koła;
 # box felgi = ten ułamek bboxa koła (rozpoznanie `prototype/plus-sizing-warp`, `rim_ellipse/`).
 RIM_NEGATIVE_RADIUS = 0.92
 RIM_BOX_FRACTION = 0.8
-SAM_REVISION = "665f8e2ad61cf5f53d65644ff27c8ee525124610"
 
 
 class Sam2Segmenter:
@@ -122,36 +121,31 @@ class Sam2Segmenter:
             Image.fromarray(masks[i, 0].numpy().astype(np.uint8) * 255) for i in range(len(boxes))
         ]
 
-    def segment_rim(
-        self, image: Image.Image, wheel_mask: Image.Image
-    ) -> list[tuple[Image.Image, float]]:
+    def segment_rim(self, image: Image.Image, wheel_mask: Image.Image) -> list[RimCandidate]:
         """Felga z dwóch promptów multimask (po 3 kandydatów): punkt w centroidzie maski koła
         z 8 punktami negatywnymi na oponie oraz box 0,8 bboxa koła z tym samym punktem.
         Sam punkt bez negatywów daje zwykle tylko logo albo piastę."""
-        import math
-
         import numpy as np
         import torch
 
-        ys, xs = np.nonzero(np.asarray(wheel_mask.convert("L")) > 0)
-        if xs.size == 0:
+        wheel = wheel_ellipse(wheel_mask)
+        if wheel is None:
             return []
+        ys, xs = np.nonzero(np.asarray(wheel_mask.convert("L")) > 0)
         rgb = image.convert("RGB")
         center = [float(xs.mean()), float(ys.mean())]
-        cx, cy = (xs.min() + xs.max() + 1) / 2, (ys.min() + ys.max() + 1) / 2
-        a, b = (xs.max() + 1 - xs.min()) / 2, (ys.max() + 1 - ys.min()) / 2
-        negatives = [
-            [
-                float(cx + RIM_NEGATIVE_RADIUS * a * math.cos(angle)),
-                float(cy + RIM_NEGATIVE_RADIUS * b * math.sin(angle)),
-            ]
-            for angle in (math.radians(degrees) for degrees in range(0, 360, 45))
-        ]
+        angles = np.deg2rad(np.arange(0, 360, 45))
+        negative_xs, negative_ys = wheel.from_unit(
+            RIM_NEGATIVE_RADIUS * np.cos(angles), RIM_NEGATIVE_RADIUS * np.sin(angles)
+        )
+        negatives = [[float(x), float(y)] for x, y in zip(negative_xs, negative_ys, strict=True)]
+        half_width = RIM_BOX_FRACTION * wheel.width / 2
+        half_height = RIM_BOX_FRACTION * wheel.height / 2
         box = [
-            float(cx - RIM_BOX_FRACTION * a),
-            float(cy - RIM_BOX_FRACTION * b),
-            float(cx + RIM_BOX_FRACTION * a),
-            float(cy + RIM_BOX_FRACTION * b),
+            wheel.cx - half_width,
+            wheel.cy - half_height,
+            wheel.cx + half_width,
+            wheel.cy + half_height,
         ]
         prompts: list[dict[str, Any]] = [
             {
@@ -160,7 +154,7 @@ class Sam2Segmenter:
             },
             {"input_points": [[[center]]], "input_labels": [[[1]]], "input_boxes": [[box]]},
         ]
-        candidates: list[tuple[Image.Image, float]] = []
+        candidates: list[RimCandidate] = []
         with torch.no_grad():
             embeddings = self._embed(rgb)
             for prompt in prompts:

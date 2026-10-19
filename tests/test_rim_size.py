@@ -11,12 +11,13 @@ from __future__ import annotations
 import re
 import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import pytest
 from fake_models import BoxDetector, DiscSegmenter, SolidEditor, disc_mask
 from fastapi.testclient import TestClient
-from helpers import click_wheel, drain, jpeg, upload, upload_photo
+from helpers import click_wheel, drain, jpeg, upload, upload_photo, wheel_photo
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -25,6 +26,7 @@ from wheeler_shared import edit_params
 from wheeler_shared.failures import Failure, ProcessingFailed
 from wheeler_shared.storage import Storage
 from wheeler_worker.processing import GenerateItem, RegenerateWheelItem, SegmentItem
+from wheeler_worker.rim_geometry import Ellipse
 from wheeler_worker.wheel_swap import WheelSwapProcessor, build_prompt
 
 MINUS = "\N{MINUS SIGN}"  # w UI stopnie ujemne mają minus typograficzny
@@ -53,12 +55,25 @@ RIM_RADIUS = 35
 
 
 def _wheel_photo(path: Path) -> Path:
-    rng = np.random.default_rng(3)
-    pixels = rng.integers(0, 256, (240, 400, 3), dtype=np.uint8)
-    pixels[np.asarray(disc_mask((400, 240), WHEEL, TIRE_RADIUS)) > 0] = (30, 30, 30)
-    pixels[np.asarray(disc_mask((400, 240), WHEEL, RIM_RADIUS)) > 0] = (220, 220, 220)
-    Image.fromarray(pixels).save(path)
+    rim = Ellipse(*WHEEL, width=2 * RIM_RADIUS, height=2 * RIM_RADIUS, angle=0)
+    wheel_photo((400, 240), rim, TIRE_RADIUS / RIM_RADIUS).save(path)
     return path
+
+
+class _Fakes(NamedTuple):
+    """Procesor z atrapami: „SAM 2” widzi koło ze zdjęcia `_wheel_photo` (felga `rim_radius`),
+    „mflux” oddaje wycinek."""
+
+    segmenter: DiscSegmenter
+    editor: SolidEditor
+    processor: WheelSwapProcessor
+
+
+def _fakes(rim_radius: int | None = RIM_RADIUS) -> _Fakes:
+    segmenter = DiscSegmenter(radius=TIRE_RADIUS, rim_radius=rim_radius)
+    editor = SolidEditor(echo=True)
+    processor = WheelSwapProcessor(detector=BoxDetector(), segmenter=segmenter, editor=editor)
+    return _Fakes(segmenter, editor, processor)
 
 
 def _model_rim_radius(crop: Image.Image) -> float:
@@ -73,18 +88,14 @@ def _model_rim_radius(crop: Image.Image) -> float:
 
 
 class _Wheel:
-    """Zdjęcie z jednym kołem i jego maską, procesor z atrapami („SAM 2” widzi felgę 35 px)."""
+    """Zdjęcie z jednym kołem i jego maską, procesor z atrapami (`_fakes`)."""
 
     def __init__(self, tmp_path: Path, *, rim_radius: int | None = RIM_RADIUS) -> None:
         self.out = tmp_path
         self.photo = _wheel_photo(tmp_path / "input.png")
         self.rim = tmp_path / "rim.png"
         Image.new("RGB", (60, 60), (200, 20, 20)).save(self.rim)
-        self.segmenter = DiscSegmenter(radius=TIRE_RADIUS, rim_radius=rim_radius)
-        self.editor = SolidEditor(echo=True)
-        self.processor = WheelSwapProcessor(
-            detector=BoxDetector(), segmenter=self.segmenter, editor=self.editor
-        )
+        self.segmenter, self.editor, self.processor = _fakes(rim_radius)
         self.mask = (
             self.processor.segment(
                 SegmentItem(
@@ -229,15 +240,6 @@ def test_unmeasurable_rim_fails_the_job_before_the_model_runs(
     assert wheel.editor.calls == []
 
 
-def _editor_processor(
-    rim_radius: int | None = RIM_RADIUS,
-) -> tuple[SolidEditor, WheelSwapProcessor]:
-    """Procesor z atrapami: „SAM 2” widzi koło ze zdjęcia `_wheel_photo`, „mflux” oddaje wycinek."""
-    editor = SolidEditor(echo=True)
-    segmenter = DiscSegmenter(radius=TIRE_RADIUS, rim_radius=rim_radius)
-    return editor, WheelSwapProcessor(detector=BoxDetector(), segmenter=segmenter, editor=editor)
-
-
 def _draft_with_wheel(
     client: TestClient,
     session_factory: sessionmaker[Session],
@@ -263,7 +265,7 @@ def _generate(client: TestClient, job_id: int, rim_size: str | None) -> None:
 def test_chosen_rim_size_reaches_the_editor_also_when_regenerating_one_wheel(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
-    editor, processor = _editor_processor()
+    _, editor, processor = _fakes()
     job_id = _draft_with_wheel(client, session_factory, storage, processor)
 
     _generate(client, job_id, "2")
@@ -283,7 +285,7 @@ def test_chosen_rim_size_reaches_the_editor_also_when_regenerating_one_wheel(
 def test_retried_job_edits_with_the_same_rim_size(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
-    editor, processor = _editor_processor()
+    _, editor, processor = _fakes()
     job_id = _draft_with_wheel(client, session_factory, storage, processor)
     _generate(client, job_id, "-2")
     assert client.post(f"/jobs/{job_id}/cancel").status_code == 200  # w kolejce: od razu
@@ -301,7 +303,7 @@ def test_retried_job_edits_with_the_same_rim_size(
 def test_unmeasurable_rim_fails_the_job_with_a_hint_to_generate_without_resizing(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
-    editor, processor = _editor_processor(rim_radius=None)  # SAM 2 nie widzi felgi
+    _, editor, processor = _fakes(rim_radius=None)  # SAM 2 nie widzi felgi
     job_id = _draft_with_wheel(client, session_factory, storage, processor)
 
     _generate(client, job_id, "1")
@@ -318,7 +320,7 @@ def test_unmeasurable_rim_fails_the_job_with_a_hint_to_generate_without_resizing
 def test_rim_size_outside_range_is_refused_and_job_stays_a_draft(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage, rim_size: str
 ) -> None:
-    _, processor = _editor_processor()
+    processor = _fakes().processor
     job_id = _draft_with_wheel(client, session_factory, storage, processor)
 
     response = client.post(
@@ -340,7 +342,7 @@ def test_unchanged_rim_size_or_missing_field_edits_with_the_current_prompt(
     rim_size: str | None,
     shown: str | None,
 ) -> None:
-    editor, processor = _editor_processor()
+    _, editor, processor = _fakes()
     job_id = _draft_with_wheel(client, session_factory, storage, processor)
 
     _generate(client, job_id, rim_size)
@@ -354,7 +356,7 @@ def test_unchanged_rim_size_or_missing_field_edits_with_the_current_prompt(
 def test_rim_size_is_saved_in_job_params_for_each_step(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
-    _, processor = _editor_processor()
+    processor = _fakes().processor
     for rim_size, shown in (
         ("-2", f"{MINUS}2″"),
         ("-1", f"{MINUS}1″"),
@@ -406,7 +408,7 @@ def _rim_size_choices(html: str) -> list[tuple[str, str, bool]]:
 def test_job_page_offers_rim_size_next_to_rim_choice_defaulting_to_unchanged(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
-    _, processor = _editor_processor()
+    processor = _fakes().processor
     job_id = _draft_with_wheel(client, session_factory, storage, processor)
 
     page = client.get(f"/jobs/{job_id}").text
@@ -450,7 +452,7 @@ def test_result_screen_shows_chosen_rim_size_next_to_seed(
     rim_size: str,
     shown: str,
 ) -> None:
-    _, processor = _editor_processor()
+    processor = _fakes().processor
     job_id = _draft_with_wheel(client, session_factory, storage, processor)
     _generate(client, job_id, rim_size)
     assert drain(session_factory, storage, processor)
@@ -474,7 +476,7 @@ def test_result_screen_hides_unchanged_rim_size(
     storage: Storage,
     rim_size: str | None,
 ) -> None:
-    _, processor = _editor_processor()
+    processor = _fakes().processor
     job_id = _draft_with_wheel(client, session_factory, storage, processor)
     _generate(client, job_id, rim_size)
     assert drain(session_factory, storage, processor)

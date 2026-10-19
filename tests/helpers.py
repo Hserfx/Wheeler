@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 from fake_models import BoxDetector, DiscSegmenter, OpaqueRemover, SolidEditor
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -18,6 +19,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from wheeler_shared.storage import Storage
 from wheeler_worker.background import BackgroundRemover
+from wheeler_worker.rim_geometry import Ellipse
 from wheeler_worker.runner import run_once
 from wheeler_worker.wheel_swap import WheelSwapProcessor
 
@@ -39,6 +41,21 @@ def noise_file(path: Path, width: int = 400, height: int = 240) -> Path:
     """Zdjęcie z szumem zapisane w `path` (format z rozszerzenia)."""
     noise_photo(width, height).save(path)
     return path
+
+
+def ellipse_inside(size: tuple[int, int], ellipse: Ellipse) -> npt.NDArray[np.bool_]:
+    """Piksele (środki) obrazu `size` wewnątrz `ellipse`."""
+    width, height = size
+    ys, xs = np.mgrid[0:height, 0:width].astype(np.float64)
+    return np.asarray(ellipse.radius(xs, ys) <= 1)
+
+
+def wheel_photo(size: tuple[int, int], rim: Ellipse, tire_ratio: float) -> Image.Image:
+    """Koło na zaszumionym tle: ciemna opona (elipsa felgi * `tire_ratio`) i w niej jasna felga."""
+    pixels = np.asarray(noise_photo(*size)).copy()
+    pixels[ellipse_inside(size, rim.scaled(tire_ratio))] = (30, 30, 30)
+    pixels[ellipse_inside(size, rim)] = (220, 220, 220)
+    return Image.fromarray(pixels)
 
 
 def image_src(html: str, role: str) -> str:

@@ -9,6 +9,7 @@ import numpy as np
 from PIL import Image
 
 from wheeler_worker.rim_editor import StepCallback
+from wheeler_worker.rim_geometry import RimCandidate, wheel_ellipse
 
 Box = tuple[float, float, float, float]  # x0, y0, x1, y1 w pikselach zdjęcia
 
@@ -50,16 +51,13 @@ class DiscSegmenter:
             for x0, y0, x1, y1 in boxes
         ]
 
-    def segment_rim(
-        self, image: Image.Image, wheel_mask: Image.Image
-    ) -> list[tuple[Image.Image, float]]:
+    def segment_rim(self, image: Image.Image, wheel_mask: Image.Image) -> list[RimCandidate]:
         self.rim_photos.append(image.copy())
         self.log.append("rim")
-        box = wheel_mask.getbbox()
-        if self.rim_radius is None or box is None:
+        wheel = wheel_ellipse(wheel_mask)
+        if self.rim_radius is None or wheel is None:
             return []
-        center = ((box[0] + box[2] - 1) / 2, (box[1] + box[3] - 1) / 2)
-        return [(disc_mask(image.size, center, self.rim_radius), 0.9)]
+        return [(disc_mask(image.size, (wheel.cx, wheel.cy), self.rim_radius), 0.9)]
 
     def release(self) -> None:
         self.log.append("release")
@@ -87,9 +85,7 @@ class NothingSegmenter:
     def segment_boxes(self, image: Image.Image, boxes: list[Box]) -> list[Image.Image]:
         return [Image.new("L", image.size, 0) for _ in boxes]
 
-    def segment_rim(
-        self, image: Image.Image, wheel_mask: Image.Image
-    ) -> list[tuple[Image.Image, float]]:
+    def segment_rim(self, image: Image.Image, wheel_mask: Image.Image) -> list[RimCandidate]:
         return []
 
     def release(self) -> None:

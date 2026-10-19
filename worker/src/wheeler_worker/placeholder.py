@@ -13,6 +13,7 @@ from PIL import Image, ImageOps
 
 from wheeler_worker.model_lifecycle import NO_OBSERVER, LoadObserver
 from wheeler_worker.rim_editor import StepCallback
+from wheeler_worker.rim_geometry import RimCandidate, wheel_ellipse
 from wheeler_worker.wheel_swap import WheelSwapProcessor
 
 
@@ -77,18 +78,14 @@ class CircleSegmenter:
             masks.append(Image.fromarray(inside.astype(np.uint8) * 255))
         return masks
 
-    def segment_rim(
-        self, image: Image.Image, wheel_mask: Image.Image
-    ) -> list[tuple[Image.Image, float]]:
-        """Felga: okrąg o 0,7 promienia koła w środku jego maski."""
-        box = wheel_mask.getbbox()
-        if box is None:
+    def segment_rim(self, image: Image.Image, wheel_mask: Image.Image) -> list[RimCandidate]:
+        """Felga: elipsa wpisana w bbox maski koła, zmniejszona do 0,7."""
+        wheel = wheel_ellipse(wheel_mask)
+        if wheel is None:
             return []
-        x0, y0, x1, y1 = box
-        cx, cy, radius = (x0 + x1) / 2, (y0 + y1) / 2, 0.7 * min(x1 - x0, y1 - y0) / 2
         width, height = image.size
-        yy, xx = np.mgrid[0:height, 0:width]
-        inside = (xx + 0.5 - cx) ** 2 + (yy + 0.5 - cy) ** 2 <= radius * radius
+        yy, xx = np.mgrid[0:height, 0:width].astype(np.float32)
+        inside = wheel.scaled(0.7).radius(xx, yy) <= 1
         return [(Image.fromarray(inside.astype(np.uint8) * 255), 0.9)]
 
     def release(self) -> None:

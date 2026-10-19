@@ -7,44 +7,31 @@ from __future__ import annotations
 
 import io
 import re
-from collections.abc import Iterator
 from typing import Any
 
 import numpy as np
-import pytest
 from fake_models import BoxDetector, DiscSegmenter, SolidEditor
 from fastapi.testclient import TestClient
-from helpers import drain, encode, fake_processor, finish_job, generate, noise_photo, upload
+from helpers import (
+    drain,
+    encode,
+    fake_processor,
+    fetch,
+    finish_job,
+    generate,
+    image_src,
+    noise_photo,
+    upload,
+)
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
-from wheeler_api.app import create_app
-from wheeler_api.settings import ApiSettings
 from wheeler_api.texts import TEXTS
 from wheeler_shared.models import Wheel
 from wheeler_shared.queue import INTERRUPTED_ERROR, claim_next_job
 from wheeler_shared.storage import Storage
 from wheeler_worker.runner import recover_interrupted_jobs, run_once
 from wheeler_worker.wheel_swap import WheelSwapProcessor
-
-
-@pytest.fixture
-def client(database_url: str, storage: Storage) -> Iterator[TestClient]:
-    settings = ApiSettings(database_url=database_url, data_dir=storage.root)
-    with TestClient(create_app(settings)) as test_client:
-        yield test_client
-
-
-def _image_src(html: str, role: str) -> str:
-    match = re.search(rf'<img[^>]+src="(/files/[^"]+)"[^>]*data-role="{role}"', html)
-    assert match, html
-    return match.group(1)
-
-
-def _fetch(client: TestClient, url: str) -> Image.Image:
-    response = client.get(url)
-    assert response.status_code == 200
-    return Image.open(io.BytesIO(response.content))
 
 
 def test_download_returns_png_attachment_in_original_resolution(
@@ -99,8 +86,8 @@ def test_result_screen_compares_before_and_after_and_zooms_to_each_wheel(
 
     compare = re.search(r'<div[^>]*data-role="compare".*?</div>\s*<!-- /compare -->', html, re.S)
     assert compare, html
-    before, after = _image_src(compare.group(0), "input"), _image_src(compare.group(0), "result")
-    assert _fetch(client, before).size == _fetch(client, after).size == (320, 200)
+    before, after = image_src(compare.group(0), "input"), image_src(compare.group(0), "result")
+    assert fetch(client, before).size == fetch(client, after).size == (320, 200)
     assert 'type="range"' in compare.group(0)  # suwak przed/po
     zooms = re.findall(r'data-role="zoom-wheel"[^>]*data-box="(\d+),(\d+),(\d+),(\d+)"', html)
     # Koła r=20 poszerzone o 3% boku (1 px): prostokąty poszerzonych masek.
@@ -133,8 +120,8 @@ def test_regenerating_one_wheel_replaces_only_that_wheel_in_the_result(
     job_id = _done_job(client, session_factory, storage, [(80, 120), (240, 120)])
     done = client.get(f"/jobs/{job_id}/status").text
     first, second = _wheel_ids(done)
-    previous_src = _image_src(done, "result")
-    previous = np.asarray(_fetch(client, previous_src).convert("RGB"))
+    previous_src = image_src(done, "result")
+    previous = np.asarray(fetch(client, previous_src).convert("RGB"))
     job_seed = int(re.findall(r'data-role="wheel-seed"[^>]*>\s*(\d+)', done)[1])
 
     _regenerate(client, job_id, second)
@@ -150,7 +137,7 @@ def test_regenerating_one_wheel_replaces_only_that_wheel_in_the_result(
     assert call.seed != job_seed
     seeds = [int(s) for s in re.findall(r'data-role="wheel-seed"[^>]*>\s*(\d+)', done)]
     assert seeds == [job_seed, call.seed]  # nowy seed widać przy ponowionym kole
-    assert _image_src(done, "result") != previous_src
+    assert image_src(done, "result") != previous_src
     downloaded = client.get(f"/jobs/{job_id}/download")
     result = np.asarray(Image.open(io.BytesIO(downloaded.content)).convert("RGB"))
     assert result.shape == previous.shape == (200, 320, 3)

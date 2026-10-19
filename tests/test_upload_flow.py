@@ -4,13 +4,10 @@ wgranie zdjęcia auta i felgi -> klik w koło -> maska jako nakładka -> „Gene
 
 from __future__ import annotations
 
-import io
 import re
-from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
-import pytest
 from fake_models import BoxDetector, DiscSegmenter, NothingSegmenter, SolidEditor
 from fastapi.testclient import TestClient
 from helpers import (
@@ -18,7 +15,9 @@ from helpers import (
     drain,
     encode,
     fake_processor,
+    fetch,
     generate,
+    image_src,
     jpeg,
     library_rim,
     noise_photo,
@@ -27,31 +26,10 @@ from helpers import (
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
-from wheeler_api.app import create_app
-from wheeler_api.settings import ApiSettings
 from wheeler_api.texts import TEXTS
 from wheeler_shared.storage import Storage
 from wheeler_worker.runner import run_once
 from wheeler_worker.wheel_swap import WheelSwapProcessor
-
-
-@pytest.fixture
-def client(database_url: str, storage: Storage) -> Iterator[TestClient]:
-    settings = ApiSettings(database_url=database_url, data_dir=storage.root)
-    with TestClient(create_app(settings)) as test_client:
-        yield test_client
-
-
-def _image_src(html: str, role: str) -> str:
-    match = re.search(rf'<img[^>]+src="(/files/[^"]+)"[^>]*data-role="{role}"', html)
-    assert match, html
-    return match.group(1)
-
-
-def _fetch(client: TestClient, url: str) -> Image.Image:
-    response = client.get(url)
-    assert response.status_code == 200
-    return Image.open(io.BytesIO(response.content))
 
 
 def test_home_page_asks_for_car_photo_and_rim(client: TestClient) -> None:
@@ -87,7 +65,7 @@ def test_click_shows_mask_overlay_and_generation_changes_only_pixels_inside_it(
 
     draft = client.get(f"/jobs/{job_id}/status").text
     assert "hx-trigger" not in draft  # czeka na użytkownika, bez pollingu
-    overlay = _fetch(client, _image_src(draft, "mask-overlay"))
+    overlay = fetch(client, image_src(draft, "mask-overlay"))
     assert overlay.mode == "RGBA" and overlay.size == (320, 200)
     assert f'action="/jobs/{job_id}/generate"' in draft
 
@@ -99,7 +77,7 @@ def test_click_shows_mask_overlay_and_generation_changes_only_pixels_inside_it(
 
     done = client.get(f"/jobs/{job_id}/status").text
     assert TEXTS["status_done"] in done and "hx-trigger" not in done
-    result = _fetch(client, _image_src(done, "result"))
+    result = fetch(client, image_src(done, "result"))
     assert result.format == "PNG"
     assert result.size == (320, 200)
     pixels = np.asarray(result.convert("RGB"))

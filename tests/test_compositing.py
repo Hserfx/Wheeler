@@ -3,14 +3,10 @@
 from __future__ import annotations
 
 import numpy as np
+from helpers import noise_photo
 from PIL import Image
 
 from wheeler_worker.compositing import Box, composite, crop_box_for, grow_mask, working_size
-
-
-def _noise_photo(width: int, height: int) -> Image.Image:
-    rng = np.random.default_rng(0)
-    return Image.fromarray(rng.integers(0, 256, (height, width, 3), dtype=np.uint8))
 
 
 def _disc_mask(width: int, height: int, cx: int, cy: int, r: int) -> Image.Image:
@@ -48,7 +44,7 @@ def test_working_size_keeps_aspect_and_snaps_to_multiple_of_32() -> None:
 
 
 def test_composite_keeps_every_pixel_outside_mask_bit_identical() -> None:
-    original = _noise_photo(400, 240)
+    original = noise_photo(400, 240)
     mask = _disc_mask(400, 240, cx=150, cy=120, r=60)
     generated = Image.new("RGB", (1024, 1024), (10, 200, 30))  # wynik modelu dla wycinka
 
@@ -60,7 +56,7 @@ def test_composite_keeps_every_pixel_outside_mask_bit_identical() -> None:
 
 
 def test_composite_takes_generated_pixels_inside_mask() -> None:
-    original = _noise_photo(400, 240)
+    original = noise_photo(400, 240)
     mask = _disc_mask(400, 240, cx=150, cy=120, r=60)
     generated = Image.new("RGB", (1024, 1024), (10, 200, 30))
 

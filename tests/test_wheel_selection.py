@@ -6,18 +6,14 @@ from __future__ import annotations
 
 import io
 import re
-from collections.abc import Iterator
 
 import numpy as np
-import pytest
 from fake_models import BoxDetector, DiscSegmenter, SolidEditor
 from fastapi.testclient import TestClient
 from helpers import encode, noise_photo, upload
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
-from wheeler_api.app import create_app
-from wheeler_api.settings import ApiSettings
 from wheeler_api.texts import TEXTS
 from wheeler_shared.storage import Storage
 from wheeler_worker.runner import run_once
@@ -26,13 +22,6 @@ from wheeler_worker.wheel_swap import WheelSwapProcessor
 # Dwa koła na zdjęciu 320x200: boxy z „detektora” (x0, y0, x1, y1).
 FRONT = (40.0, 110.0, 120.0, 190.0)
 REAR = (200.0, 110.0, 280.0, 190.0)
-
-
-@pytest.fixture
-def client(database_url: str, storage: Storage) -> Iterator[TestClient]:
-    settings = ApiSettings(database_url=database_url, data_dir=storage.root)
-    with TestClient(create_app(settings)) as test_client:
-        yield test_client
 
 
 def _processor(*boxes: tuple[float, float, float, float]) -> WheelSwapProcessor:

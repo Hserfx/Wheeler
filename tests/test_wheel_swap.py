@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from fake_models import BoxDetector, DiscSegmenter, SolidEditor, disc_mask
+from helpers import noise_file
 from photo_files import display_profile
 from PIL import Image
 
@@ -23,14 +24,8 @@ from wheeler_worker.settings import WorkerSettings
 from wheeler_worker.wheel_swap import WheelSwapProcessor
 
 
-def _noise_photo(path: Path, width: int = 400, height: int = 240) -> Path:
-    rng = np.random.default_rng(1)
-    Image.fromarray(rng.integers(0, 256, (height, width, 3), dtype=np.uint8)).save(path)
-    return path
-
-
 def test_click_gives_slightly_widened_wheel_mask_and_overlay(tmp_path: Path) -> None:
-    photo = _noise_photo(tmp_path / "input.png")
+    photo = noise_file(tmp_path / "input.png")
     processor = WheelSwapProcessor(
         detector=BoxDetector(), segmenter=DiscSegmenter(radius=50), editor=SolidEditor()
     )
@@ -69,7 +64,7 @@ def _segment_one(processor: WheelSwapProcessor, photo: Path, out: Path) -> Path:
 def test_generated_png_has_input_resolution_and_changes_only_pixels_inside_mask(
     tmp_path: Path,
 ) -> None:
-    photo = _noise_photo(tmp_path / "input.jpg", width=401, height=239)
+    photo = noise_file(tmp_path / "input.jpg", width=401, height=239)
     processor = WheelSwapProcessor(
         detector=BoxDetector(), segmenter=DiscSegmenter(radius=50), editor=SolidEditor()
     )
@@ -100,7 +95,7 @@ def test_generated_png_has_input_resolution_and_changes_only_pixels_inside_mask(
 
 
 def test_model_gets_wheel_crop_then_rim_with_mask_seed_and_default_prompt(tmp_path: Path) -> None:
-    photo = _noise_photo(tmp_path / "input.png", width=400, height=240)
+    photo = noise_file(tmp_path / "input.png", width=400, height=240)
     editor = SolidEditor()
     processor = WheelSwapProcessor(
         detector=BoxDetector(), segmenter=DiscSegmenter(radius=50), editor=editor
@@ -133,7 +128,7 @@ def test_model_gets_wheel_crop_then_rim_with_mask_seed_and_default_prompt(tmp_pa
 
 
 def test_placeholder_processor_runs_whole_pipeline_without_models(tmp_path: Path) -> None:
-    photo = _noise_photo(tmp_path / "input.png")
+    photo = noise_file(tmp_path / "input.png")
     processor = build_processor(WorkerSettings(processor="placeholder"))
     item = SegmentItem(
         job_id=1, photo_path=photo, output_dir=tmp_path, params={}, clicks={1: (200, 120)}
@@ -172,7 +167,7 @@ def test_detected_wheels_get_widened_masks_and_boxes_and_empty_masks_are_skipped
             masks[1] = Image.new("L", image.size, 0)
             return masks
 
-    photo = _noise_photo(tmp_path / "input.png")
+    photo = noise_file(tmp_path / "input.png")
     processor = WheelSwapProcessor(
         detector=BoxDetector([(100, 70, 201, 171), (300, 10, 340, 50), (250, 150, 300, 200)]),
         segmenter=HalfBlindSegmenter(),
@@ -194,7 +189,7 @@ def test_detected_wheels_get_widened_masks_and_boxes_and_empty_masks_are_skipped
 
 
 def test_detection_without_wheels_gives_empty_result(tmp_path: Path) -> None:
-    photo = _noise_photo(tmp_path / "input.png")
+    photo = noise_file(tmp_path / "input.png")
     processor = WheelSwapProcessor(
         detector=BoxDetector(), segmenter=DiscSegmenter(), editor=SolidEditor()
     )
@@ -210,7 +205,7 @@ def _two_wheels(processor: WheelSwapProcessor, photo: Path, out: Path) -> dict[i
 
 
 def test_generation_reports_progress_per_wheel_and_denoising_step(tmp_path: Path) -> None:
-    photo = _noise_photo(tmp_path / "input.png")
+    photo = noise_file(tmp_path / "input.png")
     processor = WheelSwapProcessor(
         detector=BoxDetector(), segmenter=DiscSegmenter(radius=30), editor=SolidEditor(steps=2)
     )
@@ -241,7 +236,7 @@ def test_generation_reports_progress_per_wheel_and_denoising_step(tmp_path: Path
 def test_exception_from_progress_callback_stops_generation_before_next_wheel(
     tmp_path: Path,
 ) -> None:
-    photo = _noise_photo(tmp_path / "input.png")
+    photo = noise_file(tmp_path / "input.png")
     editor = SolidEditor(steps=2)
     processor = WheelSwapProcessor(
         detector=BoxDetector(), segmenter=DiscSegmenter(radius=30), editor=editor

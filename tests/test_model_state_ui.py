@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import re
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 
 import pytest
 from fake_models import Box, BoxDetector, SolidEditor, disc_mask
@@ -15,21 +15,12 @@ from helpers import click_wheel, drain, upload
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
-from wheeler_api.app import create_app
-from wheeler_api.settings import ApiSettings
 from wheeler_api.texts import TEXTS
 from wheeler_shared.storage import Storage
 from wheeler_shared.worker_state import ModelState
 from wheeler_worker.model_lifecycle import LoadObserver, ModelLifecycle, db_reporter
 from wheeler_worker.runner import run_forever, run_once
 from wheeler_worker.wheel_swap import WheelSwapProcessor
-
-
-@pytest.fixture
-def client(database_url: str, storage: Storage) -> Iterator[TestClient]:
-    settings = ApiSettings(database_url=database_url, data_dir=storage.root)
-    with TestClient(create_app(settings)) as test_client:
-        yield test_client
 
 
 @pytest.fixture

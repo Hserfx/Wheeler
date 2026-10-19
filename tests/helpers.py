@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import re
+from pathlib import Path
 
 import numpy as np
 from fake_models import BoxDetector, DiscSegmenter, OpaqueRemover, SolidEditor
@@ -32,6 +33,25 @@ def encode(image: Image.Image, format: str = "PNG") -> bytes:
 def noise_photo(width: int = 64, height: int = 48) -> Image.Image:
     rng = np.random.default_rng(2)
     return Image.fromarray(rng.integers(0, 256, (height, width, 3), dtype=np.uint8))
+
+
+def noise_file(path: Path, width: int = 400, height: int = 240) -> Path:
+    """Zdjęcie z szumem zapisane w `path` (format z rozszerzenia)."""
+    noise_photo(width, height).save(path)
+    return path
+
+
+def image_src(html: str, role: str) -> str:
+    """Adres `/files/...` obrazka o danym `data-role` w HTML."""
+    match = re.search(rf'<img[^>]+src="(/files/[^"]+)"[^>]*data-role="{role}"', html)
+    assert match, html
+    return match.group(1)
+
+
+def fetch(client: TestClient, url: str) -> Image.Image:
+    response = client.get(url)
+    assert response.status_code == 200, url
+    return Image.open(io.BytesIO(response.content))
 
 
 def jpeg(width: int = 64, height: int = 48, color: tuple[int, int, int] = (200, 30, 30)) -> bytes:

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import io
 import re
-from collections.abc import Iterator
 from typing import Any
 
 import numpy as np
@@ -17,8 +16,6 @@ from helpers import click_wheel, drain, finish_job, generate, jpeg, library_rim
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
-from wheeler_api.app import create_app
-from wheeler_api.settings import ApiSettings
 from wheeler_api.texts import PARAM_LABELS, TEXTS
 from wheeler_shared.storage import Storage
 from wheeler_worker.runner import run_once
@@ -27,13 +24,6 @@ from wheeler_worker.wheel_swap import WheelSwapProcessor
 RESOLUTION_ERROR = "Rozdzielczość robocza musi być wielokrotnością 32 px, od 768 do 1152 px."
 MASK_GROW_ERROR = "Poszerzenie maski musi być liczbą od 0 do 10%."
 SEED_ERROR = "Seed musi być liczbą całkowitą od 0 do 2147483647 albo pustym polem."
-
-
-@pytest.fixture
-def client(database_url: str, storage: Storage) -> Iterator[TestClient]:
-    settings = ApiSettings(database_url=database_url, data_dir=storage.root)
-    with TestClient(create_app(settings)) as test_client:
-        yield test_client
 
 
 def _input_value(html: str, name: str) -> str:

@@ -4,12 +4,9 @@ akceptacja podglądu, wybór z biblioteki przy nowym zdjęciu i usuwanie z bibli
 
 from __future__ import annotations
 
-import io
 import re
-from collections.abc import Iterator
 
 import numpy as np
-import pytest
 from fake_models import (
     BoxDetector,
     CenterDiscRemover,
@@ -23,8 +20,10 @@ from helpers import (
     click_wheel,
     drain,
     encode,
+    fetch,
     finish_job,
     generate,
+    image_src,
     library_rim,
     noise_photo,
     rim_processor,
@@ -33,32 +32,11 @@ from helpers import (
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
-from wheeler_api.app import create_app
-from wheeler_api.settings import ApiSettings
 from wheeler_api.texts import TEXTS
 from wheeler_shared.rim_library import claim_next_rim
 from wheeler_shared.storage import Storage
 from wheeler_worker.runner import run_once
 from wheeler_worker.wheel_swap import WheelSwapProcessor
-
-
-@pytest.fixture
-def client(database_url: str, storage: Storage) -> Iterator[TestClient]:
-    settings = ApiSettings(database_url=database_url, data_dir=storage.root)
-    with TestClient(create_app(settings)) as test_client:
-        yield test_client
-
-
-def _image_src(html: str, role: str) -> str:
-    match = re.search(rf'<img[^>]+src="(/files/[^"]+)"[^>]*data-role="{role}"', html)
-    assert match, html
-    return match.group(1)
-
-
-def _fetch(client: TestClient, url: str) -> Image.Image:
-    response = client.get(url)
-    assert response.status_code == 200
-    return Image.open(io.BytesIO(response.content))
 
 
 def _post_rim(client: TestClient, rim: Image.Image, name: str = "") -> str:
@@ -86,7 +64,7 @@ def test_added_rim_has_background_removed_by_worker_and_waits_for_review(
     rim_id = re.search(r'data-rim-id="(\d+)"', review)
     assert rim_id
     assert f'hx-post="/rims/{rim_id.group(1)}/accept"' in review
-    cut = _fetch(client, _image_src(review, "rim-cut"))
+    cut = fetch(client, image_src(review, "rim-cut"))
     # Wycięta felga: przezroczyste tło, przycięta do felgi (bok 65 px, od (18, 8)).
     assert cut.format == "PNG" and cut.mode == "RGBA" and cut.size == (65, 65)
     alpha = np.asarray(cut)[..., 3]
@@ -187,7 +165,7 @@ def test_deleting_rim_from_library_keeps_jobs_that_used_it_working(
     done_page = client.get(f"/jobs/{done_job}").text
     assert TEXTS["status_done"] in done_page
     for role in ("rim", "result"):
-        assert client.get(_image_src(done_page, role)).status_code == 200
+        assert client.get(image_src(done_page, role)).status_code == 200
     # Szkic sprzed usunięcia ma własną kopię felgi, więc da się go dokończyć.
     finish_job(client, session_factory, storage, draft_job)
     assert TEXTS["status_done"] in client.get(f"/jobs/{draft_job}").text
@@ -219,7 +197,7 @@ def test_background_is_removed_around_the_largest_detected_wheel_not_a_box_aroun
     assert run_once(session_factory, storage, rim_processor(remover, detector))
 
     assert [image.size for image in remover.images] == [(93, 93)]
-    cut = _fetch(client, _image_src(client.get("/rims/picker").text, "rim-cut"))
+    cut = fetch(client, image_src(client.get("/rims/picker").text, "rim-cut"))
     assert cut.size == (81, 81)
     assert tuple(np.asarray(cut)[40, 40, :3]) == rim.getpixel((149, 49))
 
@@ -240,7 +218,7 @@ def test_click_on_rim_picks_the_detected_wheel_under_it(
 
     # Mały box 40 px + 8% marginesu = kadr 47x47 od (6, 6); felga: dysk wokół (29, 29).
     assert [image.size for image in remover.images] == [(47, 47)]
-    cut = _fetch(client, _image_src(client.get("/rims/picker").text, "rim-cut"))
+    cut = fetch(client, image_src(client.get("/rims/picker").text, "rim-cut"))
     assert cut.size == (31, 31)
     assert tuple(np.asarray(cut)[15, 15, :3]) == rim.getpixel((29, 29))
 
@@ -266,7 +244,7 @@ def test_click_on_rim_without_detected_wheel_cuts_it_out_from_the_click(
     )
     assert run_once(session_factory, storage, processor)
 
-    cut = _fetch(client, _image_src(client.get("/rims/picker").text, "rim-cut"))
+    cut = fetch(client, image_src(client.get("/rims/picker").text, "rim-cut"))
     assert cut.size == (21, 21)  # „SAM 2”: koło o promieniu 10 wokół kliknięcia
     assert tuple(np.asarray(cut)[10, 10, :3]) == rim.getpixel((30, 25))
 
@@ -327,4 +305,4 @@ def test_deleting_job_keeps_rim_in_library(client: TestClient) -> None:
     assert response.status_code == 303
     page = client.get("/rims").text
     assert _library_ids(page) == [rim_id]
-    assert client.get(_image_src(page, "library-rim")).status_code == 200
+    assert client.get(image_src(page, "library-rim")).status_code == 200

@@ -16,11 +16,21 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import ColumnElement, case, func, literal, select, tuple_, update
+from sqlalchemy import ColumnElement, and_, case, func, literal, or_, select, tuple_, update
 from sqlalchemy.orm import Session
 
 from wheeler_shared.failures import Failure
-from wheeler_shared.models import Image, ImageRole, Job, JobStatus, TaskKind, Wheel, WheelSource
+from wheeler_shared.models import (
+    Image,
+    ImageRole,
+    Job,
+    JobStatus,
+    Rim,
+    RimStatus,
+    TaskKind,
+    Wheel,
+    WheelSource,
+)
 from wheeler_shared.progress import Progress
 
 
@@ -122,20 +132,35 @@ def claim_next_job(session: Session) -> ClaimedJob | None:
 
 
 def queue_position(session: Session, job: Job) -> int | None:
-    """Pozycja zadania w kolejce (1 = następne do pobrania), w kolejności `claim_next_job`."""
+    """Pozycja zadania w kolejce workera (1 = ruszy następne, nic przed nim nie stoi).
+
+    Liczy wszystko, co worker zrobi wcześniej: trwającą pracę (zadanie albo wycinaną felgę),
+    felgi w kolejce (worker bierze je przed zadaniami, `runner.run_once`) i zadania przed nim
+    w kolejności `claim_next_job`. Praca interaktywna zlecona później może je jeszcze wyprzedzić.
+    """
     if job.status != JobStatus.QUEUED or job.task is None or job.queued_at is None:
         return None
     mine = (1 if job.task.generates else 0, job.queued_at, job.id)
-    ahead = session.scalar(
+    jobs_ahead = session.scalar(
         select(func.count())
         .select_from(Job)
         .where(
-            Job.status == JobStatus.QUEUED,
-            Job.task.is_not(None),
-            tuple_(_generate_last(), Job.queued_at, Job.id) < tuple_(*map(literal, mine)),
+            or_(
+                Job.status == JobStatus.RUNNING,
+                and_(
+                    Job.status == JobStatus.QUEUED,
+                    Job.task.is_not(None),
+                    tuple_(_generate_last(), Job.queued_at, Job.id) < tuple_(*map(literal, mine)),
+                ),
+            )
         )
     )
-    return int(ahead or 0) + 1
+    rims_ahead = session.scalar(
+        select(func.count())
+        .select_from(Rim)
+        .where(Rim.status.in_([RimStatus.QUEUED, RimStatus.RUNNING]))
+    )
+    return int(jobs_ahead or 0) + int(rims_ahead or 0) + 1
 
 
 def report_progress(session: Session, job_id: int, progress: Progress) -> bool:

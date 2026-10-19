@@ -89,7 +89,16 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
 
 ## Kolejka zadań
 
-- Zadania przetwarzane są pojedynczo w kolejności FIFO, bo GPU jest jedno.
+- Zadania przetwarzane są pojedynczo, bo GPU jest jedno. W obrębie rodzaju pracy obowiązuje FIFO
+  (po chwili wstawienia do kolejki).
+- **Świadome odstępstwo od czystego FIFO (ustalone po review):** krótka praca, na którą użytkownik
+  czeka przy ekranie, idzie przed generowaniem. Kolejność: najpierw wycinanie felg do biblioteki
+  (~1 s), potem detekcja kół i maski z kliknięcia (~1 s), na końcu generowanie i „ponów to koło”
+  (~2 min na koło). Trwającej pracy nic nie przerywa. Bez tego klik w koło czekałby na wszystkie
+  wcześniej zlecone generowania.
+- Pozycja w kolejce pokazywana w UI liczy wszystko, co worker zrobi przed danym zadaniem: trwającą
+  pracę, felgi w kolejce i zadania przed nim w powyższej kolejności (praca interaktywna zlecona
+  później może je jeszcze wyprzedzić).
 - Zadanie można anulować, a przerwanie następuje między krokami lub kołami.
 - Zadanie przerwane przez awarię lub restart workera dostaje status `failed`, a UI pokazuje przycisk „ponów”. Bez automatycznych ponowień.
 - Postęp raportowany per koło i per krok denoisingu.

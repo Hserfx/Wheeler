@@ -435,7 +435,7 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
 
 - [x] Skrypt prototypu uruchomiony na prawdziwym modelu (SAM 2 + mflux, ustawienia jak w produkcji) na zdjęciach Golf (bok), Sorento (3/4), Vios (zasłonięte) i Clio (zadanie użytkownika), dla stopni −2″, −1″, +1″, +2″ i kontroli „bez zmian”, przy obecnej feldze 17″ — **zawężone decyzją użytkownika (2026-10-19):** mflux tylko na Golfie i Sorento (wszystkie stopnie); Vios i Clio pominięte, bo użytkownik przetestuje je sam (dla nich SAM 2: felga, maska karoserii, wejścia po warpie)
 - [x] Arkusze przed/po na każde zdjęcie: oryginał, wycinek po warpie (z zaznaczoną elipsą felgi, nową elipsą opony i maską karoserii), wynik modelu (Vios i Clio bez kolumny wyniku, zob. wyżej)
-- [x] Pomiar wyniku: średnica felgi i koła po modelu (SAM 2 na wyniku) w calach według tej samej skali, porównana z docelową; kryterium sukcesu odchylenie ≤ ~0,5″ przy ±2″
+- [x] Pomiar wyniku: średnica felgi i koła po modelu (SAM 2 na wyniku) w calach według tej samej skali, porównana z docelową; kryterium sukcesu odchylenie ≤ ~0,5″ przy ±2″ — **pomiar wykonany; kryterium spełnia Golf (felga ≤ 0,48″, koło z sylwetki ±1,75″), felga Sorento (3/4) nie (odchylenie 0,4–2,0″)**
 - [x] Automatyczne sprawdzenie, że piksele maski karoserii i piksele poza maską edycji są bit w bit z oryginałem
 - [x] Maska karoserii poprawna na wszystkich zdjęciach zestawu (bok, 3/4, zasłonięte), z nakładkami do oceny; opisane przypadki, w których zawodzi, i proponowane kryteria „zła maska” dla `rim_size_unavailable`
 - [x] `VERDICT.md`: wynik każdego kryterium (rozmiar, karoseria bit w bit, maska karoserii), miejsce na ocenę wyglądu przez użytkownika (koło naturalnie wypełnia nadkole, wnętrze nadkola przy −2″ wiarygodne), czasy i szczyt pamięci, rekomendacja dalszych kroków. Jeśli model „cofa” rozmiar przy −N″: propozycja korekty niedostrzału albo rezygnacji z wartości ujemnych. Proponowany podział ticketu implementacyjnego (pole „Obecna felga” w UI i `Job.params`, maska karoserii z błędem, nowy warp zastępujący warp z ticketu 12, zmniejszanie)
@@ -450,17 +450,31 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
   (etapy detect/sam/plan/gen/measure/silhouette/report na SAM 2.1 i mflux q8 jak w produkcji,
   reużywa `rim_geometry`, `compositing`, adapterów SAM 2 i mflux), `VERDICT.md`, arkusze
   `out/sheet_*.jpg`, nakładki karoserii `out/body_*.jpg`, liczby `out/*.json`. Werdykt: całe koło
-  rośnie i maleje zgodnie z celem; zewnętrzna średnica z sylwetki ±1,75–2,0″ przy ±2″ (odchylenie
-  ≤ 0,25″) na Golfie i Sorento, punkt styku stoi (≤ 1 px). Felga: Golf (bok) odchylenie ≤ 0,48″ przy
+  rośnie i maleje zgodnie z celem; zewnętrzna średnica z sylwetki ±1,75–2,0″ przy ±2″ na Golfie
+  i Sorento (kandydaci sylwetki co 0,25″, więc odchylenie 0 albo 0,25″ to rozdzielczość siatki,
+  nie zmierzona dokładność), punkt styku stoi (≤ 1 px). Felga: Golf (bok) odchylenie ≤ 0,48″ przy
   ±2″; Sorento (3/4) nie spełnia (felga mniejsza już w kontroli: 15,7″ i 16,4″ zamiast 17″, zmiana
-  ok. 50% stopnia; zachowanie modelu w 3/4, nie warpu). Karoseria i piksele poza maską edycji: 0
-  zmienionych pikseli w 16 przebiegach ze zmianą rozmiaru. Model nie cofa zmniejszania jak w tickecie 12
-  (−2″ → −1,75″), wartości ujemne zostają bez korekty. Maska karoserii poprawna na 4 zdjęciach
+  względem kontroli 22–65% stopnia przy ±2″ i 7–63% przy ±1″; zachowanie modelu w 3/4, nie
+  warpu). Chroniona maska karoserii (`body_effective`: surowa maska SAM minus wnętrze nadkola, po
+  czyszczeniu, bez pikseli koła) i piksele poza maską edycji: 0 zmienionych pikseli w 16 przebiegach
+  ze zmianą rozmiaru; surowa maska SAM: 0–2508 px na koło (wnętrze nadkola, które plan oddaje
+  modelowi). Model nie cofa zmniejszania jak w tickecie 12 (−2″ → −1,75″), wartości ujemne zostają
+  bez korekty. Maska karoserii poprawna na 4 zdjęciach
   dopiero z punktami ujemnymi w szczelinie nadkola i odjętym wnętrzem nadkola (bez tego SAM wciąga
   nadkole do karoserii i koło nie może w nie wejść, `out/v1/`). Kryteria złej maski: pusta, > 5% koła,
   > 85% wycinka poza kołem, < 25% strefy błotnika, a także obce zasłonięcie opony > 5% (Vios koło 1:
-  zderzak drugiego auta, 30%; reszta ≤ 1%). mflux 115–134 s na koło, szczyt 27,7 GB; SAM ~1,5 s na
-  koło, 3,6 GB. Odstępstwa: Vios i Clio bez mflux (decyzja użytkownika, przetestuje je sam); średnica
-  koła mierzona z sylwetki (IoU z przeskalowaną maską starego koła), bo k z profilu maski jest w 3/4
+  zderzak drugiego auta, 30%; reszta ≤ 1%). mflux 115–134 s na koło (z logów `gen_all`/`gen_rest2`),
+  szczyt 27,7 GB (zmierzony w przebiegu Golfa pierwszego podejścia, te same ustawienia); SAM ~1,5 s
+  na koło, szczyt 3,6 GB zmierzony w etapie `measure` (`/usr/bin/time -l`). Odstępstwa: Vios i Clio
+  bez mflux (decyzja użytkownika, przetestuje je sam; mflux ruszył na Viosie, 3 edycje, przebieg
+  przerwany, wyniki odrzucone); średnica koła mierzona z sylwetki (IoU z przeskalowaną maską starego koła), bo k z profilu maski jest w 3/4
   niewiarygodne; ocena wyglądu czeka na użytkownika (pola w `VERDICT.md`). Proponowany podział
   ticketu implementacyjnego w `VERDICT.md`.
+- 2026-10-19 (agent, poprawki po code review): `visible_tire_ratio` i `arch_gap_points` odrzucają
+  promienie wychodzące poza zdjęcie (marsz promieni wspólny z `rim_geometry.wheel_rays`), stopień
+  jako `rim_size: float`, dane zadania 6 z głównego checkoutu, stałe z `EditParams`, kryteria złej
+  maski na surowej masce SAM (po czyszczeniu udział koła był zawsze 0), brak dobrego kandydata
+  karoserii → `rim_size_unavailable` z powodem zamiast złej maski. Przeliczone plan/measure/
+  silhouette/report bez mflux: wejścia modelu bit w bit te same, liczby rozmiaru bez zmian.
+  Poprawione wnioski (wyżej i w `VERDICT.md`): zakres zmiany felgi Sorento, rozdzielczość siatki
+  sylwetki, co obejmuje sprawdzenie bit w bit, źródła czasów i pamięci (`out/timing.json`), Vios.

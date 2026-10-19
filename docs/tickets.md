@@ -431,7 +431,7 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
 
 **Blocked by:** 12
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Skrypt prototypu uruchomiony na prawdziwym modelu (SAM 2 + mflux, ustawienia jak w produkcji) na zdjęciach Golf (bok), Sorento (3/4), Vios (zasłonięte) i Clio (zadanie użytkownika), dla stopni −2″, −1″, +1″, +2″ i kontroli „bez zmian”, przy obecnej feldze 17″
 - [ ] Arkusze przed/po na każde zdjęcie: oryginał, wycinek po warpie (z zaznaczoną elipsą felgi, nową elipsą opony i maską karoserii), wynik modelu

@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+# Standalone CLI Tailwinda (pobierane przez `just tailwind`)
+.bin/
+# Dane aplikacji (zdjęcia, wyniki) i pliki uruchomieniowe (pid, logi workera)
+/data/
+/.run/
+# CSS generowany przez Tailwinda (`just css`)
+api/src/wheeler_api/static/app.css
+.claude/
+# Sekrety i lokalna konfiguracja
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# Wagi modeli, gdyby trafiły do repo
+*.safetensors
+*.pt
+*.gguf
+.DS_Store

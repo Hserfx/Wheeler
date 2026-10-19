@@ -45,26 +45,71 @@ przeglądarka ──► FastAPI (Podman) ──► PostgreSQL (Podman)
   - mflux działa natywnie na Apple Silicon, obsługuje kwantyzację, maskę i wiele obrazów referencyjnych, a błąd MPS go nie dotyczy.
 - **Zarządzanie pamięcią:** model ładuje się przy pierwszym zadaniu i zwalnia po 10 min bezczynności (wartość konfigurowalna).
 
+### Ustawienia domyślne (wynik spike'a 01)
+
+Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
+
+- **mflux z gita**, commit `b534021a9c8c45bb064959d754870fd98322e447` (Turbo jest na `main` od PR #859, nie ma go
+  w wydanym 0.22.0). Model `QwenImage21Edit` z `ModelConfig.qwen_image_21_turbo()`: 8 kroków, guidance 1.
+- **Kwantyzacja q8**, wagi skonwertowane w `~/.cache/wheeler/qwen-image-2.1-turbo-mflux-q8` (17,8 GB).
+  q4 (`…-q4`, 10 GB) jako ustawienie zapasowe przy braku pamięci. q4 nie jest szybsze, tylko lżejsze.
+- **`compute_precision=mx.float16`**, **`model.tiling_config = TilingConfig()`**, `mx.set_cache_limit(2 GB)`.
+- **Rozdzielczość robocza 1024 px** (pole 1024², boki zaokrąglone do 32 px). 1536 px jest 3× wolniejsze i nie
+  mieści się w pamięci przy q8. Szumu siatki przy 1024 nie stwierdzono (porównanie z 992/1056).
+- **Referencje `[wycinek, felga]`** z `mask_image` (maska koła w rozmiarze roboczym) i jawnymi `width`/`height`.
+  Maska mflux działa na pierwszej referencji, a proporcje wyjścia bierze z ostatniej.
+- **Wycinek:** kwadrat wokół koła z marginesem 25% boku koła z każdej strony, przycięty do zdjęcia.
+- **Maska kompozycji:** maska SAM poszerzona o 3% boku koła. Krawędź wygładzana do wewnątrz na pasie ~1,5% boku koła,
+  więc piksele poza maską pozostają bit w bit.
+- **Szablon promptu** (obraz 1 = wycinek, obraz 2 = felga):
+  „Replace the rim of the car wheel in image 1 with the alloy rim design shown in image 2. Keep the tire, the car
+  body, the wheel arch, the brake caliper position, the lighting, the shadows and the camera angle of image 1
+  unchanged. The new rim must follow the perspective of the wheel in image 1 and fill the tire opening exactly.
+  Photorealistic.” Dopisek użytkownika doklejamy na końcu.
+- **Detektor: Florence-2-large** (`florence-community/Florence-2-large`, fp16 na MPS), zadanie
+  `<CAPTION_TO_PHRASE_GROUNDING>` z frazą `wheel`. **Maski: SAM 2.1 hiera-large** (`facebook/sam2.1-hiera-large`
+  przez transformers) z promptem box.
+- **Zmierzone na M2 Max:** jedno koło ~110 s (q8, 1024 px), szczyt pamięci MLX 26,9 GB. Ładowanie wag ~4 s.
+  Detekcja + maski poniżej 1 s na zdjęcie.
+
 ### Modele pomocnicze (w workerze)
 
-- **Detekcja kół:** lekki detektor, Florence-2 albo Grounding DINO. Wybór rozstrzygnie spike.
+- **Detekcja kół:** Florence-2-large (phrase grounding „wheel”), wybrany w spike'u zamiast Grounding DINO.
 - **Maski:** SAM 2, zarówno do precyzyjnego kształtu wykrytych kół, jak i do „dodaj koło” jednym kliknięciem (prompt punktowy).
 - **Usuwanie tła z felgi referencyjnej:** BiRefNet lub rembg, uruchamiane przy dodawaniu felgi do biblioteki.
+  Ustalenie po review: jeśli wycięcie obejmuje coś poza felgą (np. karoserię), użytkownik klika felgę na
+  oryginale i worker wycina ją ponownie z kliknięcia (SAM 2), także po nieudanym wycięciu.
 
 ### Pipeline edycji
 
 1. **Wejście:** JPEG/PNG/WebP/HEIC (`pillow-heif`), obrót według EXIF. Limit 40 MPx / 50 MB.
+   Gwarancja „bit w bit” obejmuje każde przyjęte wejście (ustalone po review): wynik zachowuje tryb
+   oryginału (RGB, RGBA, L, LA; alfa bez zmian w całym obrazie), paleta jest rozwijana do RGB/RGBA,
+   obraz 1-bitowy do L. Wejścia, których PNG wyniku nie odda wiernie (16 bitów na kanał, CMYK itp.),
+   są odrzucane przy wgraniu z komunikatem.
 2. **Detekcja kół** (kilka sekund) i maski SAM 2. Użytkownik akceptuje lub koryguje je w UI.
 3. **Maska kompozycji = całe koło** (opona + felga), lekko poszerzona. Prompt każe zachować oponę i zmienić tylko felgę. Opona jest generowana na nowo, ale ma wyglądać prawie identycznie. Dzięki temu nowa felga może mieć inną średnicę wizualną.
-4. **Każde koło edytujemy osobno:** wycinek wokół koła przeskalowany do rozdzielczości roboczej (~1024 px, Turbo traci detal poniżej). Wywołanie z `image=[felga, wycinek]`, przy czym ostatni obraz wyznacza proporcje wyjścia. Ten sam seed i prompt dla wszystkich kół jednego zdjęcia.
+4. **Każde koło edytujemy osobno:** wycinek wokół koła przeskalowany do rozdzielczości roboczej (1024 px, Turbo traci detal poniżej). Wywołanie z `image_paths=[wycinek, felga]` i maską koła, bo maska mflux działa na pierwszej referencji. Rozmiar wyjścia podajemy jawnie (`width`/`height`), bo domyślnie wyznacza go ostatni obraz. Ten sam seed i prompt dla wszystkich kół jednego zdjęcia.
 5. **Kompozycja:** wynik skalujemy z powrotem do rozmiaru wycinka i wklejamy w oryginał z wygładzoną krawędzią maski. Piksele poza maską pozostają bit w bit identyczne.
 6. **Wyjście:** zawsze PNG (bezstratny, żeby zachować gwarancję z punktu 5), z profilem ICC (np. Display P3 z iPhone'a) i EXIF bez danych GPS.
 
 ## Kolejka zadań
 
-- Zadania przetwarzane są pojedynczo w kolejności FIFO, bo GPU jest jedno.
+- Zadania przetwarzane są pojedynczo, bo GPU jest jedno. W obrębie rodzaju pracy obowiązuje FIFO
+  (po chwili wstawienia do kolejki).
+- **Świadome odstępstwo od czystego FIFO (ustalone po review):** krótka praca, na którą użytkownik
+  czeka przy ekranie, idzie przed generowaniem. Kolejność: najpierw wycinanie felg do biblioteki
+  (~1 s), potem detekcja kół i maski z kliknięcia (~1 s), na końcu generowanie i „ponów to koło”
+  (~2 min na koło). Trwającej pracy nic nie przerywa. Bez tego klik w koło czekałby na wszystkie
+  wcześniej zlecone generowania.
+- Pozycja w kolejce pokazywana w UI liczy wszystko, co worker zrobi przed danym zadaniem: trwającą
+  pracę, felgi w kolejce i zadania przed nim w powyższej kolejności (praca interaktywna zlecona
+  później może je jeszcze wyprzedzić).
 - Zadanie można anulować, a przerwanie następuje między krokami lub kołami.
 - Zadanie przerwane przez awarię lub restart workera dostaje status `failed`, a UI pokazuje przycisk „ponów”. Bez automatycznych ponowień.
+  To samo dotyczy felgi wycinanej w chwili awarii (`failed`, można ją wyciąć ponownie albo odrzucić).
+- Ustalenie po review: „ponów” jest dostępne także dla zadania anulowanego, nie tylko nieudanego
+  (nowe zadanie z tymi samymi plikami, kołami i parametrami).
 - Postęp raportowany per koło i per krok denoisingu.
 
 ## Baza danych (PostgreSQL)
@@ -85,7 +130,11 @@ przeglądarka ──► FastAPI (Podman) ──► PostgreSQL (Podman)
   4. „Generuj”: postęp per koło i per krok (polling HTMX co ~1 s), z możliwością anulowania.
   5. Wynik z suwakiem przed/po, przyciskiem „ponów to koło” (inny seed) i pobieraniem PNG.
 - **Sekcja „Zaawansowane”** jest domyślnie zwinięta i zawiera seed, rozdzielczość roboczą, poszerzenie maski i dopisek do promptu. Użyte wartości zapisujemy w historii zadania.
+  Ustalenie po review: rozdzielczość robocza 992–1152 px co 32 px. Dolna granica wynika z utraty detalu
+  przez Turbo poniżej ~1024 px (spike sprawdził 992 i 1056 bez różnic), górna z zapasu pamięci przy q8.
 - **Podstrona „Historia”:** miniatury, podgląd, ręczne usuwanie.
+- **Podstrona „Biblioteka felg”** (ustalenie po review): przegląd felg z licznikiem użyć, dodawanie
+  i usuwanie z biblioteki. Na stronie zadania (krok 3) jest ten sam wybór felgi, bez usuwania.
 
 ## Konwencje inżynierskie
 
@@ -121,5 +170,7 @@ Budowa zgodnie z powyższym projektem.
 - **Brak natywnej maski w diffusers** dla Qwen-Image-2.1. Kompozycję robimy sami, a mflux ma `--mask-image`.
 - **Spójność felg między kołami:** każde koło edytujemy osobno, więc felgi mogą się minimalnie różnić. Mitygacja: ten sam seed i prompt plus „ponów to koło”.
 - **Artefakty Turbo w małych rozdzielczościach** (siatka pikseli poniżej ~1024 px). Wycinki skalujemy w górę do rozdzielczości roboczej.
-- **Szum przy siatce dokładnie 1024 px** zgłaszany w ComfyUI (ComfyUI #16435). Do sprawdzenia w spike'u, alternatywnie 992/1056.
+- **Szum przy siatce dokładnie 1024 px** zgłaszany w ComfyUI (ComfyUI #16435). Sprawdzone w spike'u na edycji wycinków: przy 1024 px brak szumu, wynik jak przy 992/1056.
+- **Zapas pamięci:** q8 przy 1024 px ma szczyt 26,9 GB z 32 GB. Jeśli pojawi się swap, przełączamy na q4 (19 GB).
+- **Przenoszenie zacisku hamulcowego** ze zdjęcia felgi na auto. Mitygacja: felga z usuniętym tłem (ticket 06), ewentualnie dopisek w prompcie.
 - **„Noise replay”:** ten sam seed i rozmiar co przy generowaniu obrazu wejściowego psuje edycję (diffusers #14824). W praktyce dotyczy tylko obrazów wygenerowanych tym samym modelem.

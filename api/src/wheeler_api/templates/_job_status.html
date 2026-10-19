@@ -1,0 +1,142 @@
+{#- Stan zadania (fragment HTMX). Odpytywany co sekundę, dopóki worker ma pracę. -#}
+<section id="job-status" class="flex flex-col gap-6"
+  {%- if job.status.busy %}
+  hx-get="/jobs/{{ job.id }}/status" hx-trigger="every 1s" hx-swap="outerHTML"
+  {%- endif %}>
+  <p class="text-sm">
+    <span class="text-slate-500">{{ t.status_label }}:</span>
+    <span class="font-semibold" data-status="{{ job.status.value }}">{{ job_status_label(job) }}</span>
+  </p>
+  {% if model_loading_for(job) %}
+  <p class="text-sm text-amber-700" role="status" data-role="model-loading">{{ t.model_loading_job }}</p>
+  {% endif %}
+
+  {%- if queue_position %}
+  <p class="text-sm text-slate-600" data-queue-position="{{ queue_position }}">{{ t.queue_position.format(position=queue_position) }}</p>
+  {%- endif %}
+
+  {%- set progress = job_progress(job) %}
+  {%- if progress %}
+  <div class="flex flex-col gap-2" data-role="progress">
+    <p class="text-sm text-slate-600">{{ progress_label(progress) }}</p>
+    <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+      <div class="h-full rounded-full bg-slate-900 transition-all" style="width: {{ (progress.fraction * 100) | round(1) }}%"></div>
+    </div>
+  </div>
+  {%- endif %}
+
+  {% if job is retryable %}
+  <form action="/jobs/{{ job.id }}/retry" method="post" class="flex flex-wrap items-center gap-3"
+        x-data="{ sending: false }" @submit="sending = true">
+    <button type="submit" data-role="retry" :disabled="sending"
+            class="rounded-md bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
+      {{ t.job_retry }}
+    </button>
+    <span class="text-sm text-slate-500">{{ t.job_retry_hint }}</span>
+  </form>
+  {% endif %}
+
+  {% if job is cancellable %}
+  <div>
+    <button type="button" data-role="cancel" hx-post="/jobs/{{ job.id }}/cancel" hx-target="#job-status" hx-swap="outerHTML"
+            class="rounded-md border border-slate-300 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100">
+      {{ t.job_cancel }}
+    </button>
+  </div>
+  {% endif %}
+
+  {% if job.error %}
+  <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+    {% if job.task and job.task.value == "segment" %}
+    {{ t.error_mask_failed }} <span class="text-red-500">({{ job.error | failure_text }})</span>
+    {% elif job.task and job.task.value == "detect" %}
+    {{ t.error_detection_failed }} <span class="text-red-500">({{ job.error | failure_text }})</span>
+    {% elif job.task and job.task.value == "regenerate_wheel" %}
+    {{ t.error_regenerate_failed }} <span class="text-red-500">({{ job.error | failure_text }})</span>
+    {% else %}
+    {{ t.job_error }}: {{ job.error | failure_text }}
+    {% endif %}
+  </p>
+  {% endif %}
+
+  {% if job.status.value == "draft" and input_image %}
+  {#- Edycja kół: klik w zdjęcie wysyła współrzędne w pikselach zdjęcia (naturalWidth/Height);
+      serwer usuwa koło, w którego masce jest punkt, albo dodaje nowe koło (SAM 2). -#}
+  <div class="flex flex-col gap-3">
+    {% if job.masked_wheels %}
+    <p class="text-sm">{{ t.wheel_mask_hint }}</p>
+    {% elif job.wheels_detected == 0 %}
+    <p class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status" data-role="no-wheels">
+      {{ t.wheels_none_detected }}
+    </p>
+    {% else %}
+    <p class="text-sm">{{ t.wheel_click_hint }}</p>
+    {% endif %}
+    <div class="relative cursor-crosshair select-none" data-role="wheel-picker"
+         x-data="{
+           pick(event) {
+             const img = this.$refs.photo, box = img.getBoundingClientRect();
+             htmx.ajax('POST', '/jobs/{{ job.id }}/wheels', {
+               target: '#job-status', swap: 'outerHTML',
+               values: {
+                 x: ((event.clientX - box.left) * img.naturalWidth / box.width).toFixed(1),
+                 y: ((event.clientY - box.top) * img.naturalHeight / box.height).toFixed(1),
+               },
+             });
+           },
+         }"
+         @click="pick($event)">
+      <img x-ref="photo" src="/files/{{ input_image.path | display_path }}" alt="{{ t.wheel_picker_alt }}" data-role="input"
+           draggable="false" class="block w-full rounded-lg border border-slate-200 bg-white">
+      {% for wheel in job.masked_wheels %}
+      <img src="/files/{{ wheel.overlay_path }}" alt="{{ t.wheel_mask_alt.format(number=loop.index) }}"
+           data-role="mask-overlay" data-wheel-id="{{ wheel.id }}"
+           draggable="false" class="pointer-events-none absolute inset-0 h-full w-full rounded-lg">
+      {% endfor %}
+    </div>
+    {% if job.masked_wheels %}
+    {#- `id="job-form"`: radio wyboru felgi (`_rim_picker.html` na stronie zadania) należy do
+        tego formularza przez atrybut `form`, więc „Generuj” wysyła też `rim_id`. -#}
+    <form id="job-form" action="/jobs/{{ job.id }}/generate" method="post" class="flex flex-wrap items-center gap-3"
+          x-data="{ sending: false }" @submit="sending = true">
+      <button type="submit" :disabled="sending"
+              class="rounded-md bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
+        {{ t.generate_submit }}
+      </button>
+      <span class="text-sm text-slate-500" data-role="wheel-count">{{ t.wheels_selected.format(count=job.masked_wheels | length) }}.
+        {{ t.generate_hint }}</span>
+    </form>
+    {% endif %}
+  </div>
+  {% elif job.status.value == "done" and result_image and input_image %}
+  {% include "_result_compare.html" %}
+  {% else %}
+  <div class="grid gap-6 sm:grid-cols-2">
+    {% if input_image %}
+    <figure>
+      <figcaption class="mb-2 text-sm font-medium text-slate-600">{{ t.job_input }}</figcaption>
+      <img src="/files/{{ input_image.path | display_path }}" alt="{{ t.job_input }}" data-role="input"
+           class="w-full rounded-lg border border-slate-200 bg-white">
+    </figure>
+    {% endif %}
+    {% if result_image %}
+    <figure>
+      <figcaption class="mb-2 flex items-baseline justify-between text-sm font-medium text-slate-600">
+        <span>{{ t.job_result }}</span>
+        <a href="/jobs/{{ job.id }}/download" class="underline hover:text-slate-900">{{ t.job_download }}</a>
+      </figcaption>
+      <img src="/files/{{ result_image.path }}" alt="{{ t.job_result }}" data-role="result"
+           class="w-full rounded-lg border border-slate-200 bg-white">
+    </figure>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if rim_image %}
+  <figure class="w-32">
+    <figcaption class="mb-2 text-sm font-medium text-slate-600">{{ t.job_rim }}</figcaption>
+    <img src="/files/{{ rim_image.path | display_path }}" alt="{{ t.job_rim }}" data-role="rim"
+         class="w-full rounded-lg border border-slate-200 bg-white">
+  </figure>
+  {% endif %}
+</section>

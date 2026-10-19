@@ -1,0 +1,14 @@
+/* Wejście dla standalone CLI Tailwinda (`just css`); wynik: src/wheeler_api/static/app.css. */
+@import "tailwindcss" source(none);
+@source "./src/wheeler_api/templates";
+
+[x-cloak] {
+  display: none !important;
+}
+
+/* Tło w szachownicę pod wyciętą felgą: widać, co jest przezroczyste. */
+.checkerboard {
+  background-color: #fff;
+  background-image: conic-gradient(#e2e8f0 25%, transparent 0 50%, #e2e8f0 0 75%, transparent 0);
+  background-size: 16px 16px;
+}

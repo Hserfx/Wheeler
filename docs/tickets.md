@@ -7,6 +7,7 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
     ├─► 03 ─┬─► 04 ─► 07
 02 ─┘       ├─► 05, 06, 09, 10, 11
 02 ─────────┴─► 08
+06, 07, 09 ─► 12
 ```
 
 ---
@@ -295,3 +296,26 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
   Stany: asleep → loading → ready → loading (mflux) → ready → asleep → loading → ready → asleep.
 - Stan modelu w tabeli `worker_state`; po awarii workera zostaje ostatni stan aż do restartu
   (start workera zapisuje „uśpiony”). Brak heartbeatu.
+
+---
+
+# 12: Rozmiar felgi (plus-sizing)
+
+**What to build:** Przed „Generuj”, obok wyboru felgi, wybieram rozmiar nowej felgi względem obecnej: `−2″ · −1″ · bez zmian · +1″ · +2″`. Zmienia się tylko średnica felgi, a zewnętrzna średnica koła zostaje: większa felga oznacza niższy profil opony, mniejsza wyższy (jak przy prawdziwym plus-sizingu). Całość mieści się w obecnej masce koła (opona + felga), więc piksele poza maską pozostają bit w bit. Rozmiarem steruje wyłącznie prompt, bez pomocy geometrycznej i bez spike'a.
+
+**Blocked by:** 06, 07, 09
+
+**Status:** claimed
+
+- [ ] Wybór stopnia w sekcji wyboru felgi na stronie zadania, w formularzu „Generuj” (`#job-form`); domyślnie „bez zmian”. `POST /jobs` przy wgraniu go nie przyjmuje
+- [ ] Stopień zapisany w `Job.params` (nowy klucz w `wheeler_shared/edit_params.py`), z walidacją zakresu −2…+2 po stronie serwera; brak klucza oznacza „bez zmian”
+- [ ] Jedno ustawienie na całe zadanie: wszystkie koła, „Ponów” (`retry.py`) i „Ponów to koło” używają tej samej wartości
+- [ ] Przy „bez zmian” prompt jest identyczny z obecnym szablonem (istniejące zadania i testy bez zmian)
+- [ ] Przy stopniu ≠ 0 prompt mówi o kierunku i przybliżonej skali (1″ ≈ 4% średnicy całego koła), każe pocienić lub pogrubić bok opony i zachować zewnętrzną średnicę koła; zastępuje sprzeczne z tym „fill the tire opening exactly”
+- [ ] Ekran wyniku pokazuje wybrany stopień (np. „Felga: +2″”) obok seeda, tylko gdy ≠ „bez zmian”; siatka Historii bez zmian (szczegóły zadania i tak pokazują wszystkie klucze `Job.params`, etykieta w `PARAM_LABELS`)
+- [ ] Szablon promptu i nowy parametr opisane w `docs/DESIGN.md`
+- [ ] Testy na atrapach modeli: walidacja parametru, zapis w zadaniu, prompt dla każdego stopnia (w tym identyczność przy 0), przekazanie do edytora przez workera (także przy „Ponów to koło”), widoczność na ekranie wyniku
+
+**Comments:**
+
+- 2026-10-19 (grilling): ustalone z użytkownikiem. Zmiana średnicy całego koła (wejście w nadkole, domalowanie szczeliny) świadomie poza zakresem, bo wymaga maski obejmującej karoserię. Cale są przybliżone: z samego zdjęcia nie znamy obecnego rozmiaru felgi, sterujemy proporcją średnicy felgi do średnicy koła. Weryfikacja tylko testami na atrapach; jakość na prawdziwym modelu użytkownik ocenia sam w trakcie używania. Jeśli model będzie ignorował polecenie, następny krok to osobny ticket na sterowanie geometryczne (np. wskazówka z docelowym okręgiem felgi).

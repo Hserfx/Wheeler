@@ -4,6 +4,7 @@ Cykl życia felgi (`Rim.status`):
 
     queued --worker: BiRefNet--> review --„Dodaj do biblioteki”--> ready
     review/failed --klik w felgę--> queued (worker: SAM 2 z kliknięcia) --> review
+    running --awaria/restart workera--> failed (`fail_interrupted_rims`, bez ponowień)
     review/failed/ready --„Odrzuć”/„Usuń”--> (wiersz i pliki usunięte)
 
 Usuwanie tła działa tylko w natywnym workerze, więc felgi mają własną kolejkę w tabeli
@@ -104,6 +105,21 @@ def fail_rim_cut(session: Session, rim_id: int, *, error: Failure) -> None:
         return
     rim.error = error
     rim.status = RimStatus.FAILED
+
+
+def fail_interrupted_rims(session: Session) -> list[int]:
+    """Przy starcie workera: felgi `running` zostały przerwane przez awarię albo restart.
+
+    Dostają `failed` (bez automatycznych ponowień, jak zadania w `queue.fail_interrupted_jobs`):
+    użytkownik może kliknąć felgę, żeby wyciąć ją ponownie, albo ją odrzucić.
+    """
+    rims = session.scalars(
+        select(Rim).where(Rim.status == RimStatus.RUNNING).order_by(Rim.id).with_for_update()
+    ).all()
+    for rim in rims:
+        rim.error = Failure.INTERRUPTED
+        rim.status = RimStatus.FAILED
+    return [rim.id for rim in rims]
 
 
 def accept_rim(session: Session, rim_id: int) -> None:

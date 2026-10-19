@@ -29,7 +29,12 @@ from wheeler_shared.queue import (
     mark_cancelled,
     report_progress,
 )
-from wheeler_shared.rim_library import claim_next_rim, complete_rim_cut, fail_rim_cut
+from wheeler_shared.rim_library import (
+    claim_next_rim,
+    complete_rim_cut,
+    fail_interrupted_rims,
+    fail_rim_cut,
+)
 from wheeler_shared.storage import Storage
 from wheeler_worker.model_lifecycle import ModelLifecycle
 from wheeler_worker.processing import (
@@ -240,11 +245,15 @@ def _reporter(session_factory: sessionmaker[Session], job_id: int) -> ProgressCa
 
 
 def recover_interrupted_jobs(session_factory: sessionmaker[Session]) -> list[int]:
-    """Wołane przy starcie workera: zadania przerwane przez awarię/restart -> `failed`."""
+    """Wołane przy starcie workera: zadania i wycinane felgi przerwane przez awarię/restart
+    -> `failed`. Zwraca id zadań."""
     with session_factory.begin() as session:
         job_ids = fail_interrupted_jobs(session)
+        rim_ids = fail_interrupted_rims(session)
     if job_ids:
         log.warning("Zadania przerwane przez awarię lub restart workera: %s", job_ids)
+    if rim_ids:
+        log.warning("Felgi przerwane przez awarię lub restart workera: %s", rim_ids)
     return job_ids
 
 

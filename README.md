@@ -115,6 +115,7 @@ done --„Ponów to koło”-------> regenerate_wheel (jedno koło, nowy seed) -
   wgranie felgi -> queued -> worker: usuwanie tła -> review --„Dodaj do biblioteki”--> ready
   review/failed --klik w felgę na oryginale--> queued (wycięcie koła pod kliknięciem) -> review
   review/failed --„Odrzuć”, ready --„Usuń z biblioteki”--> wiersz i katalog felgi usunięte
+  running --awaria/restart workera--> failed (przy starcie workera, jak zadania)
   ```
 
   Usuwanie tła (`WheelSwapProcessor.cut_rim`): Florence-2 wykrywa koła, a BiRefNet

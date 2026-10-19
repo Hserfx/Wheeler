@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from wheeler_api.texts import TEXTS
 from wheeler_shared.rim_library import claim_next_rim
 from wheeler_shared.storage import Storage
-from wheeler_worker.runner import run_once
+from wheeler_worker.runner import recover_interrupted_jobs, run_once
 from wheeler_worker.wheel_swap import WheelSwapProcessor
 
 
@@ -307,3 +307,23 @@ def test_deleting_job_keeps_rim_in_library(client: TestClient) -> None:
     page = client.get("/rims").text
     assert _library_ids(page) == [rim_id]
     assert client.get(image_src(page, "library-rim")).status_code == 200
+
+
+def test_rim_cut_interrupted_by_worker_crash_fails_on_restart_and_can_be_retried_or_rejected(
+    client: TestClient, session_factory: sessionmaker[Session], storage: Storage
+) -> None:
+    rim_id = _rim_id(_post_rim(client, noise_photo(100, 80)))
+    with session_factory.begin() as session:
+        assert claim_next_rim(session) is not None  # worker zaczął wycinać i zginął
+
+    recover_interrupted_jobs(session_factory)  # start nowego procesu workera
+
+    picker = client.get("/rims/picker").text
+    assert TEXTS["rim_cut_failed"] in picker and TEXTS["failure_interrupted"] in picker
+    assert "hx-trigger" not in picker  # bez odpytywania w nieskończoność
+    assert run_once(session_factory, storage, rim_processor()) is False  # bez ponowień
+    response = client.post(f"/rims/{rim_id}/click", data={"x": 50, "y": 40})
+    assert response.status_code == 200 and TEXTS["rim_cutting"] in response.text
+    assert run_once(session_factory, storage, rim_processor())
+    assert client.post(f"/rims/{rim_id}/delete").status_code == 200
+    assert f'data-rim-id="{rim_id}"' not in client.get("/rims/picker").text

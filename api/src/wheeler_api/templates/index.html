@@ -8,11 +8,9 @@
   <p class="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{{ error }}</p>
   {% endif %}
 
-  {#- Felgę wybiera radio `rim_id` z biblioteki (`_rim_picker.html`), a pola „Zaawansowane”
-      leżą pod nią: wszystkie należą do formularza przez atrybut `form="job-form"`, bo
-      biblioteka ma własne formularze (dodawanie felgi), których nie można zagnieździć.
-      Zdjęcie auta można wybrać, przeciągnąć na pole albo wkleić ze schowka; gdy już jest
-      wybrane, wklejony plik trafia do pola nowej felgi (zdarzenie `rim-paste`). -#}
+  {#- Krok 1: zdjęcie auta (detekcja kół rusza od razu po wgraniu); felgę wybiera się na
+      stronie zadania. Pola „Zaawansowane” należą do formularza przez atrybut
+      `form="job-form"`. Zdjęcie można wybrać, przeciągnąć na pole albo wkleić ze schowka. -#}
   <form id="job-form" action="/jobs" method="post" enctype="multipart/form-data" class="mt-6 flex flex-col gap-4"
         x-data="{
           photo: '', over: false,
@@ -28,7 +26,7 @@
             const list = event.clipboardData?.files;
             if (!list?.length) return;
             event.preventDefault();
-            if (this.photo) this.$dispatch('rim-paste', list); else this.put(list);
+            this.put(list);
           },
         }"
         @paste.window="pasted($event)" @submit="$dispatch('job-sending')">
@@ -49,11 +47,6 @@
       </label>
     </div>
   </form>
-
-  <div class="mt-6 flex flex-col gap-1">
-    <span class="text-sm font-medium">{{ t.upload_rim_label }}</span>
-    {% include "_rim_picker.html" %}
-  </div>
 
   <details class="mt-6 rounded-md border border-slate-200 px-4 py-2" data-role="advanced"{% if advanced_open %} open{% endif %}>
     <summary class="cursor-pointer text-sm font-medium">{{ t.advanced_heading }}</summary>

@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 from fake_models import BoxDetector, DiscSegmenter, SolidEditor
 from fastapi.testclient import TestClient
-from helpers import encode, fetch, finish_job, library_rim, noise_photo, upload
+from helpers import encode, fetch, finish_job, noise_photo, upload
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -168,7 +168,6 @@ def test_png_with_16_bits_per_channel_is_rejected_on_upload(
     response = client.post(
         "/jobs",
         files={"photo": ("auto.png", _png_rgb16(), "image/png")},
-        data={"rim_id": str(library_rim(client))},
     )
     assert response.status_code == 400
     assert TEXTS["error_upload_mode"].format(name="auto.png") in response.text
@@ -188,7 +187,6 @@ def test_photo_that_cannot_be_kept_bit_exact_is_rejected_on_upload(
     response = client.post(
         "/jobs",
         files={"photo": ("auto.img", encode(image, format), "application/octet-stream")},
-        data={"rim_id": str(library_rim(client))},
     )
     assert response.status_code == 400
     assert TEXTS["error_upload_mode"].format(name="auto.img") in response.text

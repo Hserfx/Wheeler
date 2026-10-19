@@ -117,13 +117,24 @@ def upload(
     rim: bytes | None = None,
     rim_id: int | None = None,
 ) -> int:
-    """Nowe zadanie: zdjęcie auta + felga z biblioteki (`rim_id` albo nowa felga `rim`)."""
+    """Nowe zadanie: zdjęcie auta + od razu felga z biblioteki (`rim_id` albo nowa `rim`)."""
     if rim_id is None:
         rim_id = library_rim(client, rim)
+    return upload_photo(client, photo, filename=filename, rim_id=rim_id)
+
+
+def upload_photo(
+    client: TestClient,
+    photo: bytes | None = None,
+    *,
+    filename: str = "auto.jpg",
+    rim_id: int | None = None,
+) -> int:
+    """Nowe zadanie ze zdjęciem auta (krok 1); bez `rim_id` felgę wybiera się przed „Generuj”."""
     response = client.post(
         "/jobs",
         files={"photo": (filename, photo if photo is not None else jpeg(), "image/jpeg")},
-        data={"rim_id": str(rim_id)},
+        data={} if rim_id is None else {"rim_id": str(rim_id)},
         follow_redirects=False,
     )
     assert response.status_code == 303, response.text

@@ -65,12 +65,15 @@ class SavedMask:
 
 
 def create_job(
-    session: Session, *, input_path: str, rim_path: str, params: Mapping[str, Any]
+    session: Session, *, input_path: str, rim_path: str | None, params: Mapping[str, Any]
 ) -> int:
-    """Nowe zadanie (szkic) ze zdjęciem auta i felgą (ścieżki względne); zwraca jego id."""
+    """Nowe zadanie (szkic) ze zdjęciem auta i opcjonalnie felgą (ścieżki względne); zwraca id.
+
+    Felgę można wybrać później, przed „Generuj” (`editing.choose_rim`)."""
     job = Job(status=JobStatus.DRAFT, params=dict(params))
     job.images.append(Image(role=ImageRole.INPUT, path=input_path))
-    job.images.append(Image(role=ImageRole.RIM, path=rim_path))
+    if rim_path is not None:
+        job.images.append(Image(role=ImageRole.RIM, path=rim_path))
     session.add(job)
     session.flush()
     return job.id

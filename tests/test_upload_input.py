@@ -16,6 +16,7 @@ from helpers import (
     jpeg,
     library_rim,
     upload,
+    upload_photo,
 )
 from photo_files import GPS_IFD, MAKE, display_profile, phone_file, phone_heic, quadrants
 from PIL import Image
@@ -57,12 +58,15 @@ def test_iphone_heic_is_shown_upright_and_gives_png_with_icc_and_without_gps(
     fetch(client, image_src(status, "input"))  # wejście HEIC też ma podgląd po zakończeniu
 
 
-def test_home_page_accepts_heic_by_picker_drop_and_paste(client: TestClient) -> None:
-    page = client.get("/").text
-    assert page.count('accept="image/jpeg,image/png,image/webp,image/heic,image/heif') == 2
-    assert page.count('data-role="drop-zone"') == 2
-    assert "@drop.prevent" in page and "@paste.window" in page
-    assert TEXTS["upload_drop_hint"] in page
+def test_photo_and_rim_fields_accept_heic_by_picker_drop_and_paste(client: TestClient) -> None:
+    accept = 'accept="image/jpeg,image/png,image/webp,image/heic,image/heif'
+    home = client.get("/").text  # zdjęcie auta
+    assert home.count(accept) == 1 and home.count('data-role="drop-zone"') == 1
+    assert "@drop.prevent" in home and "@paste.window" in home
+    assert TEXTS["upload_drop_hint"] in home
+    job = client.get(f"/jobs/{upload_photo(client)}").text  # nowa felga przed „Generuj”
+    assert job.count(accept) == 1 and job.count('data-role="drop-zone"') == 1
+    assert "@paste.window" in job and "rim-paste" in job
 
 
 def _post(client: TestClient, field: str, name: str, data: bytes) -> str:

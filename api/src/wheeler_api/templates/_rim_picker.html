@@ -1,5 +1,6 @@
-{#- Biblioteka felg (fragment HTMX, `rim_routes.py`). `mode`: select (strona główna: radio
-    `rim_id` należy do formularza `#job-form`) albo manage (strona biblioteki: usuwanie).
+{#- Biblioteka felg (fragment HTMX, `rim_routes.py`). `mode`: select (strona zadania przed
+    „Generuj”: radio `rim_id` należy do formularza `#job-form`) albo manage (strona
+    biblioteki: usuwanie).
     Każde żądanie z wnętrza fragmentu dziedziczy `hx-vals` (mode) i `hx-include` (zaznaczona
     felga), więc po odświeżeniu wybór zostaje. Odpytywany co sekundę, gdy worker wycina tło. -#}
 <section id="rim-picker" class="flex flex-col gap-5"
@@ -110,7 +111,7 @@
   {% endfor %}
 
   {#- Nowa felga: tło usuwa worker, potem podgląd do akceptacji. Plik można też przeciągnąć
-      albo wkleić (na stronie głównej wklejenie trafia tu, gdy zdjęcie auta jest już wybrane). -#}
+      albo wkleić (na stronie zadania wklejenie przychodzi zdarzeniem `rim-paste`). -#}
   <form hx-post="/rims" hx-encoding="multipart/form-data" class="flex flex-col gap-2"
         x-data="{
           file: '', over: false,

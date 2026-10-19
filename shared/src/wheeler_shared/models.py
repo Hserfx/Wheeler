@@ -3,10 +3,10 @@
 Zadanie (`Job`) to jedna edycja jednego zdjęcia, widoczna w Historii. Przechodzi przez kroki,
 z których część wykonuje worker (`TaskKind`), a część użytkownik (status `draft`):
 
-    wgranie --> queued/running (detect) --> draft (maski wykrytych kół jako nakładki)
+    wgranie zdjęcia auta --> queued/running (detect) --> draft (maski wykrytych kół jako nakładki)
     draft --klik obok masek--> queued/running (segment) --> draft (nowe koło dodane)
     draft --klik w maskę--> draft (koło usunięte, bez workera)
-    draft --„Generuj”----> queued/running (generate) --> done | failed | cancelled
+    draft --felga + „Generuj”--> queued/running (generate) --> done | failed | cancelled
     done --„Ponów to koło”--> queued/running (regenerate_wheel) --> done (błąd/anulowanie
         też wracają do done z poprzednim wynikiem)
 

@@ -28,6 +28,7 @@ from helpers import (
     noise_photo,
     rim_processor,
     upload,
+    upload_photo,
 )
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
@@ -82,7 +83,7 @@ def _library_ids(html: str) -> list[int]:
     return [int(m) for m in re.findall(r'data-library-rim-id="(\d+)"', html)]
 
 
-def test_accepted_rim_joins_library_and_is_selected_on_home_page(
+def test_accepted_rim_joins_library_and_is_selected_on_job_page(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
     _post_rim(client, noise_photo(100, 80), name="BBS CH-R")
@@ -95,10 +96,10 @@ def test_accepted_rim_joins_library_and_is_selected_on_home_page(
     assert re.search(rf'name="rim_id" value="{rim_id}"[^>]*checked', accepted.text)
     assert "data-rim-id" not in accepted.text  # podgląd zniknął
 
-    home = client.get("/").text
-    assert _library_ids(home) == [rim_id]
-    assert "BBS CH-R" in home
-    assert 'form="job-form"' in home and 'id="job-form"' in home
+    page = client.get(f"/jobs/{upload_photo(client)}").text  # wybór felgi przed „Generuj”
+    assert _library_ids(page) == [rim_id]
+    assert "BBS CH-R" in page
+    assert f'name="rim_id" value="{rim_id}" form="job-form"' in page
 
 
 def test_model_gets_cut_rim_on_plain_background_not_the_original(
@@ -144,7 +145,7 @@ def test_library_is_sorted_by_last_use_and_counts_uses(client: TestClient) -> No
     assert re.search(r'<time datetime="\d{4}-', _library_item(page, first))
     assert TEXTS["rim_used"].format(count=0) in _library_item(page, second)
     assert TEXTS["rim_unnamed"].format(id=third) in _library_item(page, third)
-    assert _library_ids(client.get("/").text) == [first, third, second]
+    assert _library_ids(client.get(f"/jobs/{upload_photo(client)}").text) == [first, third, second]
 
 
 def test_deleting_rim_from_library_keeps_jobs_that_used_it_working(

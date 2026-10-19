@@ -95,7 +95,9 @@
       {% endfor %}
     </div>
     {% if job.masked_wheels %}
-    <form action="/jobs/{{ job.id }}/generate" method="post" class="flex flex-wrap items-center gap-3"
+    {#- `id="job-form"`: radio wyboru felgi (`_rim_picker.html` na stronie zadania) należy do
+        tego formularza przez atrybut `form`, więc „Generuj” wysyła też `rim_id`. -#}
+    <form id="job-form" action="/jobs/{{ job.id }}/generate" method="post" class="flex flex-wrap items-center gap-3"
           x-data="{ sending: false }" @submit="sending = true">
       <button type="submit" :disabled="sending"
               class="rounded-md bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">

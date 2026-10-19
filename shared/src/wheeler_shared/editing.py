@@ -12,8 +12,10 @@ from collections.abc import Callable
 from sqlalchemy.orm import Session, selectinload
 
 from wheeler_shared import edit_params
-from wheeler_shared.models import ImageRole, Job, JobStatus, TaskKind, Wheel, WheelSource
+from wheeler_shared.models import Image, ImageRole, Job, JobStatus, TaskKind, Wheel, WheelSource
 from wheeler_shared.queue import enqueue, mark_cancelled
+from wheeler_shared.rim_library import use_rim
+from wheeler_shared.storage import Storage
 
 
 class EditingError(Exception):
@@ -26,6 +28,10 @@ class JobBusy(EditingError):
 
 class NoWheelSelected(EditingError):
     """Generowanie bez żadnej gotowej maski koła."""
+
+
+class NoRimSelected(EditingError):
+    """Generowanie bez wybranej felgi."""
 
 
 class NotCancellable(EditingError):
@@ -80,14 +86,39 @@ def request_detection(session: Session, job_id: int) -> None:
     enqueue(_lock_draft(session, job_id), TaskKind.DETECT)
 
 
+def can_choose_rim(job: Job) -> bool:
+    """Felgę wybiera się przed „Generuj”: w szkicu albo w trakcie detekcji/maski z kliknięcia."""
+    if job.status == JobStatus.DRAFT:
+        return True
+    return job.status.busy and job.task is not None and not job.task.generates
+
+
+def choose_rim(session: Session, storage: Storage, job_id: int, rim_id: int) -> None:
+    """Wybór felgi z biblioteki dla szkicu: kopia wyciętej felgi w katalogu zadania
+    (`rim_library.use_rim`, `RimNotReady` dla felgi spoza biblioteki) zastępuje poprzednią."""
+    job = _lock_draft(session, job_id)
+    photo = job.image(ImageRole.INPUT)
+    job_dir = storage.job_dir_of(photo.path) if photo is not None else None
+    if job_dir is None:
+        raise RuntimeError(f"Zadanie {job_id} nie ma katalogu z danymi")
+    path = use_rim(session, storage, rim_id, job_dir=job_dir)
+    rim = job.image(ImageRole.RIM)
+    if rim is None:
+        job.images.append(Image(role=ImageRole.RIM, path=path))
+    else:
+        rim.path, rim.width, rim.height = path, None, None
+
+
 def start_generation(session: Session, job_id: int, *, seed: int) -> None:
-    """„Generuj”: zleca podmianę felg we wszystkich kołach z maską.
+    """„Generuj”: zleca podmianę felg we wszystkich kołach z maską (`NoRimSelected` bez felgi).
 
     `seed` (np. losowy) jest zapisywany w parametrach, chyba że zadanie już go ma.
     """
     job = _lock_draft(session, job_id)
     if not job.masked_wheels or len(job.masked_wheels) != len(job.wheels):
         raise NoWheelSelected
+    if job.image(ImageRole.RIM) is None:
+        raise NoRimSelected
     if job.params.get(edit_params.SEED) is None:
         job.params = {**job.params, edit_params.SEED: seed}
     enqueue(job, TaskKind.GENERATE)

@@ -49,10 +49,10 @@ Zadanie (`Job`) przechodzi przez kroki użytkownika (status `draft`) i pracę wo
 (`queued`/`running`, rodzaj pracy w `Job.task`):
 
 ```
-wgranie auta + felgi -> detect (Florence-2 + SAM 2) -> draft z maskami wykrytych kół (nakładki)
+wgranie auta -> detect (Florence-2 + SAM 2) -> draft z maskami wykrytych kół (nakładki)
 draft --klik w maskę---------> draft (koło usunięte od razu, bez workera)
 draft --klik obok masek------> segment (SAM 2) -> draft z dodanym kołem
-draft --„Generuj”------------> generate (mflux, każde koło osobno, ten sam seed i prompt) -> done | failed | cancelled
+draft --felga + „Generuj”----> generate (mflux, każde koło osobno, ten sam seed i prompt) -> done | failed | cancelled
 done --„Ponów to koło”-------> regenerate_wheel (jedno koło, nowy seed) -> done (błąd/anulowanie: poprzedni wynik)
 ```
 
@@ -103,11 +103,11 @@ done --„Ponów to koło”-------> regenerate_wheel (jedno koło, nowy seed) -
   `Job.cancel_requested`; ustawiona flaga przerywa pracę wyjątkiem `JobCancelled` (najpóźniej po
   bieżącym kroku), a zadanie dostaje status `cancelled`. Zadanie w kolejce jest anulowane od razu.
 - Awaria lub restart workera: przy starcie worker oznacza zadania `running` jako `failed`
-  (`recover_interrupted_jobs`; detekcja i segmentacja wracają do szkicu), bez automatycznych ponowień. Zakłada
+  (`recover_interrupted_jobs`; detekcja i segmentacja wracają do szkicu, wycinane felgi dostają `failed`), bez automatycznych ponowień. Zakłada
   jeden proces workera. „Ponów” (`wheeler_shared/retry.py`) tworzy nowe zadanie z kopiami plików,
   tymi samymi kołami i parametrami (z seedem) i od razu wstawia je do kolejki.
 - Biblioteka felg (`wheeler_shared/rim_library.py`, UI: fragment `_rim_picker.html` na stronie
-  głównej i na `/rims`, trasy w `wheeler_api/rim_routes.py`). Felga (`Rim`) ma własną kolejkę
+  zadania (przed „Generuj”) i na `/rims`, trasy w `wheeler_api/rim_routes.py`). Felga (`Rim`) ma własną kolejkę
   w tabeli `rims`, obsługiwaną przez worker przed zadaniami (`runner._cut_next_rim`,
   `Processor.cut_rim`):
 
@@ -123,8 +123,11 @@ done --„Ponów to koło”-------> regenerate_wheel (jedno koło, nowy seed) -
   tego pod kliknięciem; boxy obejmujące inne koło są pomijane). Bez kadru BiRefNet zostawia
   karoserię, gdy felga jest sfotografowana na aucie. Bez wykrytego koła: BiRefNet na całym zdjęciu
   albo SAM 2 z kliknięcia. Wynik: RGBA PNG przycięty do felgi (`rim_cut.cut_out`, maks. 1536 px).
-  Model dostaje felgę na białym tle (`rim_cut.load_reference`). Wybór felgi w formularzu zadania
-  (`POST /jobs`, pole `rim_id`) liczy użycie (`use_count`, `last_used_at`); biblioteka jest
+  Model dostaje felgę na białym tle (`rim_cut.load_reference`). Felgę wybiera się na stronie zadania
+  przed „Generuj” (krok 3: fragment `_rim_picker.html` poza odpytywanym `#job-status`, radio
+  `rim_id` należy do formularza „Generuj” `#job-form`; `editing.choose_rim` kopiuje ją do zadania,
+  `start_generation` bez felgi rzuca `NoRimSelected`). `POST /jobs` przyjmuje opcjonalnie `rim_id`.
+  Wybór liczy użycie (`use_count`, `last_used_at`); biblioteka jest
   sortowana od ostatnio użytej (nowa, nieużyta felga liczy się od chwili dodania).
   Wagi BiRefNet (~0,9 GB, kod modelu z repozytorium HF, przypięta rewizja):
   `uv run hf download ZhengPeng7/BiRefNet --revision e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4`.

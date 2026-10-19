@@ -18,8 +18,6 @@ from helpers import (
     fetch,
     generate,
     image_src,
-    jpeg,
-    library_rim,
     noise_photo,
     upload,
 )
@@ -32,15 +30,15 @@ from wheeler_worker.runner import run_once
 from wheeler_worker.wheel_swap import WheelSwapProcessor
 
 
-def test_home_page_asks_for_car_photo_and_rim(client: TestClient) -> None:
+def test_home_page_asks_for_car_photo_only(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert '<html lang="pl"' in response.text
     assert TEXTS["upload_heading"] in response.text
     assert 'enctype="multipart/form-data"' in response.text
     assert 'name="photo"' in response.text
-    # Felga: wybór z biblioteki albo dodanie nowej (z usunięciem tła).
-    assert 'id="rim-picker"' in response.text and 'hx-post="/rims"' in response.text
+    # Felgę wybiera się w kroku 3, po detekcji kół (DESIGN.md, „Strona główna”).
+    assert 'id="rim-picker"' not in response.text
 
 
 def test_click_shows_mask_overlay_and_generation_changes_only_pixels_inside_it(
@@ -165,23 +163,10 @@ def test_failure_in_generation_marks_job_failed_with_error_on_page(
     assert "hx-trigger" not in status
 
 
-def test_upload_without_photo_shows_error_and_keeps_chosen_rim(client: TestClient) -> None:
-    rim_id = library_rim(client)
-    response = client.post(
-        "/jobs",
-        files={"photo": ("", b"", "application/octet-stream")},
-        data={"rim_id": str(rim_id)},
-    )
+def test_upload_without_photo_shows_error(client: TestClient) -> None:
+    response = client.post("/jobs", files={"photo": ("", b"", "application/octet-stream")})
     assert response.status_code == 400
     assert TEXTS["error_no_photo"] in response.text
-    assert re.search(rf'name="rim_id" value="{rim_id}"[^>]*checked', response.text)
-
-
-def test_upload_without_rim_from_library_shows_error(client: TestClient) -> None:
-    library_rim(client)
-    response = client.post("/jobs", files={"photo": ("auto.jpg", jpeg(), "image/jpeg")})
-    assert response.status_code == 400
-    assert TEXTS["error_no_rim"] in response.text
 
 
 def test_unknown_job_returns_404(client: TestClient) -> None:

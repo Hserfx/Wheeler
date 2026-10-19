@@ -40,14 +40,13 @@ TEXTS: Final[dict[str, str]] = {
     "delete_done": "Usunięto zadania: {count}.",
     "delete_skipped": "Pominięto zadania w trakcie przetwarzania: {count}.",
     # Strona główna
-    "upload_heading": "Wgraj zdjęcie samochodu i wybierz felgę",
+    "upload_heading": "Wgraj zdjęcie samochodu",
     "upload_hint": (
-        "Pliki JPEG, PNG, WebP lub HEIC, do 50 MB i 40 MPx. Koło do podmiany wskażesz "
-        "w następnym kroku."
+        "Pliki JPEG, PNG, WebP lub HEIC, do 50 MB i 40 MPx. Koła wykryjemy automatycznie, "
+        "a felgę wybierzesz w następnym kroku."
     ),
     "upload_drop_hint": "Przeciągnij plik tutaj albo wklej go ze schowka (Ctrl+V / ⌘V).",
     "upload_photo_label": "Zdjęcie samochodu",
-    "upload_rim_label": "Felga",
     "upload_choose": "Wybierz plik",
     "upload_no_file_chosen": "Nie wybrano pliku",
     "upload_submit": "Dalej",
@@ -117,6 +116,11 @@ TEXTS: Final[dict[str, str]] = {
     "generate_submit": "Generuj",
     "generate_hint": "Generowanie trwa około 2 minut na każde koło.",
     "job_rim": "Felga",
+    "rim_choose_heading": "Felga",
+    "rim_choose_hint": (
+        "Wybierz felgę z biblioteki albo dodaj nową (sprawdzisz ją przed dodaniem). "
+        "Felgę trzeba wybrać przed „Generuj”; możesz to zrobić już w trakcie wykrywania kół."
+    ),
     # Zadanie
     "job_heading": "Zadanie nr {id}",
     "job_input": "Zdjęcie wejściowe",

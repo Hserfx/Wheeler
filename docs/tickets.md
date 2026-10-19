@@ -7,7 +7,8 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
     ├─► 03 ─┬─► 04 ─► 07
 02 ─┘       ├─► 05, 06, 09, 10, 11
 02 ─────────┴─► 08
-06, 07, 09 ─► 12 ─► 13
+06, 07, 09 ─► 12 ─► 13 ─┬─► 14 ─┐
+                        └─► 15 ─┴─► 16 ─► 17
 ```
 
 ---
@@ -480,3 +481,86 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
   sylwetki, co obejmuje sprawdzenie bit w bit, źródła czasów i pamięci (`out/timing.json`), Vios.
 - 2026-10-19 (użytkownik): wygląd, werdykt i rekomendacja z `VERDICT.md` zatwierdzone (powiększanie
   całego koła, wartości ujemne bez korekty, proponowany podział ticketu implementacyjnego).
+
+---
+
+# 14: Pole „Obecna felga”
+
+**What to build:** W sekcji rozmiaru felgi na stronie zadania, obok wyboru stopnia `−2″ … +2″`, wybieram obecny rozmiar felgi auta (14″–22″ co 1″, domyślnie 17″). Wartość jest zapisywana w zadaniu i od ticketu 16 wyznacza skalę cala przy zmianie rozmiaru (1″ = średnica felgi w px / (obecna felga + 1,4″), zob. ticket 13). Ten ticket dodaje samo pole, a zachowanie generowania się nie zmienia.
+
+**Blocked by:** 13
+
+**Status:** ready-for-agent
+
+- [ ] Pole „Obecna felga” w sekcji felgi, w formularzu „Generuj” (`#job-form`), jak wybór `rim_size`; domyślnie 17″. `POST /jobs` przy wgraniu go nie przyjmuje
+- [ ] Nowy klucz w `Job.params` (`wheeler_shared/edit_params.py`, pole w `EditParams`), walidacja 14–22 po stronie serwera jak `rim_size` (`advanced.parse_…` → `InvalidParam` → czytelny komunikat); brak klucza oznacza 17″
+- [ ] Jedno ustawienie na całe zadanie: „Ponów” i „Ponów to koło” dostają tę samą wartość
+- [ ] Ekran wyniku pokazuje obecną felgę obok „Felga: +2″”, tylko gdy stopień ≠ „bez zmian”; szczegóły zadania w historii przez `PARAM_LABELS`
+- [ ] Teksty po polsku w `texts.py`; testy jak w `tests/test_rim_size.py` (walidacja, zapis, retry)
+
+**Comments:**
+
+- 2026-10-19: z rekomendacji w `VERDICT.md` (gałąź `prototype/whole-wheel-resize`, `worker/prototype_whole_wheel/` (`VERDICT.md`, `whole_wheel.py`, `test_whole_wheel.py`, `run.py`)), zatwierdzonej przez użytkownika (ticket 13). Stała `DEFAULT_CURRENT_RIM` = 17 jest dziś w prototypie (`whole_wheel.py`); jej miejsce to `edit_params.py`.
+
+---
+
+# 15: Maska karoserii przed zmianą rozmiaru
+
+**What to build:** Przy stopniu ≠ „bez zmian” worker, zaraz po pomiarze felgi i przed załadowaniem mflux, wyznacza dla każdego koła maskę karoserii, która zasłania koło (błotnik, nakładka nadkola). Zła maska albo obce zasłonięcie koła kończy zadanie błędem `rim_size_unavailable`, tym samym co brak felgi. Maska trafia do diagnostyki koła; warp się jeszcze nie zmienia (ticket 16 jej użyje).
+
+**Blocked by:** 13
+
+**Status:** ready-for-agent
+
+- [ ] `Segmenter.segment_body` (publiczna metoda protokołu; adapter SAM 2.1 i atrapy `placeholder`/testowe), prompt jak w prototypie: punkty dodatnie nad oponą (`body_prompt`, `up_angle`), ujemne w środku felgi i na oponie oraz ujemne w szczelinie nadkola (`arch_gap_points`), multimask w dwóch wariantach; maska wnętrza nadkola z SAM
+- [ ] Kolejność z `VERDICT.md`: (a) kryteria `BodyMaskStats.problem` na **surowych** kandydatach SAM (pusta, > 5% koła, > 85% wycinka poza kołem, < 25% strefy błotnika) i wybór `choose_body`; brak dobrego kandydata → `rim_size_unavailable`, bez brania najlepszego ze złych; (b) potem odjęcie wnętrza nadkola i `clean_body_mask`; (c) `foreign_occlusion` > 5% na masce po czyszczeniu → `rim_size_unavailable`
+- [ ] Wspólny marsz promieni `rim_geometry.wheel_rays` (refaktor `_tire_ratio` z gałęzi prototypu, commit `2eeffbd`, bez zmiany zachowania): promienie wychodzące poza zdjęcie są odrzucane, nie przycinane
+- [ ] Liczone razem z felgą w `_measure_rims` (wycinek z oryginału, także przy „Ponów to koło”); SAM zwalniany przed mflux jak dziś; przy „bez zmian” brak pomiaru (czas jak dotąd)
+- [ ] Diagnostyka w katalogu koła (np. `body.png` i nakładka na `rim_ellipse.png`); bez zmian w bazie i w UI
+- [ ] Testy na syntetycznych kołach (przeniesione z `test_whole_wheel.py`) i na atrapach przez workera: dobra maska przechodzi, każde kryterium złej maski i obce zasłonięcie dają `rim_size_unavailable`, SAM zwalniany przed pierwszym krokiem mflux
+
+**Comments:**
+
+- 2026-10-19: z rekomendacji w `VERDICT.md` (gałąź `prototype/whole-wheel-resize`, `worker/prototype_whole_wheel/` (`VERDICT.md`, `whole_wheel.py`, `test_whole_wheel.py`, `run.py`)). Na zestawie z prototypu kryteria przepuszczają wszystkie wybrane maski (surowe: strefa błotnika 56–98%, koło ≤ 1,9%, wycinek 3–50%), a obce zasłonięcie zatrzymuje Vios koło 1 (zderzak drugiego auta, 30%). Pierwsze podejście bez punktów w szczelinie nadkola (`out/v1/`) wciągało nadkole do karoserii.
+
+---
+
+# 16: Zmiana rozmiaru całego koła
+
+**What to build:** Stopień `−2″ … +2″` zmienia całe koło, nie tylko felgę: felga i zewnętrzna średnica koła rosną (albo maleją) o N cali według skali z „Obecnej felgi”, bok opony zostaje tej samej grubości, a najniższy punkt opony (styk z ziemią) stoi w miejscu. Powiększone koło wchodzi w nadkole i chowa się za karoserią, która zostaje bit w bit. Ten warp zastępuje warp felgi z ticketu 12.
+
+**Blocked by:** 14, 15
+
+**Status:** ready-for-agent
+
+- [ ] `resized_geometry` + `plan_resize` z prototypu w workerze zamiast `warp_rim`: skala cala z obecnej felgi (`inch_px`, dłuższa oś elipsy felgi / (obecna + 1,4″)), jednokładność wokół `lowest_point`, odwzorowanie felga/bok opony jak w `VERDICT.md`
+- [ ] Maska edycji = (stare koło ∪ nowe koło) poszerzone o `mask_grow`, minus karoseria z ticketu 15; wycinek dla modelu wokół maski edycji; kompozycja przez maskę edycji zamiast zapisanej maski koła
+- [ ] Piksele karoserii i wszystko poza maską edycji bit w bit z oryginałem (test na atrapach); przy „Ponów to koło” wycinek i pomiar z oryginału, składanie na bieżącym wyniku
+- [ ] Przy „bez zmian” ścieżka bez zmian (maska koła + `mask_grow`, bez pomiaru, bez karoserii)
+- [ ] Prompt ten sam dla każdego stopnia (`build_prompt`)
+- [ ] Diagnostyka jak dziś: `rim_ellipse.png` (elipsa felgi, nowa elipsa opony, karoseria) i `warped.png`
+- [ ] Usunięty warp felgi z ticketu 12 (`warp_rim` i jego testy) tam, gdzie go zastępuje nowy kod
+- [ ] `docs/DESIGN.md` opisuje rozmiar całego koła zamiast plus-sizingu ze stałą średnicą koła; README zaktualizowane
+- [ ] Testy na atrapach (geometria, punkt styku, bit w bit, przekazanie wycinka do edytora przez workera, także „Ponów to koło”) oraz jedno uruchomienie na prawdziwym modelu (Golf, +2″, obecna felga 17″) porównane z liczbami z `VERDICT.md` (felga ~19″, sylwetka koła ~+1,75–2″, styk ≤ 1 px)
+
+**Comments:**
+
+- 2026-10-19: z rekomendacji w `VERDICT.md` (gałąź `prototype/whole-wheel-resize`, `worker/prototype_whole_wheel/` (`VERDICT.md`, `whole_wheel.py`, `test_whole_wheel.py`, `run.py`)). Przy wartościach ujemnych ten ticket robi samą geometrię; wstępne wypełnienie odsłoniętego nadkola dochodzi w tickecie 17. Felga w ujęciu 3/4 wychodzi mniejsza już w kontroli „bez zmian” (zachowanie modelu, nie warpu) — poza zakresem.
+
+---
+
+# 17: Zmniejszanie koła — wypełnienie odsłoniętego nadkola
+
+**What to build:** Przy „−1″” i „−2″” odsłonięty obszar (stare koło minus nowe) jest w wycinku dla modelu wstępnie wypełniony przyciemnionym kolorem z okolicy nadkola z rozmytą krawędzią, a model domalowuje wnętrze nadkola w obrębie maski edycji. Wartości ujemne zostają bez korekty niedostrzału (prototyp: −2″ → −1,75″).
+
+**Blocked by:** 16
+
+**Status:** ready-for-agent
+
+- [ ] Wypełnienie jak `_prefill` w prototypie: mediana koloru pasa nad górną połową starego koła × 0,5, krawędź rozmyta (σ = 2% boku koła)
+- [ ] Test: odsłonięty obszar leży w masce edycji i nie zawiera pikseli starej opony; poza maską edycji bit w bit
+- [ ] Bez korekty niedostrzału dla wartości ujemnych (decyzja z ticketu 13)
+
+**Comments:**
+
+- 2026-10-19: z rekomendacji w `VERDICT.md` (gałąź `prototype/whole-wheel-resize`, `worker/prototype_whole_wheel/` (`VERDICT.md`, `whole_wheel.py`, `test_whole_wheel.py`, `run.py`)). Wygląd wnętrza nadkola przy −1″/−2″ zatwierdzony przez użytkownika na arkuszach prototypu.

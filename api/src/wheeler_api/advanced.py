@@ -48,7 +48,18 @@ def display_value(key: str, value: object) -> str | None:
         return f"{percent(value)}%"
     if key == edit_params.PROMPT_SUFFIX and value == "":
         return TEXTS["param_empty"]
+    if key == edit_params.RIM_SIZE and isinstance(value, int):
+        return rim_size_text(value)
     return None
+
+
+def rim_size_text(rim_size: int) -> str:
+    """Stopień rozmiaru felgi w UI: „+2″”, „bez zmian”, ujemne z minusem typograficznym."""
+    if rim_size == 0:
+        return TEXTS["rim_size_unchanged"]
+    return TEXTS["rim_size_inches"].format(
+        sign="+" if rim_size > 0 else "\N{MINUS SIGN}", inches=abs(rim_size)
+    )
 
 
 def default_values() -> dict[str, str]:

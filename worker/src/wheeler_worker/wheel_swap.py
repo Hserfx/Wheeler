@@ -53,6 +53,19 @@ PROMPT_TEMPLATE = (
     "the shadows and the camera angle of image 1 unchanged. The new rim must follow the "
     "perspective of the wheel in image 1 and fill the tire opening exactly. Photorealistic."
 )
+# Rozmiar felgi ≠ „bez zmian” (ticket 12): bez „Keep the tire” i „fill the tire opening
+# exactly”, bo felga ma urosnąć albo zmaleć kosztem boku opony przy tej samej średnicy koła.
+# Cale są przybliżone (obecnego rozmiaru felgi nie znamy): 1″ ≈ 4% średnicy całego koła.
+PLUS_SIZING_TEMPLATE = (
+    "Replace the rim of the car wheel in image 1 with the alloy rim design shown in image 2. "
+    "Keep the car body, the wheel arch, the brake caliper position, the lighting, "
+    "the shadows and the camera angle of image 1 unchanged. Make the new rim about "
+    "{inches} {direction} in diameter than the current rim (about {percent}% of the overall "
+    "wheel diameter), with a correspondingly {sidewall} tire sidewall. Keep the overall outer "
+    "diameter of the wheel (tire included) exactly as in image 1. The new rim must follow the "
+    "perspective of the wheel in image 1. Photorealistic."
+)
+RIM_SIZE_PERCENT_PER_INCH = 4
 CROP_MARGIN = 0.25  # margines wycinka: ułamek boku koła z każdej strony
 FEATHER = 0.015  # pas wygładzania krawędzi (do wewnątrz maski): ułamek boku koła
 OVERLAY_RGBA = (37, 99, 235, 110)  # półprzezroczysty niebieski
@@ -189,7 +202,7 @@ class WheelSwapProcessor:
             editor=self.editor,
             # Felga z biblioteki ma przezroczyste tło: model widzi ją na jednolitym tle.
             rim=load_reference(rim_path),
-            prompt=build_prompt(params.prompt_suffix),
+            prompt=build_prompt(params.prompt_suffix, rim_size=params.rim_size),
             seed=seed,
             resolution=params.resolution,
         )
@@ -269,9 +282,19 @@ def _next_result_path(output_dir: Path) -> Path:
     return output_dir / f"result-{number}.png"
 
 
-def build_prompt(suffix: str = "") -> str:
+def build_prompt(suffix: str = "", *, rim_size: int = 0) -> str:
+    """Prompt edycji: szablon (przy `rim_size` ≠ 0 plus-sizing o tyle cali) i dopisek."""
+    template = PROMPT_TEMPLATE
+    if rim_size:
+        inches = abs(rim_size)
+        template = PLUS_SIZING_TEMPLATE.format(
+            inches=f"{inches} inch" if inches == 1 else f"{inches} inches",
+            direction="larger" if rim_size > 0 else "smaller",
+            percent=inches * RIM_SIZE_PERCENT_PER_INCH,
+            sidewall="thinner" if rim_size > 0 else "thicker",
+        )
     suffix = suffix.strip()
-    return f"{PROMPT_TEMPLATE} {suffix}" if suffix else PROMPT_TEMPLATE
+    return f"{template} {suffix}" if suffix else template
 
 
 def _overlay(mask: Image.Image) -> Image.Image:

@@ -59,5 +59,8 @@
       </form>
     </li>
     {% endfor %}
+    {%- if job_rim_size %}
+    <li class="text-xs text-slate-500" data-role="result-rim-size">{{ t.result_rim_size.format(size=job_rim_size | rim_size_text) }}</li>
+    {%- endif %}
   </ul>
 </div>

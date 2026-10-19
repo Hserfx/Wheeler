@@ -101,12 +101,14 @@ TEXTS: Final[dict[str, str]] = {
     "job_param_resolution": "Rozdzielczość robocza",
     "job_param_mask_grow": "Poszerzenie maski",
     "job_param_prompt_suffix": "Dopisek do promptu",
+    "job_param_rim_size": "Rozmiar felgi",
     "error_param_seed": "Seed musi być liczbą całkowitą od 0 do {seed_max} albo pustym polem.",
     "error_param_resolution": (
         "Rozdzielczość robocza musi być wielokrotnością {step} px, od {min} do {max} px."
     ),
     "error_param_mask_grow": "Poszerzenie maski musi być liczbą od {grow_min} do {grow_max}%.",
     "error_param_prompt_suffix": "Dopisek do promptu może mieć najwyżej {length} znaków.",
+    "error_param_rim_size": "Rozmiar felgi musi być stopniem od {min} do +{max} cali.",
     # Wybór koła i generowanie
     "wheel_click_hint": "Kliknij koło, w którym chcesz podmienić felgę.",
     "wheel_mask_hint": (
@@ -121,6 +123,15 @@ TEXTS: Final[dict[str, str]] = {
     "generate_hint": "Generowanie trwa około 2 minut na każde koło.",
     "job_rim": "Felga",
     "rim_choose_heading": "Felga",
+    # Rozmiar felgi (plus-sizing, ticket 12)
+    "rim_size_heading": "Rozmiar felgi",
+    "rim_size_hint": (
+        "Średnica nowej felgi względem obecnej. Zewnętrzna średnica koła zostaje: większa "
+        "felga oznacza niższy profil opony, mniejsza wyższy. Cale są przybliżone."
+    ),
+    "rim_size_unchanged": "bez zmian",
+    "rim_size_inches": "{sign}{inches}″",
+    "result_rim_size": "Felga: {size}",
     "rim_choose_hint": (
         "Wybierz felgę z biblioteki albo dodaj nową (sprawdzisz ją przed dodaniem). "
         "Felgę trzeba wybrać przed „Generuj”; możesz to zrobić już w trakcie wykrywania kół."
@@ -235,6 +246,7 @@ PARAM_LABELS: Final[dict[str, str]] = {
         edit_params.RESOLUTION,
         edit_params.MASK_GROW,
         edit_params.PROMPT_SUFFIX,
+        edit_params.RIM_SIZE,
     )
 }
 

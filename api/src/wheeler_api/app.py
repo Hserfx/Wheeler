@@ -60,6 +60,7 @@ def create_templates() -> Jinja2Templates:
     templates.env.globals["model_state_labels"] = MODEL_STATE_LABELS
     templates.env.globals["model_loading_for"] = model_state.model_loading_for
     templates.env.filters["param_value"] = param_value
+    templates.env.filters["rim_size_text"] = advanced.rim_size_text
     templates.env.tests["deletable"] = is_deletable
     return templates
 

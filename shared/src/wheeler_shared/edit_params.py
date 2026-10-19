@@ -15,6 +15,7 @@ SEED = "seed"
 RESOLUTION = "resolution"
 MASK_GROW = "mask_grow"
 PROMPT_SUFFIX = "prompt_suffix"
+RIM_SIZE = "rim_size"
 
 # Dozwolone zakresy (sekcja „Zaawansowane”, ticket 09; wyniki spike'a 01).
 SEED_MAX = 2**31 - 1
@@ -31,6 +32,9 @@ RESOLUTION_MAX = 1152
 MASK_GROW_MIN = 0.0
 MASK_GROW_MAX = 0.10
 PROMPT_SUFFIX_MAX_LENGTH = 300
+# Rozmiar felgi względem obecnej w calach (plus-sizing, ticket 12), wybierany przed „Generuj”.
+RIM_SIZE_MIN = -2
+RIM_SIZE_MAX = 2
 
 
 @dataclass(frozen=True)
@@ -42,6 +46,9 @@ class EditParams:
     mask_grow: float = 0.03
     # Dopisek użytkownika doklejany na końcu szablonu promptu.
     prompt_suffix: str = ""
+    # Średnica nowej felgi względem obecnej w calach (0 = bez zmian); zewnętrzna średnica koła
+    # zostaje, więc zmienia się profil opony.
+    rim_size: int = 0
 
     @classmethod
     def from_params(cls, params: Mapping[str, Any]) -> EditParams:
@@ -52,4 +59,13 @@ class EditParams:
             resolution=int(params.get(RESOLUTION, defaults.resolution)),
             mask_grow=float(params.get(MASK_GROW, defaults.mask_grow)),
             prompt_suffix=str(params.get(PROMPT_SUFFIX, defaults.prompt_suffix)),
+            rim_size=int(params.get(RIM_SIZE, defaults.rim_size)),
         )
+
+
+def parse_rim_size(text: str) -> int:
+    """Stopień rozmiaru felgi z formularza („-2”…„2”, „+1”); spoza zakresu: `ValueError`."""
+    rim_size = int(text.strip())
+    if not RIM_SIZE_MIN <= rim_size <= RIM_SIZE_MAX:
+        raise ValueError(text)
+    return rim_size

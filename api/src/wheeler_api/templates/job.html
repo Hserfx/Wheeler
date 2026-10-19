@@ -26,6 +26,20 @@
   <h2 class="font-semibold">{{ t.rim_choose_heading }}</h2>
   <p class="text-sm text-slate-500">{{ t.rim_choose_hint }}</p>
   {% include "_rim_picker.html" %}
+  {#- Rozmiar felgi (plus-sizing): radio należy do formularza „Generuj” (`#job-form`), jedno
+      ustawienie na całe zadanie. -#}
+  <fieldset class="mt-4 flex flex-col gap-2" data-role="rim-size">
+    <legend class="text-sm font-medium">{{ t.rim_size_heading }}</legend>
+    <p class="text-xs text-slate-500">{{ t.rim_size_hint }}</p>
+    <div class="flex flex-wrap gap-2">
+      {% for size in rim_sizes %}
+      <label class="cursor-pointer rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 has-[:checked]:border-slate-900 has-[:checked]:bg-slate-900 has-[:checked]:text-white">
+        <input type="radio" name="rim_size" value="{{ size }}" form="job-form" class="sr-only"{% if size == rim_size %} checked{% endif %}>
+        <span>{{ size | rim_size_text }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </fieldset>
 </section>
 {% endif %}
 

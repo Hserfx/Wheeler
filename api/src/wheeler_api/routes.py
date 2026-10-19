@@ -21,6 +21,7 @@ from wheeler_api.uploads import UploadRejected, save_image_upload
 from wheeler_api.wheel_masks import mask_contains
 from wheeler_shared import edit_params
 from wheeler_shared.db import get_or_raise
+from wheeler_shared.edit_params import EditParams
 from wheeler_shared.editing import (
     EditingError,
     JobBusy,
@@ -180,19 +181,31 @@ def generate(
     storage: StorageDep,
     templates: TemplatesDep,
     rim_id: Annotated[int | None, Form()] = None,
+    rim_size: Annotated[str | None, Form()] = None,
 ) -> Response:
-    """„Generuj” z felgą wybraną na stronie zadania (`rim_id`) albo już przypisaną."""
+    """„Generuj” z felgą wybraną na stronie zadania (`rim_id`) albo już przypisaną i rozmiarem
+    felgi (`rim_size`, stopień -2…+2; bez pola zostaje zapisany albo „bez zmian”)."""
+    try:
+        size = None if rim_size is None else edit_params.parse_rim_size(rim_size)
+    except ValueError:
+        job = _load_job(session, job_id)
+        message = TEXTS["error_param_rim_size"].format(
+            min=edit_params.RIM_SIZE_MIN, max=edit_params.RIM_SIZE_MAX
+        )
+        return _job_page(request, session, templates, job, message, 400)
     try:
         with session.begin():
             if rim_id is not None:
                 choose_rim(session, storage, job_id, rim_id)
-            start_generation(session, job_id, seed=_random_seed())
+            start_generation(session, job_id, seed=_random_seed(), rim_size=size)
     except LookupError:
         raise HTTPException(status_code=404) from None
     except (NoRimSelected, RimNotReady):
         # Strona zadania z komunikatem: wybór felgi i kół zostaje na miejscu.
         job = _load_job(session, job_id)
-        return _job_page(request, session, templates, job, TEXTS["error_no_rim"], 409)
+        return _job_page(
+            request, session, templates, job, TEXTS["error_no_rim"], 409, rim_size=size
+        )
     except EditingError as exc:
         message = TEXTS["error_no_wheel" if isinstance(exc, NoWheelSelected) else "error_job_busy"]
         return templates.TemplateResponse(
@@ -283,6 +296,8 @@ def _job_context(job: Job) -> dict[str, object]:
         "input_image": job.image(ImageRole.INPUT),
         "result_image": job.image(ImageRole.RESULT),
         "wheel_seed": wheel_seed,
+        # Rozmiar felgi zadania (ekran wyniku; jeden dla wszystkich kół i ponowień).
+        "job_rim_size": EditParams.from_params(job.params).rim_size,
     }
 
 
@@ -300,11 +315,18 @@ def _job_page(
     job: Job,
     error: str | None = None,
     status_code: int = 200,
+    *,
+    rim_size: int | None = None,
 ) -> Response:
-    """Strona zadania; przed „Generuj” z wyborem felgi (krok 3, `editing.can_choose_rim`)."""
+    """Strona zadania; przed „Generuj” z wyborem felgi i jej rozmiaru (krok 3,
+    `editing.can_choose_rim`). `rim_size`: wybór z odrzuconego „Generuj” (inaczej zapisany)."""
     context = _job_context(job)
     if can_choose_rim(job):
         context.update(picker_context(session, mode="select"))
+        context["rim_sizes"] = range(edit_params.RIM_SIZE_MIN, edit_params.RIM_SIZE_MAX + 1)
+        context["rim_size"] = (
+            rim_size if rim_size is not None else EditParams.from_params(job.params).rim_size
+        )
     context["page_error"] = error
     return templates.TemplateResponse(request, "job.html", context, status_code=status_code)
 

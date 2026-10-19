@@ -13,7 +13,16 @@ from sqlalchemy.orm import Session, selectinload
 
 from wheeler_shared import edit_params
 from wheeler_shared.db import get_or_raise
-from wheeler_shared.models import Image, ImageRole, Job, JobStatus, TaskKind, Wheel, WheelSource
+from wheeler_shared.models import (
+    Image,
+    ImageRole,
+    Job,
+    JobStatus,
+    Point,
+    TaskKind,
+    Wheel,
+    WheelSource,
+)
 from wheeler_shared.queue import enqueue, mark_cancelled
 from wheeler_shared.rim_library import use_rim
 from wheeler_shared.storage import Storage
@@ -39,7 +48,6 @@ class NotCancellable(EditingError):
     """Anulować można tylko generowanie (albo ponowienie koła) w kolejce lub w trakcie."""
 
 
-Point = tuple[float, float]
 # Czy maska (ścieżka względna pliku L 0/255) obejmuje punkt? Odczyt pliku robi wywołujący (API).
 MaskContains = Callable[[str, Point], bool]
 
@@ -66,9 +74,9 @@ def click_photo(
         job.wheels.remove(hit)
         job.error = None
         return
-    job.wheels.append(
-        Wheel(source=WheelSource.CLICK, click_x=float(point[0]), click_y=float(point[1]))
-    )
+    wheel = Wheel(source=WheelSource.CLICK)
+    wheel.click = point
+    job.wheels.append(wheel)
     enqueue(job, TaskKind.SEGMENT)
 
 

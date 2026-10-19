@@ -86,6 +86,13 @@ class ImageRole(enum.StrEnum):
     RESULT = "result"
 
 
+Point = tuple[float, float]  # x, y w pikselach zdjęcia (po obrocie EXIF)
+
+
+def _point(x: float | None, y: float | None) -> Point | None:
+    return None if x is None or y is None else (x, y)
+
+
 def _str_enum(enum_cls: type[enum.StrEnum], name: str) -> Enum:
     # Enum nienatywny (VARCHAR bez CHECK): nowe wartości nie wymagają migracji.
     return Enum(
@@ -180,6 +187,14 @@ class Wheel(Base):
     job: Mapped[Job] = relationship(back_populates="wheels")
 
     @property
+    def click(self) -> Point | None:
+        return _point(self.click_x, self.click_y)
+
+    @click.setter
+    def click(self, value: Point | None) -> None:
+        self.click_x, self.click_y = (float(value[0]), float(value[1])) if value else (None, None)
+
+    @property
     def box(self) -> tuple[int, int, int, int] | None:
         if self.box_left is None or self.box_top is None:
             return None
@@ -230,3 +245,11 @@ class Rim(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    @property
+    def click(self) -> Point | None:
+        return _point(self.click_x, self.click_y)
+
+    @click.setter
+    def click(self, value: Point | None) -> None:
+        self.click_x, self.click_y = (float(value[0]), float(value[1])) if value else (None, None)

@@ -68,8 +68,7 @@ def claim_next_rim(session: Session) -> ClaimedRim | None:
     if rim is None:
         return None
     rim.status = RimStatus.RUNNING
-    click = None if rim.click_x is None or rim.click_y is None else (rim.click_x, rim.click_y)
-    return ClaimedRim(id=rim.id, original_path=rim.original_path, click=click)
+    return ClaimedRim(id=rim.id, original_path=rim.original_path, click=rim.click)
 
 
 def complete_rim_cut(session: Session, rim_id: int, *, cut_path: str) -> None:
@@ -116,7 +115,7 @@ def refine_rim(session: Session, rim_id: int, point: tuple[float, float]) -> Non
     rim = get_or_raise(session, Rim, rim_id, lock=True)
     if rim.status not in (RimStatus.REVIEW, RimStatus.FAILED):
         raise RimError(rim.status)
-    rim.click_x, rim.click_y = float(point[0]), float(point[1])
+    rim.click = point
     _enqueue(rim)
 
 

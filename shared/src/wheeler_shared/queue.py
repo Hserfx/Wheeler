@@ -123,9 +123,7 @@ def claim_next_job(session: Session) -> ClaimedJob | None:
         wheels=tuple(
             ClaimedWheel(
                 id=wheel.id,
-                click=None
-                if wheel.click_x is None or wheel.click_y is None
-                else (wheel.click_x, wheel.click_y),
+                click=wheel.click,
                 mask_path=wheel.mask_path,
                 pending_seed=wheel.pending_seed,
             )

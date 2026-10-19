@@ -66,6 +66,20 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
   body, the wheel arch, the brake caliper position, the lighting, the shadows and the camera angle of image 1
   unchanged. The new rim must follow the perspective of the wheel in image 1 and fill the tire opening exactly.
   Photorealistic.” Dopisek użytkownika doklejamy na końcu.
+- **Rozmiar felgi (plus-sizing, ticket 12):** stopień `rim_size` od −2 do +2 cali względem obecnej felgi
+  (`0` = „bez zmian”, wtedy prompt jest dokładnie powyższym szablonem). Przy stopniu ≠ 0 szablon traci
+  sprzeczne z plus-sizingiem „Keep the tire” i „fill the tire opening exactly”, a dostaje kierunek, przybliżoną
+  skalę (1″ ≈ 4% średnicy całego koła) i polecenie pocienienia lub pogrubienia boku opony przy tej samej
+  zewnętrznej średnicy koła: „Replace the rim of the car wheel in image 1 with the alloy rim design shown in
+  image 2. Keep the car body, the wheel arch, the brake caliper position, the lighting, the shadows and the
+  camera angle of image 1 unchanged. Make the new rim about {N inch(es)} {larger|smaller} in diameter than the
+  current rim (about {4·N}% of the overall wheel diameter), with a correspondingly {thinner|thicker} tire
+  sidewall. Keep the overall outer diameter of the wheel (tire included) exactly as in image 1. The new rim must
+  follow the perspective of the wheel in image 1. Photorealistic.” Dopisek użytkownika jak wyżej. Cale są
+  przybliżone: z samego zdjęcia nie znamy obecnego rozmiaru felgi, sterujemy proporcją średnicy felgi do
+  średnicy koła. Rozmiarem steruje wyłącznie prompt (bez pomocy geometrycznej); całość mieści się w obecnej
+  masce koła, więc gwarancja „bit w bit” poza maską zostaje. Zmiana średnicy całego koła (wejście w nadkole)
+  jest poza zakresem, bo wymaga maski obejmującej karoserię.
 - **Detektor: Florence-2-large** (`florence-community/Florence-2-large`, fp16 na MPS), zadanie
   `<CAPTION_TO_PHRASE_GROUNDING>` z frazą `wheel`. **Maski: SAM 2.1 hiera-large** (`facebook/sam2.1-hiera-large`
   przez transformers) z promptem box.
@@ -114,7 +128,8 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
 
 ## Baza danych (PostgreSQL)
 
-- **Zadania:** status, parametry (seed, rozdzielczość, poszerzenie maski, dopisek do promptu), czasy, błąd.
+- **Zadania:** status, parametry (seed, rozdzielczość, poszerzenie maski, dopisek do promptu, rozmiar felgi),
+  czasy, błąd. Brak klucza rozmiaru felgi (`rim_size`) oznacza „bez zmian”.
 - **Obrazy:** metadane i ścieżki do plików (oryginał, maski, wycinki, wynik).
 - **Biblioteka felg:** wycięta felga, oryginał, opcjonalna nazwa, data dodania, licznik użyć i data ostatniego użycia. Sortowanie po ostatnim użyciu, bez filtrów.
 - **Retencja:** historia i pliki są trzymane bezterminowo. Ręczne usuwanie (pojedyncze i zbiorcze) kasuje także pliki z dysku.
@@ -126,9 +141,12 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
 - **Strona główna** prowadzi przez kroki:
   1. Wgranie zdjęcia auta (drag & drop, wklejenie ze schowka).
   2. Automatyczna detekcja kół z nakładką masek. Klik w maskę usuwa ją, a klik w puste miejsce dodaje koło.
-  3. Wybór felgi z biblioteki albo wgranie nowej, z podglądem wyciętej felgi do akceptacji.
+  3. Wybór felgi z biblioteki albo wgranie nowej, z podglądem wyciętej felgi do akceptacji. Obok wybór rozmiaru
+     nowej felgi względem obecnej: `−2″ · −1″ · bez zmian · +1″ · +2″` (domyślnie „bez zmian”), wysyłany z „Generuj”
+     i walidowany na serwerze. Jedno ustawienie na całe zadanie: wszystkie koła, „ponów” i „ponów to koło”.
   4. „Generuj”: postęp per koło i per krok (polling HTMX co ~1 s), z możliwością anulowania.
-  5. Wynik z suwakiem przed/po, przyciskiem „ponów to koło” (inny seed) i pobieraniem PNG.
+  5. Wynik z suwakiem przed/po, przyciskiem „ponów to koło” (inny seed) i pobieraniem PNG. Rozmiar felgi inny
+     niż „bez zmian” jest pokazany obok seedów (np. „Felga: +2″”).
 - **Sekcja „Zaawansowane”** jest domyślnie zwinięta i zawiera seed, rozdzielczość roboczą, poszerzenie maski i dopisek do promptu. Użyte wartości zapisujemy w historii zadania.
   Ustalenie po review: rozdzielczość robocza 992–1152 px co 32 px. Dolna granica wynika z utraty detalu
   przez Turbo poniżej ~1024 px (spike sprawdził 992 i 1056 bez różnic), górna z zapasu pamięci przy q8.

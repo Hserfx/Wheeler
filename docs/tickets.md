@@ -305,17 +305,26 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 **Blocked by:** 06, 07, 09
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Wybór stopnia w sekcji wyboru felgi na stronie zadania, w formularzu „Generuj” (`#job-form`); domyślnie „bez zmian”. `POST /jobs` przy wgraniu go nie przyjmuje
-- [ ] Stopień zapisany w `Job.params` (nowy klucz w `wheeler_shared/edit_params.py`), z walidacją zakresu −2…+2 po stronie serwera; brak klucza oznacza „bez zmian”
-- [ ] Jedno ustawienie na całe zadanie: wszystkie koła, „Ponów” (`retry.py`) i „Ponów to koło” używają tej samej wartości
-- [ ] Przy „bez zmian” prompt jest identyczny z obecnym szablonem (istniejące zadania i testy bez zmian)
-- [ ] Przy stopniu ≠ 0 prompt mówi o kierunku i przybliżonej skali (1″ ≈ 4% średnicy całego koła), każe pocienić lub pogrubić bok opony i zachować zewnętrzną średnicę koła; zastępuje sprzeczne z tym „fill the tire opening exactly”
-- [ ] Ekran wyniku pokazuje wybrany stopień (np. „Felga: +2″”) obok seeda, tylko gdy ≠ „bez zmian”; siatka Historii bez zmian (szczegóły zadania i tak pokazują wszystkie klucze `Job.params`, etykieta w `PARAM_LABELS`)
-- [ ] Szablon promptu i nowy parametr opisane w `docs/DESIGN.md`
-- [ ] Testy na atrapach modeli: walidacja parametru, zapis w zadaniu, prompt dla każdego stopnia (w tym identyczność przy 0), przekazanie do edytora przez workera (także przy „Ponów to koło”), widoczność na ekranie wyniku
+- [x] Wybór stopnia w sekcji wyboru felgi na stronie zadania, w formularzu „Generuj” (`#job-form`); domyślnie „bez zmian”. `POST /jobs` przy wgraniu go nie przyjmuje
+- [x] Stopień zapisany w `Job.params` (nowy klucz w `wheeler_shared/edit_params.py`), z walidacją zakresu −2…+2 po stronie serwera; brak klucza oznacza „bez zmian”
+- [x] Jedno ustawienie na całe zadanie: wszystkie koła, „Ponów” (`retry.py`) i „Ponów to koło” używają tej samej wartości
+- [x] Przy „bez zmian” prompt jest identyczny z obecnym szablonem (istniejące zadania i testy bez zmian)
+- [x] Przy stopniu ≠ 0 prompt mówi o kierunku i przybliżonej skali (1″ ≈ 4% średnicy całego koła), każe pocienić lub pogrubić bok opony i zachować zewnętrzną średnicę koła; zastępuje sprzeczne z tym „fill the tire opening exactly”
+- [x] Ekran wyniku pokazuje wybrany stopień (np. „Felga: +2″”) obok seeda, tylko gdy ≠ „bez zmian”; siatka Historii bez zmian (szczegóły zadania i tak pokazują wszystkie klucze `Job.params`, etykieta w `PARAM_LABELS`)
+- [x] Szablon promptu i nowy parametr opisane w `docs/DESIGN.md`
+- [x] Testy na atrapach modeli: walidacja parametru, zapis w zadaniu, prompt dla każdego stopnia (w tym identyczność przy 0), przekazanie do edytora przez workera (także przy „Ponów to koło”), widoczność na ekranie wyniku
 
 **Comments:**
 
 - 2026-10-19 (grilling): ustalone z użytkownikiem. Zmiana średnicy całego koła (wejście w nadkole, domalowanie szczeliny) świadomie poza zakresem, bo wymaga maski obejmującej karoserię. Cale są przybliżone: z samego zdjęcia nie znamy obecnego rozmiaru felgi, sterujemy proporcją średnicy felgi do średnicy koła. Weryfikacja tylko testami na atrapach; jakość na prawdziwym modelu użytkownik ocenia sam w trakcie używania. Jeśli model będzie ignorował polecenie, następny krok to osobny ticket na sterowanie geometryczne (np. wskazówka z docelowym okręgiem felgi).
+- 2026-10-19 (agent): zrobione na gałęzi `ticket-12`. Parametr `rim_size` (`wheeler_shared/edit_params.py`:
+  `RIM_SIZE`, `EditParams.rim_size`, `parse_rim_size`) przychodzi tylko z `POST /jobs/{id}/generate` (radia
+  `form="job-form"` w sekcji felgi w `job.html`); poza zakresem albo nie-liczba: 400 ze stroną zadania. Zapisywany
+  także `0`, brak pola zostawia zapisaną wartość. Prompt: `build_prompt(suffix, rim_size=…)` i
+  `PLUS_SIZING_TEMPLATE` w `wheeler_worker/wheel_swap.py`; przy stopniu ≠ 0 z szablonu znika też „Keep the tire”
+  (tak samo sprzeczne z pocienianiem boku opony jak „fill the tire opening exactly”). „Ponów” i „Ponów to koło”
+  dostają wartość z `Job.params` bez dodatkowego kodu. Ekran wyniku: `data-role="result-rim-size"` w liście kół
+  `_result_compare.html`; etykieta w `PARAM_LABELS`, wartość jak „+2″”/„−1″”/„bez zmian”. Testy:
+  `tests/test_rim_size.py` (atrapy modeli). Na prawdziwym modelu nie sprawdzane (zgodnie z grillingiem).

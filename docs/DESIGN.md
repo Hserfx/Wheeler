@@ -81,6 +81,10 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
 ### Pipeline edycji
 
 1. **Wejście:** JPEG/PNG/WebP/HEIC (`pillow-heif`), obrót według EXIF. Limit 40 MPx / 50 MB.
+   Gwarancja „bit w bit” obejmuje każde przyjęte wejście (ustalone po review): wynik zachowuje tryb
+   oryginału (RGB, RGBA, L, LA; alfa bez zmian w całym obrazie), paleta jest rozwijana do RGB/RGBA,
+   obraz 1-bitowy do L. Wejścia, których PNG wyniku nie odda wiernie (16 bitów na kanał, CMYK itp.),
+   są odrzucane przy wgraniu z komunikatem.
 2. **Detekcja kół** (kilka sekund) i maski SAM 2. Użytkownik akceptuje lub koryguje je w UI.
 3. **Maska kompozycji = całe koło** (opona + felga), lekko poszerzona. Prompt każe zachować oponę i zmienić tylko felgę. Opona jest generowana na nowo, ale ma wyglądać prawie identycznie. Dzięki temu nowa felga może mieć inną średnicę wizualną.
 4. **Każde koło edytujemy osobno:** wycinek wokół koła przeskalowany do rozdzielczości roboczej (1024 px, Turbo traci detal poniżej). Wywołanie z `image_paths=[wycinek, felga]` i maską koła, bo maska mflux działa na pierwszej referencji. Rozmiar wyjścia podajemy jawnie (`width`/`height`), bo domyślnie wyznacza go ostatni obraz. Ten sam seed i prompt dla wszystkich kół jednego zdjęcia.

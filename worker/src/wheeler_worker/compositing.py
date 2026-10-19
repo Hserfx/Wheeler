@@ -67,15 +67,22 @@ def composite(
 
     `mask` ma rozmiar oryginału (L, >0 = koło). Krawędź jest wygładzana tylko do wewnątrz maski,
     więc każdy piksel poza maską (i poza wycinkiem) pozostaje bit w bit z oryginału.
+    Oryginał w trybie L/LA daje wynik w tym samym trybie (koło w odcieniach szarości), inne
+    tryby RGB/RGBA. Kanał alfa oryginału (RGBA, LA) zostaje bez zmian wszędzie.
     """
-    base = original.convert("RGB")
-    patch = generated.convert("RGB").resize((crop.width, crop.height), Image.Resampling.LANCZOS)
-    alpha = feathered_alpha(mask.crop(crop), feather)[..., None]
+    color = "L" if original.mode in ("L", "LA") else "RGB"
+    base = original.convert(color)
+    patch = generated.convert(color).resize((crop.width, crop.height), Image.Resampling.LANCZOS)
+    alpha = feathered_alpha(mask.crop(crop), feather)
     region = np.asarray(base.crop(crop))
+    if region.ndim == 3:
+        alpha = alpha[..., None]
     mixed = alpha * np.asarray(patch, dtype=np.float32) + (1 - alpha) * region.astype(np.float32)
     blended = np.where(alpha > 0, np.rint(mixed).astype(np.uint8), region)
     result = base.copy()
     result.paste(Image.fromarray(blended), (crop.left, crop.top))
+    if original.mode in ("RGBA", "LA"):
+        result.putalpha(original.getchannel("A"))
     return result
 
 

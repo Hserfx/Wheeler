@@ -185,6 +185,10 @@ TEXTS: Final[dict[str, str]] = {
         "Plik „{name}” nie jest obsługiwanym zdjęciem. Wgraj plik JPEG, PNG, WebP lub HEIC."
     ),
     "error_upload_too_large": "Plik „{name}” jest za duży. Limit to {limit} MB.",
+    "error_upload_mode": (
+        "Zdjęcie „{name}” ma format pikseli, którego nie da się zachować bez zmian poza "
+        "kołami (np. 16 bitów na kanał albo CMYK). Zapisz je jako 8-bitowe RGB i wgraj ponownie."
+    ),
     "error_upload_too_many_pixels": (
         "Zdjęcie „{name}” ma za dużą rozdzielczość. Limit to {limit} MPx (megapikseli)."
     ),
@@ -208,6 +212,10 @@ TEXTS: Final[dict[str, str]] = {
     "failure_empty_mask": "Maska koła jest pusta.",
     "failure_rim_not_found": "Na zdjęciu nie znaleziono felgi.",
     "failure_no_rim": "Zadanie nie ma wybranej felgi.",
+    "failure_unsupported_photo": (
+        "Zdjęcie ma format pikseli, którego nie da się zachować bez zmian (np. 16 bitów "
+        "na kanał albo CMYK)."
+    ),
 }
 
 # Etykiety parametrów zadania (`Job.params`) w szczegółach zadania. Parametr bez etykiety

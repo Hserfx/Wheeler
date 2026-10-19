@@ -130,10 +130,12 @@ done --„Ponów to koło”-------> regenerate_wheel (jedno koło, nowy seed) -
   `uv run hf download ZhengPeng7/BiRefNet --revision e2bf8e4460fc8fa32bba5ea4d94b3233d367b0e4`.
   Zmierzone na M2 Max: ładowanie + pierwsze zdjęcie ~4,5 s, potem ~0,9 s (z detekcją).
 - Wejście (`wheeler_api/uploads.py`, `save_image_upload`, wspólne dla każdego wgrywanego obrazu):
-  JPEG, PNG, WebP, HEIC, do 50 MB i 40 MPx; format rozpoznawany po zawartości. Dla HEIC i zdjęć
+  JPEG, PNG, WebP, HEIC, do 50 MB i 40 MPx; format rozpoznawany po zawartości. Tryby pikseli:
+  `wheeler_shared/photo_modes.py` (16 bitów na kanał i CMYK są odrzucane, bo wynik nie byłby bit w bit). Dla HEIC i zdjęć
   z orientacją EXIF obok pliku powstaje obrócony podgląd `<plik>.preview.jpg` w pełnym rozmiarze
   (szablony: filtr `display_path`), bo kliknięcia są w układzie obróconego zdjęcia.
-- Odczyt i zapis zdjęć w workerze: `wheeler_worker/photos.py`. `result.png` dostaje profil ICC
+- Odczyt i zapis zdjęć w workerze: `wheeler_worker/photos.py` (`load_photo`: RGB dla modeli,
+  `load_original`: oryginał w trybie wyniku do kompozycji). `result.png` dostaje profil ICC
   i EXIF oryginału (`read_metadata`: bez GPS i orientacji); maski i pliki robocze są bez metadanych.
 
 ## Migracje

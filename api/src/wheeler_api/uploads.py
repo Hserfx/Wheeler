@@ -2,8 +2,11 @@
 
 Jedno miejsce dla każdego wgrywanego obrazu (zdjęcie auta, felga, biblioteka felg):
 `save_image_upload` przyjmuje JPEG, PNG, WebP i HEIC do 50 MB i 40 MPx, a inne pliki
-odrzuca wyjątkiem `UploadRejected` z komunikatem dla użytkownika. Format rozpoznajemy po
-zawartości, nie po nazwie; rozszerzenie zapisanego pliku wynika z formatu.
+odrzuca wyjątkiem `UploadRejected` z komunikatem dla użytkownika. Odrzuca też tryby pikseli,
+których wynik nie zachowa poza kołami bit w bit (`wheeler_shared.photo_modes`, np. CMYK,
+16-bitowa szarość) i PNG z 16 bitami na kanał (Pillow czyta 16-bitowe RGB jako 8-bitowe).
+Format rozpoznajemy po zawartości, nie po nazwie; rozszerzenie zapisanego pliku wynika
+z formatu.
 
 Podgląd: przeglądarka nie wyświetli HEIC, a orientację EXIF obsługuje różnie w różnych
 formatach. Dla takich plików obok oryginału powstaje `<nazwa>.preview.jpg`: obrócony według
@@ -21,6 +24,7 @@ from fastapi import UploadFile
 from PIL import ExifTags, Image, ImageOps, UnidentifiedImageError
 
 from wheeler_api.texts import TEXTS
+from wheeler_shared.photo_modes import edit_mode
 from wheeler_shared.storage import Storage
 
 pillow_heif.register_heif_opener()
@@ -103,9 +107,11 @@ def _inspect(path: Path, name: str) -> tuple[str, bool]:
             image_format = image.format or ""
             pixels = image.width * image.height
             orientation = image.getexif().get(ExifTags.Base.Orientation, 1)
+            mode = edit_mode(image.mode, transparency="transparency" in image.info)
     except Image.DecompressionBombError:
         pixels = MAX_UPLOAD_PIXELS + 1
         image_format = ""
+        mode = None
     except (UnidentifiedImageError, OSError, SyntaxError, ValueError):
         raise UploadRejected(TEXTS["error_upload_format"].format(name=name)) from None
     if pixels > MAX_UPLOAD_PIXELS:
@@ -114,8 +120,17 @@ def _inspect(path: Path, name: str) -> tuple[str, bool]:
         )
     if image_format not in ACCEPTED_FORMATS:
         raise UploadRejected(TEXTS["error_upload_format"].format(name=name))
+    if mode is None or (image_format == "PNG" and _png_bit_depth(path) > 8):
+        raise UploadRejected(TEXTS["error_upload_mode"].format(name=name))
     # HEIC: przeglądarki go nie wyświetlają; pillow-heif sam obraca i zeruje orientację.
     return ACCEPTED_FORMATS[image_format], image_format == "HEIF" or orientation != 1
+
+
+def _png_bit_depth(path: Path) -> int:
+    """Głębia bitowa z nagłówka IHDR (bajt 24 pliku PNG: sygnatura, długość, typ, wymiary)."""
+    with path.open("rb") as file:
+        header = file.read(25)
+    return header[24] if len(header) == 25 and header[12:16] == b"IHDR" else 0
 
 
 def _write_preview(source: Path) -> None:

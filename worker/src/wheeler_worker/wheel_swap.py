@@ -27,7 +27,7 @@ from wheeler_shared.progress import Progress
 from wheeler_worker.background import BackgroundRemover
 from wheeler_worker.compositing import composite, crop_box_for, grow_mask, mask_box, working_size
 from wheeler_worker.detector import WheelDetector
-from wheeler_worker.photos import load_photo, read_metadata, save_png
+from wheeler_worker.photos import load_original, load_photo, read_metadata, save_png
 from wheeler_worker.processing import (
     CutRimItem,
     CutRimResult,
@@ -136,7 +136,7 @@ class WheelSwapProcessor:
         if params.seed is None:
             raise ValueError("Brak seeda w parametrach zadania")
         edit = self._prepare_edit(params, item.rim_path, seed=params.seed)
-        result = load_photo(item.photo_path)
+        result = load_original(item.photo_path)
         wheels = len(item.masks)
         # Koła po kolei, każde osobnym wywołaniem modelu, z tym samym seedem i promptem.
         # Raport przed kołem i po każdym kroku: tu odbiorca może przerwać pracę (anulowanie).
@@ -167,7 +167,10 @@ class WheelSwapProcessor:
             item.on_progress(Progress(wheel=1, wheels=1, step=step, steps=steps))
 
         result = edit.apply(
-            load_photo(item.result_path), mask, wheel_dir(item.output_dir, item.wheel_id), on_step
+            load_original(item.result_path),
+            mask,
+            wheel_dir(item.output_dir, item.wheel_id),
+            on_step,
         )
         target = save_png(
             result, _next_result_path(item.output_dir), metadata=read_metadata(item.photo_path)
@@ -219,7 +222,8 @@ class _WheelEdit:
         side = max(wheel.width, wheel.height)
         crop = crop_box_for(wheel, photo.size, margin=CROP_MARGIN)
         size = working_size(crop, resolution=self.resolution)
-        crop_image = photo.crop(crop).resize(size, Image.Resampling.LANCZOS)
+        # Model dostaje RGB; `photo` jest w trybie wyniku (`photos.load_original`).
+        crop_image = photo.crop(crop).convert("RGB").resize(size, Image.Resampling.LANCZOS)
         crop_mask = mask.crop(crop).resize(size, Image.Resampling.BILINEAR)
         save_png(crop_image, out / "crop.png")
         save_png(crop_mask, out / "crop_mask.png")

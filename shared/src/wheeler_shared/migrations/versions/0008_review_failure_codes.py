@@ -26,6 +26,7 @@ CODES = (
     "empty_mask",
     "rim_not_found",
     "no_rim",
+    "unsupported_photo",
 )
 # (wzorzec LIKE dawnego tekstu, kod); pierwsze dopasowanie wygrywa.
 LEGACY = (

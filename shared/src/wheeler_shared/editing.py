@@ -131,12 +131,17 @@ def cancel_job(session: Session, job_id: int) -> None:
     (`queue.report_progress`), a potem oznacza je jako `cancelled` (`queue.mark_cancelled`).
     """
     job = get_or_raise(session, Job, job_id, lock=True)
-    if job.task is None or not job.task.generates or not job.status.busy:
+    if not is_cancellable(job):
         raise NotCancellable
     if job.status == JobStatus.QUEUED:
         mark_cancelled(session, job.id)
     else:
         job.cancel_requested = True
+
+
+def is_cancellable(job: Job) -> bool:
+    """Anulować można generowanie (albo ponowienie koła) w kolejce lub w trakcie."""
+    return job.status.busy and job.task is not None and job.task.generates
 
 
 def regenerate_wheel(session: Session, job_id: int, wheel_id: int, *, seed: int) -> None:

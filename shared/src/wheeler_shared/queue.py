@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from wheeler_shared.db import utcnow
 from wheeler_shared.failures import Failure
 from wheeler_shared.models import (
+    GENERATING_TASKS,
     Image,
     ImageRole,
     Job,
@@ -90,7 +91,7 @@ def enqueue(job: Job, task: TaskKind) -> None:
 
 
 def _generate_last() -> ColumnElement[int]:
-    return case((Job.task.in_([TaskKind.GENERATE, TaskKind.REGENERATE_WHEEL]), 1), else_=0)
+    return case((Job.task.in_(GENERATING_TASKS), 1), else_=0)
 
 
 def claim_next_job(session: Session) -> ClaimedJob | None:

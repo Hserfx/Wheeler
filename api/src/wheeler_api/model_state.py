@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import object_session
 
 from wheeler_api.routes import SessionDep, TemplatesDep
-from wheeler_shared.models import Job
+from wheeler_shared.models import Job, JobStatus
 from wheeler_shared.worker_state import ModelState, get_model_state
 
 router = APIRouter()
@@ -19,7 +19,7 @@ def model_loading_for(job: Job) -> bool:
     Czyta stan przez sesję, z której pochodzi `job`, więc trasy nie muszą go przekazywać.
     """
     session = object_session(job)
-    if session is None or job.status.value != "running":
+    if session is None or job.status != JobStatus.RUNNING:
         return False
     return get_model_state(session) is ModelState.LOADING
 

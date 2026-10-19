@@ -66,7 +66,11 @@ class TaskKind(enum.StrEnum):
     @property
     def generates(self) -> bool:
         """Praca modelu edycji (mflux): długa, w kolejce za pracą interaktywną, z postępem."""
-        return self in (TaskKind.GENERATE, TaskKind.REGENERATE_WHEEL)
+        return self in GENERATING_TASKS
+
+
+# Jedno źródło dla `TaskKind.generates` i kolejności w kolejce (`queue._generate_last`).
+GENERATING_TASKS: frozenset[TaskKind] = frozenset({TaskKind.GENERATE, TaskKind.REGENERATE_WHEEL})
 
 
 class WheelSource(enum.StrEnum):

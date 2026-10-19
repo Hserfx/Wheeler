@@ -213,7 +213,7 @@ def generate(
         with session.begin():
             if rim_id is not None:
                 choose_rim(session, storage, job_id, rim_id)
-            start_generation(session, job_id, seed=secrets.randbelow(2**31))
+            start_generation(session, job_id, seed=_random_seed())
     except LookupError:
         raise HTTPException(status_code=404) from None
     except (NoRimSelected, RimNotReady):
@@ -235,7 +235,7 @@ def regenerate(
     """„Ponów to koło”: jedno koło gotowego wyniku od nowa z nowym (losowym) seedem."""
     try:
         with session.begin():
-            regenerate_wheel(session, job_id, wheel_id, seed=secrets.randbelow(2**31))
+            regenerate_wheel(session, job_id, wheel_id, seed=_random_seed())
     except LookupError:
         raise HTTPException(status_code=404) from None
     except JobBusy:
@@ -285,6 +285,11 @@ def retry(
             )
         raise
     return RedirectResponse(f"/jobs/{new_id}", status_code=303)
+
+
+def _random_seed() -> int:
+    """Losowy seed z dozwolonego zakresu (0..`SEED_MAX`), gdy użytkownik go nie podał."""
+    return secrets.randbelow(edit_params.SEED_MAX + 1)
 
 
 def _load_job(session: Session, job_id: int) -> Job:

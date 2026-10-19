@@ -6,6 +6,7 @@ Szablony odwołują się do nich przez `t.<klucz>`; w szablonach nie wpisujemy t
 from typing import Final
 
 from wheeler_shared import edit_params
+from wheeler_shared.editing import is_cancellable
 from wheeler_shared.failures import Failure
 from wheeler_shared.models import Job, JobStatus, TaskKind
 from wheeler_shared.progress import Progress
@@ -279,9 +280,7 @@ def progress_label(progress: Progress) -> str:
 
 def can_cancel(job: Job) -> bool:
     """Przycisk „Anuluj”: generowanie w kolejce albo w trakcie, bez wcześniejszej prośby."""
-    return (
-        job.status.busy and job.task is not None and job.task.generates and not job.cancel_requested
-    )
+    return is_cancellable(job) and not job.cancel_requested
 
 
 def failure_text(code: str | None) -> str:

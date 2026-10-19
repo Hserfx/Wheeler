@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import ColumnElement, case, func, literal, select, tuple_, update
 from sqlalchemy.orm import Session
 
+from wheeler_shared.failures import Failure
 from wheeler_shared.models import Image, ImageRole, Job, JobStatus, TaskKind, Wheel, WheelSource
 from wheeler_shared.progress import Progress
 
@@ -219,10 +220,12 @@ def _back_to_result(job: Job) -> None:
     job.status = JobStatus.DONE
 
 
-def fail_job(session: Session, job_id: int, *, error: str) -> None:
-    """Błąd pracy workera. Nieudana detekcja albo segmentacja wraca do szkicu (można kliknąć
-    koło), nieudane ponowienie koła wraca do poprzedniego wyniku (`done` z błędem), nieudane
-    generowanie kończy zadanie statusem `failed`."""
+def fail_job(session: Session, job_id: int, *, error: Failure) -> None:
+    """Błąd pracy workera (`error`: kod przyczyny, tekst w UI z `texts.failure_text`).
+
+    Nieudana detekcja albo segmentacja wraca do szkicu (można kliknąć koło), nieudane
+    ponowienie koła wraca do poprzedniego wyniku (`done` z błędem), nieudane generowanie
+    kończy zadanie statusem `failed`."""
     job = session.get_one(Job, job_id)
     job.error = error
     if job.task == TaskKind.REGENERATE_WHEEL:
@@ -235,9 +238,6 @@ def fail_job(session: Session, job_id: int, *, error: str) -> None:
         return
     job.status = JobStatus.FAILED
     job.finished_at = _now()
-
-
-INTERRUPTED_ERROR = "Przerwane: worker został zatrzymany albo uległ awarii w trakcie zadania."
 
 
 def fail_interrupted_jobs(session: Session) -> list[int]:
@@ -254,7 +254,7 @@ def fail_interrupted_jobs(session: Session) -> list[int]:
         if job.cancel_requested:
             mark_cancelled(session, job.id)
         else:
-            fail_job(session, job.id, error=INTERRUPTED_ERROR)
+            fail_job(session, job.id, error=Failure.INTERRUPTED)
     return [job.id for job in jobs]
 
 

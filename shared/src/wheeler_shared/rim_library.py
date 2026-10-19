@@ -22,6 +22,7 @@ from pathlib import PurePosixPath
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from wheeler_shared.failures import Failure
 from wheeler_shared.models import Rim, RimStatus
 from wheeler_shared.storage import Storage
 
@@ -97,7 +98,7 @@ def complete_rim_cut(session: Session, rim_id: int, *, cut_path: str) -> None:
     rim.status = RimStatus.REVIEW
 
 
-def fail_rim_cut(session: Session, rim_id: int, *, error: str) -> None:
+def fail_rim_cut(session: Session, rim_id: int, *, error: Failure) -> None:
     rim = session.get(Rim, rim_id)
     if rim is None:
         return

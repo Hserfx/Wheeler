@@ -145,7 +145,8 @@ def test_failed_detection_returns_to_manual_wheel_selection(
     assert run_once(session_factory, storage, processor)
 
     draft = client.get(f"/jobs/{job_id}/status").text
-    assert TEXTS["error_detection_failed"] in draft and "detektor się wyłożył" in draft
+    assert TEXTS["error_detection_failed"] in draft and TEXTS["failure_internal"] in draft
+    assert "detektor się wyłożył" not in draft
     assert 'data-role="wheel-picker"' in draft
     _click(client, job_id, (240, 150))
 

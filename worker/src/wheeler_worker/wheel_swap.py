@@ -22,6 +22,7 @@ import numpy as np
 from PIL import Image
 
 from wheeler_shared.edit_params import EditParams
+from wheeler_shared.failures import Failure, ProcessingFailed
 from wheeler_shared.progress import Progress
 from wheeler_worker.background import BackgroundRemover
 from wheeler_worker.compositing import composite, crop_box_for, grow_mask, mask_box, working_size
@@ -98,7 +99,7 @@ class WheelSwapProcessor:
             raw = self.segmenter.segment_click(photo, point)
             files = _save_mask(raw, params, wheel_dir(item.output_dir, wheel_id))
             if files is None:
-                raise ValueError("Nie udało się wyznaczyć maski koła w klikniętym miejscu")
+                raise ProcessingFailed(Failure.NOTHING_AT_CLICK, f"pusta maska w {point}")
             masks[wheel_id] = files
         return SegmentResult(masks=masks)
 
@@ -114,7 +115,7 @@ class WheelSwapProcessor:
         foreground = self._rim_foreground(photo, item.click)
         cut = cut_out(photo, foreground)
         if cut is None:
-            raise ValueError("Nie znaleziono felgi na zdjęciu")
+            raise ProcessingFailed(Failure.RIM_NOT_FOUND, "pusta maska pierwszego planu")
         return CutRimResult(cut_path=save_png(cut, item.output_dir / "cut.png"))
 
     def _rim_foreground(self, photo: Image.Image, click: tuple[float, float] | None) -> Image.Image:
@@ -214,7 +215,7 @@ class _WheelEdit:
         """Podmienia felgę w jednym kole; piksele poza `mask` zostają bit w bit."""
         wheel = mask_box(mask)
         if wheel is None:
-            raise ValueError("Pusta maska koła")
+            raise ProcessingFailed(Failure.EMPTY_MASK)
         side = max(wheel.width, wheel.height)
         crop = crop_box_for(wheel, photo.size, margin=CROP_MARGIN)
         size = working_size(crop, resolution=self.resolution)

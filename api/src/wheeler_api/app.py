@@ -24,6 +24,7 @@ from wheeler_api.texts import (
     STATUS_LABELS,
     TEXTS,
     can_cancel,
+    failure_text,
     job_progress,
     job_status_label,
     progress_label,
@@ -54,6 +55,7 @@ def create_templates() -> Jinja2Templates:
     templates.env.globals["param_labels"] = PARAM_LABELS
     templates.env.globals["job_status_label"] = job_status_label
     templates.env.globals["job_progress"] = job_progress
+    templates.env.filters["failure_text"] = failure_text
     templates.env.globals["progress_label"] = progress_label
     templates.env.tests["cancellable"] = can_cancel
     templates.env.tests["retryable"] = is_retryable

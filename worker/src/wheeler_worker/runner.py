@@ -13,6 +13,7 @@ from collections.abc import Callable
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from wheeler_shared.failures import Failure, ProcessingFailed
 from wheeler_shared.models import TaskKind
 from wheeler_shared.progress import Progress
 from wheeler_shared.queue import (
@@ -92,7 +93,7 @@ def _generate(
     job: ClaimedJob, storage: Storage, processor: Processor, report: ProgressCallback
 ) -> SaveResult:
     if job.rim_path is None:
-        raise ValueError("Zadanie nie ma felgi referencyjnej")
+        raise ProcessingFailed(Failure.NO_RIM)
     photo = storage.path(job.input_path)
     masks = {wheel.id: storage.path(wheel.mask_path) for wheel in job.wheels if wheel.mask_path}
     result = processor.generate(
@@ -115,8 +116,10 @@ def _generate(
 def _regenerate_wheel(
     job: ClaimedJob, storage: Storage, processor: Processor, report: ProgressCallback
 ) -> SaveResult:
-    if job.rim_path is None or job.result_path is None:
-        raise ValueError("Zadanie nie ma felgi referencyjnej albo wyniku")
+    if job.rim_path is None:
+        raise ProcessingFailed(Failure.NO_RIM)
+    if job.result_path is None:
+        raise ValueError("Zadanie nie ma wyniku do ponowienia koła")
     wheel = next((w for w in job.wheels if w.pending_seed is not None and w.mask_path), None)
     if wheel is None:
         raise ValueError("Nie wskazano koła do ponownego wygenerowania")
@@ -173,9 +176,9 @@ def run_once(
             mark_cancelled(session, job.id)
         return True
     except Exception as exc:
-        log.exception("Zadanie %s (%s): błąd", job.id, job.task)
+        failure = _failure(exc, f"Zadanie {job.id} ({job.task})")
         with session_factory.begin() as session:
-            fail_job(session, job.id, error=f"{type(exc).__name__}: {exc}")
+            fail_job(session, job.id, error=failure)
         return True
 
     with session_factory.begin() as session:
@@ -202,14 +205,26 @@ def _cut_next_rim(
         )
         cut_path = storage.relative(result.cut_path)
     except Exception as exc:
-        log.exception("Felga %s: błąd", rim.id)
+        failure = _failure(exc, f"Felga {rim.id}")
         with session_factory.begin() as session:
-            fail_rim_cut(session, rim.id, error=f"{type(exc).__name__}: {exc}")
+            fail_rim_cut(session, rim.id, error=failure)
         return True
 
     with session_factory.begin() as session:
         complete_rim_cut(session, rim.id, cut_path=cut_path)
     return True
+
+
+def _failure(exc: Exception, what: str) -> Failure:
+    """Kod niepowodzenia do bazy (UI pokaże polski komunikat); szczegóły tylko w logu.
+
+    Wołane w bloku `except`, więc `log.exception` zapisuje cały ślad wyjątku.
+    """
+    if isinstance(exc, ProcessingFailed):
+        log.warning("%s: %s (%s)", what, exc.failure, exc)
+        return exc.failure
+    log.exception("%s: błąd", what)
+    return Failure.INTERNAL
 
 
 def _reporter(session_factory: sessionmaker[Session], job_id: int) -> ProgressCallback:

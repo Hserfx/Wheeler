@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from wheeler_api.texts import TEXTS
 from wheeler_shared.models import Wheel
-from wheeler_shared.queue import INTERRUPTED_ERROR, claim_next_job
+from wheeler_shared.queue import claim_next_job
 from wheeler_shared.storage import Storage
 from wheeler_worker.runner import recover_interrupted_jobs, run_once
 from wheeler_worker.wheel_swap import WheelSwapProcessor
@@ -173,7 +173,8 @@ def test_failed_wheel_regeneration_keeps_previous_result_and_says_so(
 
     status = client.get(f"/jobs/{job_id}/status").text
     assert TEXTS["status_done"] in status and "hx-trigger" not in status
-    assert TEXTS["error_regenerate_failed"] in status and "model się wyłożył" in status
+    assert TEXTS["error_regenerate_failed"] in status and TEXTS["failure_internal"] in status
+    assert "model się wyłożył" not in status
     assert _result_bytes(client, job_id) == previous
     assert 'data-role="compare"' in status  # można ponowić jeszcze raz
     _regenerate(client, job_id, wheel_id)
@@ -201,7 +202,7 @@ def test_cancelled_or_interrupted_wheel_regeneration_returns_to_previous_result(
     recover_interrupted_jobs(session_factory)  # start nowego procesu workera
 
     status = client.get(f"/jobs/{job_id}/status").text
-    assert TEXTS["status_done"] in status and INTERRUPTED_ERROR in status
+    assert TEXTS["status_done"] in status and TEXTS["failure_interrupted"] in status
     assert _result_bytes(client, job_id) == previous
     assert editor.calls == []
 

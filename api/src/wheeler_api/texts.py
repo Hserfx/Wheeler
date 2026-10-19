@@ -6,6 +6,7 @@ Szablony odwołują się do nich przez `t.<klucz>`; w szablonach nie wpisujemy t
 from typing import Final
 
 from wheeler_shared import edit_params
+from wheeler_shared.failures import Failure
 from wheeler_shared.models import Job, JobStatus, TaskKind
 from wheeler_shared.progress import Progress
 from wheeler_shared.worker_state import ModelState
@@ -197,6 +198,16 @@ TEXTS: Final[dict[str, str]] = {
     "error_not_retryable": "Ponowić można tylko zadanie zakończone niepowodzeniem lub anulowane.",
     "error_generic": "Wystąpił błąd.",
     "error_back": "Wróć na stronę główną",
+    # Przyczyny niepowodzenia pracy workera (`wheeler_shared.failures.Failure`, `failure_text`)
+    "failure_internal": "Błąd wewnętrzny workera. Szczegóły są w jego logu (.run/worker.log).",
+    "failure_interrupted": (
+        "Przerwane: worker został zatrzymany albo uległ awarii w trakcie zadania."
+    ),
+    "failure_legacy_job": "Zadanie z poprzedniej wersji aplikacji (bez felgi i maski koła).",
+    "failure_nothing_at_click": "W klikniętym miejscu nie znaleziono koła.",
+    "failure_empty_mask": "Maska koła jest pusta.",
+    "failure_rim_not_found": "Na zdjęciu nie znaleziono felgi.",
+    "failure_no_rim": "Zadanie nie ma wybranej felgi.",
 }
 
 # Etykiety parametrów zadania (`Job.params`) w szczegółach zadania. Parametr bez etykiety
@@ -251,6 +262,16 @@ def can_cancel(job: Job) -> bool:
     return (
         job.status.busy and job.task is not None and job.task.generates and not job.cancel_requested
     )
+
+
+def failure_text(code: str | None) -> str:
+    """Komunikat dla kodu niepowodzenia z `Job.error`/`Rim.error`; nieznany kod (np. dawny
+    tekst wyjątku) daje komunikat o błędzie wewnętrznym, nigdy surowy tekst z bazy."""
+    try:
+        failure = Failure(code or Failure.INTERNAL)
+    except ValueError:
+        failure = Failure.INTERNAL
+    return TEXTS[f"failure_{failure.value}"]
 
 
 MODEL_STATE_LABELS: Final[dict[ModelState, str]] = {

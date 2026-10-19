@@ -263,6 +263,7 @@ def test_failed_background_removal_shows_error_and_allows_click_or_reject(
 
     failed = client.get("/rims/picker").text
     assert TEXTS["rim_cut_failed"] in failed and "hx-trigger" not in failed
+    assert TEXTS["failure_rim_not_found"] in failed and "ValueError" not in failed
     rim_id = _rim_id(failed)
     assert f'hx-post="/rims/{rim_id}/accept"' not in failed
     assert f'hx-post="/rims/{rim_id}/delete"' in failed

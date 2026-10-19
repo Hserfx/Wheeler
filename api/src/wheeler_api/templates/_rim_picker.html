@@ -62,7 +62,7 @@
     <p class="text-sm text-slate-600">{{ t.rim_cutting }}</p>
     {% else %}
     {% if rim.status.value == "failed" %}
-    <p class="text-sm text-red-700" role="alert">{{ t.rim_cut_failed }} <span class="text-red-500">({{ rim.error }})</span></p>
+    <p class="text-sm text-red-700" role="alert">{{ t.rim_cut_failed }} <span class="text-red-500">({{ rim.error | failure_text }})</span></p>
     {% else %}
     <p class="text-sm">{{ t.rim_review_hint }}</p>
     {% endif %}

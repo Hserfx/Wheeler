@@ -10,6 +10,7 @@ from typing import Any, Protocol
 
 from PIL import Image
 
+from wheeler_shared.failures import Failure, ProcessingFailed
 from wheeler_worker.model_lifecycle import NO_OBSERVER, LoadObserver
 
 
@@ -140,7 +141,7 @@ class Sam2Segmenter:
             rim = candidates[0, int(out.iou_scores[0, 0].argmax())].numpy()
             ys, xs = np.nonzero(rim)
             if xs.size == 0:
-                raise ValueError("SAM 2 nie znalazł obiektu w miejscu kliknięcia")
+                raise ProcessingFailed(Failure.NOTHING_AT_CLICK, f"SAM 2: nic w {point}")
             cx, cy = (xs.min() + xs.max()) / 2, (ys.min() + ys.max()) / 2
             half = max(xs.max() - xs.min(), ys.max() - ys.min()) * self.grow / 2
             box = [[float(cx - half), float(cy - half), float(cx + half), float(cy + half)]]

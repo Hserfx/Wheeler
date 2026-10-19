@@ -134,6 +134,7 @@ def test_failed_segmentation_lets_user_click_again(
 
     draft = client.get(f"/jobs/{job_id}/status").text
     assert TEXTS["error_mask_failed"] in draft
+    assert TEXTS["failure_nothing_at_click"] in draft
     assert 'data-role="wheel-picker"' in draft
     assert 'data-role="mask-overlay"' not in draft
     click_wheel(client, job_id)
@@ -158,7 +159,9 @@ def test_failure_in_generation_marks_job_failed_with_error_on_page(
 
     status = client.get(f"/jobs/{job_id}/status").text
     assert TEXTS["status_failed"] in status
-    assert "model się wyłożył" in status
+    # Wyjątek biblioteki trafia do logu workera, a UI pokazuje polski komunikat.
+    assert TEXTS["failure_internal"] in status
+    assert "model się wyłożył" not in status and "RuntimeError" not in status
     assert "hx-trigger" not in status
 
 

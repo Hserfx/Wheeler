@@ -48,13 +48,13 @@
   {% if job.error %}
   <p class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
     {% if job.task and job.task.value == "segment" %}
-    {{ t.error_mask_failed }} <span class="text-red-500">({{ job.error }})</span>
+    {{ t.error_mask_failed }} <span class="text-red-500">({{ job.error | failure_text }})</span>
     {% elif job.task and job.task.value == "detect" %}
-    {{ t.error_detection_failed }} <span class="text-red-500">({{ job.error }})</span>
+    {{ t.error_detection_failed }} <span class="text-red-500">({{ job.error | failure_text }})</span>
     {% elif job.task and job.task.value == "regenerate_wheel" %}
-    {{ t.error_regenerate_failed }} <span class="text-red-500">({{ job.error }})</span>
+    {{ t.error_regenerate_failed }} <span class="text-red-500">({{ job.error | failure_text }})</span>
     {% else %}
-    {{ t.job_error }}: {{ job.error }}
+    {{ t.job_error }}: {{ job.error | failure_text }}
     {% endif %}
   </p>
   {% endif %}

@@ -167,6 +167,18 @@ def test_rim_is_resized_only_inside_the_wheel_mask_the_model_edits(tmp_path: Pat
     assert np.array_equal(model_crop[outside], plain[outside])
 
 
+def test_sam_measures_the_rim_and_is_released_before_mflux_runs(tmp_path: Path) -> None:
+    # SAM 2 (~3 GB) i mflux (szczyt ~27 GB) nie mieszczą się razem w 32 GB: pomiar felgi musi
+    # się skończyć, a SAM zostać zwolniony, zanim ruszy model edycji.
+    wheel = _Wheel(tmp_path)
+    sam_at_mflux_steps: list[list[str]] = []
+    wheel.editor.after_step = lambda step: sam_at_mflux_steps.append(list(wheel.segmenter.log))
+
+    wheel.generate(1)
+
+    assert sam_at_mflux_steps == [["rim", "release"]]
+
+
 def test_unchanged_rim_size_sends_the_plain_crop_without_measuring_the_rim(
     tmp_path: Path,
 ) -> None:

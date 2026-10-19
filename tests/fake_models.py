@@ -26,12 +26,14 @@ class DiscSegmenter:
     """„SAM 2”: koło to dysk o promieniu `radius` wokół kliknięcia, a felga dysk o promieniu
     `rim_radius` w środku maski koła (`None`: felgi nie widać, brak kandydatów).
 
-    `rim_photos` zapamiętuje zdjęcia, na których szukano felgi."""
+    `rim_photos` zapamiętuje zdjęcia, na których szukano felgi, a `log` kolejność pomiarów
+    felgi i zwolnień modelu („rim”, „release”)."""
 
     radius: int = 50
     rim_radius: int | None = None
     clicks: list[tuple[float, float]] = field(default_factory=list)
     rim_photos: list[Image.Image] = field(default_factory=list)
+    log: list[str] = field(default_factory=list)
 
     def segment_click(self, image: Image.Image, point: tuple[float, float]) -> Image.Image:
         self.clicks.append(point)
@@ -52,6 +54,7 @@ class DiscSegmenter:
         self, image: Image.Image, wheel_mask: Image.Image
     ) -> list[tuple[Image.Image, float]]:
         self.rim_photos.append(image.copy())
+        self.log.append("rim")
         box = wheel_mask.getbbox()
         if self.rim_radius is None or box is None:
             return []
@@ -59,7 +62,7 @@ class DiscSegmenter:
         return [(disc_mask(image.size, center, self.rim_radius), 0.9)]
 
     def release(self) -> None:
-        pass
+        self.log.append("release")
 
 
 @dataclass

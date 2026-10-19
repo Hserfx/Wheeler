@@ -490,7 +490,7 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
 
 **Blocked by:** 13
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Pole „Obecna felga” w sekcji felgi, w formularzu „Generuj” (`#job-form`), jak wybór `rim_size`; domyślnie 17″. `POST /jobs` przy wgraniu go nie przyjmuje
 - [ ] Nowy klucz w `Job.params` (`wheeler_shared/edit_params.py`, pole w `EditParams`), walidacja 14–22 po stronie serwera jak `rim_size` (`advanced.parse_…` → `InvalidParam` → czytelny komunikat); brak klucza oznacza 17″
@@ -510,7 +510,7 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
 
 **Blocked by:** 13
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] `Segmenter.segment_body` (publiczna metoda protokołu; adapter SAM 2.1 i atrapy `placeholder`/testowe), prompt jak w prototypie: punkty dodatnie nad oponą (`body_prompt`, `up_angle`), ujemne w środku felgi i na oponie oraz ujemne w szczelinie nadkola (`arch_gap_points`), multimask w dwóch wariantach; maska wnętrza nadkola z SAM
 - [ ] Kolejność z `VERDICT.md`: (a) kryteria `BodyMaskStats.problem` na **surowych** kandydatach SAM (pusta, > 5% koła, > 85% wycinka poza kołem, < 25% strefy błotnika) i wybór `choose_body`; brak dobrego kandydata → `rim_size_unavailable`, bez brania najlepszego ze złych; (b) potem odjęcie wnętrza nadkola i `clean_body_mask`; (c) `foreign_occlusion` > 5% na masce po czyszczeniu → `rim_size_unavailable`

@@ -84,6 +84,11 @@ class LazyDiscSegmenter:
     def segment_boxes(self, image: Image.Image, boxes: list[Box]) -> list[Image.Image]:
         return []  # detektor atrapa (`BoxDetector()`) nie znajduje kół
 
+    def segment_rim(
+        self, image: Image.Image, wheel_mask: Image.Image
+    ) -> list[tuple[Image.Image, float]]:
+        return []  # testy stanu modelu generują „bez zmian”: felgi się nie mierzy
+
     def release(self) -> None:
         if self.loaded:
             self.loaded = False

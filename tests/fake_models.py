@@ -23,10 +23,15 @@ def disc_mask(size: tuple[int, int], center: tuple[float, float], radius: int) -
 
 @dataclass
 class DiscSegmenter:
-    """„SAM 2”: koło to dysk o promieniu `radius` wokół kliknięcia."""
+    """„SAM 2”: koło to dysk o promieniu `radius` wokół kliknięcia, a felga dysk o promieniu
+    `rim_radius` w środku maski koła (`None`: felgi nie widać, brak kandydatów).
+
+    `rim_photos` zapamiętuje zdjęcia, na których szukano felgi."""
 
     radius: int = 50
+    rim_radius: int | None = None
     clicks: list[tuple[float, float]] = field(default_factory=list)
+    rim_photos: list[Image.Image] = field(default_factory=list)
 
     def segment_click(self, image: Image.Image, point: tuple[float, float]) -> Image.Image:
         self.clicks.append(point)
@@ -42,6 +47,16 @@ class DiscSegmenter:
             )
             for x0, y0, x1, y1 in boxes
         ]
+
+    def segment_rim(
+        self, image: Image.Image, wheel_mask: Image.Image
+    ) -> list[tuple[Image.Image, float]]:
+        self.rim_photos.append(image.copy())
+        box = wheel_mask.getbbox()
+        if self.rim_radius is None or box is None:
+            return []
+        center = ((box[0] + box[2] - 1) / 2, (box[1] + box[3] - 1) / 2)
+        return [(disc_mask(image.size, center, self.rim_radius), 0.9)]
 
     def release(self) -> None:
         pass
@@ -69,6 +84,11 @@ class NothingSegmenter:
     def segment_boxes(self, image: Image.Image, boxes: list[Box]) -> list[Image.Image]:
         return [Image.new("L", image.size, 0) for _ in boxes]
 
+    def segment_rim(
+        self, image: Image.Image, wheel_mask: Image.Image
+    ) -> list[tuple[Image.Image, float]]:
+        return []
+
     def release(self) -> None:
         pass
 
@@ -84,7 +104,8 @@ class EditCall:
 
 @dataclass
 class SolidEditor:
-    """„mflux”: zwraca jednolity kolor w żądanym rozmiarze i zapamiętuje wywołania.
+    """„mflux”: zwraca jednolity kolor w żądanym rozmiarze i zapamiętuje wywołania
+    (`echo`: zamiast koloru zwraca otrzymany wycinek, jakby model nic nie zmienił).
 
     Udaje `steps` kroków denoisingu: po każdym woła `on_step`, a potem `after_step(krok)`
     (np. test zagląda wtedy do UI albo klika „Anuluj”, jak użytkownik w trakcie kroku).
@@ -96,6 +117,7 @@ class SolidEditor:
     steps: int = 1
     after_step: Callable[[int], None] | None = None
     steps_run: int = 0
+    echo: bool = False
 
     def edit(
         self,
@@ -115,6 +137,8 @@ class SolidEditor:
                 on_step(step, self.steps)
             if self.after_step is not None:
                 self.after_step(step)
+        if self.echo:
+            return images[0].resize(size)
         return Image.new("RGBA", size, (*self.color, 255))
 
     def release(self) -> None:

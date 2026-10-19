@@ -26,12 +26,24 @@ class Segmenter(Protocol):
         """Maska L (0/255) całego koła dla każdego boxu (x0, y0, x1, y1), w kolejności boxów."""
         ...
 
+    def segment_rim(
+        self, image: Image.Image, wheel_mask: Image.Image, /
+    ) -> list[tuple[Image.Image, float]]:
+        """Kandydaci na maskę samej felgi koła `wheel_mask` (L, maska SAM bez poszerzenia):
+        maski L (0/255) w rozmiarze `image` z oceną modelu; wybiera z nich
+        `rim_geometry.measure_rim`. Pusta lista: nic nie znaleziono."""
+        ...
+
     def release(self) -> None:
         """Zwalnia model z pamięci (następne użycie załaduje go ponownie)."""
         ...
 
 
 SAM_REPO = "facebook/sam2.1-hiera-large"
+# Felga (ticket 12): punkty negatywne na oponie, na tym promieniu elipsy wpisanej w bbox koła;
+# box felgi = ten ułamek bboxa koła (rozpoznanie `prototype/plus-sizing-warp`, `rim_ellipse/`).
+RIM_NEGATIVE_RADIUS = 0.92
+RIM_BOX_FRACTION = 0.8
 SAM_REVISION = "665f8e2ad61cf5f53d65644ff27c8ee525124610"
 
 
@@ -109,6 +121,64 @@ class Sam2Segmenter:
         return [
             Image.fromarray(masks[i, 0].numpy().astype(np.uint8) * 255) for i in range(len(boxes))
         ]
+
+    def segment_rim(
+        self, image: Image.Image, wheel_mask: Image.Image
+    ) -> list[tuple[Image.Image, float]]:
+        """Felga z dwóch promptów multimask (po 3 kandydatów): punkt w centroidzie maski koła
+        z 8 punktami negatywnymi na oponie oraz box 0,8 bboxa koła z tym samym punktem.
+        Sam punkt bez negatywów daje zwykle tylko logo albo piastę."""
+        import math
+
+        import numpy as np
+        import torch
+
+        ys, xs = np.nonzero(np.asarray(wheel_mask.convert("L")) > 0)
+        if xs.size == 0:
+            return []
+        rgb = image.convert("RGB")
+        center = [float(xs.mean()), float(ys.mean())]
+        cx, cy = (xs.min() + xs.max() + 1) / 2, (ys.min() + ys.max() + 1) / 2
+        a, b = (xs.max() + 1 - xs.min()) / 2, (ys.max() + 1 - ys.min()) / 2
+        negatives = [
+            [
+                float(cx + RIM_NEGATIVE_RADIUS * a * math.cos(angle)),
+                float(cy + RIM_NEGATIVE_RADIUS * b * math.sin(angle)),
+            ]
+            for angle in (math.radians(degrees) for degrees in range(0, 360, 45))
+        ]
+        box = [
+            float(cx - RIM_BOX_FRACTION * a),
+            float(cy - RIM_BOX_FRACTION * b),
+            float(cx + RIM_BOX_FRACTION * a),
+            float(cy + RIM_BOX_FRACTION * b),
+        ]
+        prompts: list[dict[str, Any]] = [
+            {
+                "input_points": [[[center, *negatives]]],
+                "input_labels": [[[1] + [0] * len(negatives)]],
+            },
+            {"input_points": [[[center]]], "input_labels": [[[1]]], "input_boxes": [[box]]},
+        ]
+        candidates: list[tuple[Image.Image, float]] = []
+        with torch.no_grad():
+            embeddings = self._embed(rgb)
+            for prompt in prompts:
+                inputs = self._processor(images=rgb, return_tensors="pt", **prompt).to(self._device)
+                out = self._model(
+                    image_embeddings=embeddings,
+                    multimask_output=True,
+                    **{key: inputs[key] for key in prompt},
+                )
+                masks = self._processor.post_process_masks(
+                    out.pred_masks.cpu(), inputs["original_sizes"].cpu()
+                )[0][0]
+                scores = out.iou_scores[0, 0].float().cpu().numpy()
+                candidates.extend(
+                    (Image.fromarray(masks[i].numpy().astype(np.uint8) * 255), float(scores[i]))
+                    for i in range(masks.shape[0])
+                )
+        return candidates
 
     def segment_click(self, image: Image.Image, point: tuple[float, float]) -> Image.Image:
         import numpy as np

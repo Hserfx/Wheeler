@@ -75,6 +75,9 @@ done --„Ponów to koło”-------> regenerate_wheel (jedno koło, nowy seed) -
   (`wheeler_api/advanced.py`) zapisuje w `Job.params` użyte wartości już przy wgraniu zdjęcia;
   pusty seed jest losowany i zapisywany przy „Generuj”. Rozmiar felgi (`rim_size`, −2…+2″) nie należy
   do „Zaawansowane”: wybiera się go obok felgi na stronie zadania i zapisuje dopiero przy „Generuj”.
+  Steruje nim geometria, nie prompt: przy stopniu ≠ 0 worker przed mflux wyznacza elipsę felgi
+  (SAM 2, `Segmenter.segment_rim`) i przeskalowuje felgę w wycinku radialnym warpem
+  (`wheeler_worker/rim_geometry.py`); felga nie do wyznaczenia kończy zadanie kodem `rim_size_unavailable`.
 - `wheeler_worker/processing.py` definiuje `Processor` z metodą na każdy rodzaj pracy
   (`detect`, `segment`, `generate`, `regenerate_wheel`; tylko pliki, bez bazy). Runner (`runner.py`, `HANDLERS`) pobiera zadanie
   (`FOR UPDATE SKIP LOCKED`), woła procesor i zapisuje wynik albo błąd.

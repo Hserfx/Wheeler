@@ -1,23 +1,30 @@
 """Rozmiar felgi (plus-sizing, ticket 12): stopień -2…+2″ wybierany przed „Generuj”.
 
-Zmienia się tylko średnica felgi, zewnętrzna średnica koła zostaje; steruje tym wyłącznie
-prompt. Prompt testowany bezpośrednio (`build_prompt`), reszta przez HTTP i `run_once`
-workera z atrapami modeli, na prawdziwym Postgresie.
+Zmienia się tylko średnica felgi, zewnętrzna średnica koła zostaje; steruje tym geometria:
+worker przeskalowuje felgę w wycinku przed modelem (geometria warpu: `test_rim_geometry.py`).
+Procesor testowany bezpośrednio z atrapami SAM 2 i mflux, reszta przez HTTP i `run_once`
+workera na prawdziwym Postgresie.
 """
 
 from __future__ import annotations
 
 import re
+import tempfile
+from pathlib import Path
 
+import numpy as np
 import pytest
-from fake_models import BoxDetector, DiscSegmenter, SolidEditor
+from fake_models import BoxDetector, DiscSegmenter, SolidEditor, disc_mask
 from fastapi.testclient import TestClient
 from helpers import click_wheel, drain, jpeg, upload, upload_photo
+from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
 from wheeler_api.texts import PARAM_LABELS, TEXTS
 from wheeler_shared import edit_params
+from wheeler_shared.failures import Failure, ProcessingFailed
 from wheeler_shared.storage import Storage
+from wheeler_worker.processing import GenerateItem, RegenerateWheelItem, SegmentItem
 from wheeler_worker.wheel_swap import WheelSwapProcessor, build_prompt
 
 MINUS = "\N{MINUS SIGN}"  # w UI stopnie ujemne mają minus typograficzny
@@ -31,45 +38,175 @@ CURRENT_TEMPLATE = (
 )
 
 
-def test_unchanged_rim_size_gives_exactly_the_current_prompt() -> None:
-    assert build_prompt(rim_size=0) == CURRENT_TEMPLATE
-    assert build_prompt("Chrome finish.", rim_size=0) == f"{CURRENT_TEMPLATE} Chrome finish."
+def test_prompt_is_the_current_template_with_the_users_suffix() -> None:
+    # Jeden prompt dla każdego stopnia: rozmiarem steruje geometria wycinka (model polecenie
+    # rozmiaru ignoruje); stopień ≠ 0 sprawdzają testy procesora niżej.
+    assert build_prompt() == CURRENT_TEMPLATE
+    assert build_prompt("Chrome finish.") == f"{CURRENT_TEMPLATE} Chrome finish."
+
+
+# Koło na zdjęciu 400x240: opona o promieniu 50 px, w niej jasna felga o promieniu 35 px
+# (rho_f = 0,7 średnicy koła). +2″ = +8% średnicy koła: felga 39 px; -2″: 31 px.
+WHEEL = (150, 120)
+TIRE_RADIUS = 50
+RIM_RADIUS = 35
+
+
+def _wheel_photo(path: Path) -> Path:
+    rng = np.random.default_rng(3)
+    pixels = rng.integers(0, 256, (240, 400, 3), dtype=np.uint8)
+    pixels[np.asarray(disc_mask((400, 240), WHEEL, TIRE_RADIUS)) > 0] = (30, 30, 30)
+    pixels[np.asarray(disc_mask((400, 240), WHEEL, RIM_RADIUS)) > 0] = (220, 220, 220)
+    Image.fromarray(pixels).save(path)
+    return path
+
+
+def _model_rim_radius(crop: Image.Image) -> float:
+    """Promień jasnej felgi w wycinku dla modelu, w pikselach zdjęcia.
+
+    Wycinek: koło 107 px (maska poszerzona o 3%) + 25% marginesu = 160 px, skalowany do 1024."""
+    scale = crop.width / 160
+    lum = np.asarray(crop.convert("L"))
+    near = np.asarray(disc_mask(crop.size, (crop.width / 2, crop.height / 2), round(45 * scale)))
+    bright = (lum > 125) & (near > 0)
+    return float(np.sqrt(bright.sum() / np.pi) / scale)
+
+
+class _Wheel:
+    """Zdjęcie z jednym kołem i jego maską, procesor z atrapami („SAM 2” widzi felgę 35 px)."""
+
+    def __init__(self, tmp_path: Path, *, rim_radius: int | None = RIM_RADIUS) -> None:
+        self.out = tmp_path
+        self.photo = _wheel_photo(tmp_path / "input.png")
+        self.rim = tmp_path / "rim.png"
+        Image.new("RGB", (60, 60), (200, 20, 20)).save(self.rim)
+        self.segmenter = DiscSegmenter(radius=TIRE_RADIUS, rim_radius=rim_radius)
+        self.editor = SolidEditor(echo=True)
+        self.processor = WheelSwapProcessor(
+            detector=BoxDetector(), segmenter=self.segmenter, editor=self.editor
+        )
+        self.mask = (
+            self.processor.segment(
+                SegmentItem(
+                    job_id=1,
+                    photo_path=self.photo,
+                    output_dir=tmp_path,
+                    params={},
+                    clicks={7: WHEEL},
+                )
+            )
+            .masks[7]
+            .mask
+        )
+
+    def generate(self, rim_size: int) -> Path:
+        return self.processor.generate(
+            GenerateItem(
+                job_id=1,
+                photo_path=self.photo,
+                rim_path=self.rim,
+                output_dir=self.out,
+                params={"seed": 5, edit_params.RIM_SIZE: rim_size},
+                masks={7: self.mask},
+            )
+        ).result_path
+
+    def regenerate(self, result: Path, rim_size: int) -> Path:
+        return self.processor.regenerate_wheel(
+            RegenerateWheelItem(
+                job_id=1,
+                photo_path=self.photo,
+                result_path=result,
+                rim_path=self.rim,
+                output_dir=self.out,
+                params={"seed": 5, edit_params.RIM_SIZE: rim_size},
+                wheel_id=7,
+                mask_path=self.mask,
+                seed=6,
+            )
+        ).result_path
+
+
+@pytest.mark.parametrize(("rim_size", "radius"), [(2, 39), (1, 37), (-1, 33), (-2, 31)])
+def test_model_gets_crop_with_rim_already_resized_and_the_unchanged_prompt(
+    tmp_path: Path, rim_size: int, radius: int
+) -> None:
+    wheel = _Wheel(tmp_path)
+
+    result = wheel.generate(rim_size)
+
+    [call] = wheel.editor.calls
+    assert _model_rim_radius(call.images[0]) == pytest.approx(radius, abs=1)
+    assert call.prompt == CURRENT_TEMPLATE
+    # Felgę mierzy SAM 2 na oryginale, przed mflux.
+    [measured] = wheel.segmenter.rim_photos
+    assert np.array_equal(np.asarray(measured), np.asarray(Image.open(wheel.photo)))
+    # Piksele poza maską koła bit w bit.
+    with Image.open(result) as output, Image.open(wheel.photo) as original:
+        outside = np.asarray(Image.open(wheel.mask)) == 0
+        assert np.array_equal(np.asarray(output)[outside], np.asarray(original)[outside])
+    # Obrazy diagnostyczne w katalogu koła.
+    assert (tmp_path / "wheels/7/rim_ellipse.png").is_file()
+    assert (tmp_path / "wheels/7/warped.png").is_file()
+
+
+def test_unchanged_rim_size_sends_the_plain_crop_without_measuring_the_rim(
+    tmp_path: Path,
+) -> None:
+    wheel = _Wheel(tmp_path)
+
+    wheel.generate(0)
+
+    [call] = wheel.editor.calls
+    assert _model_rim_radius(call.images[0]) == pytest.approx(RIM_RADIUS, abs=1)
+    assert wheel.segmenter.rim_photos == []
+    assert not (tmp_path / "wheels/7/rim_ellipse.png").exists()
+    assert not (tmp_path / "wheels/7/warped.png").exists()
+
+
+def test_regenerated_wheel_is_cropped_and_measured_from_the_original_not_resized_twice(
+    tmp_path: Path,
+) -> None:
+    wheel = _Wheel(tmp_path)
+    first = wheel.generate(2)  # „model” oddaje wycinek: w wyniku felga ma już 39 px
+
+    second = wheel.regenerate(first, 2)
+
+    generated, regenerated = wheel.editor.calls
+    assert _model_rim_radius(regenerated.images[0]) == pytest.approx(39, abs=1)
+    assert np.array_equal(np.asarray(regenerated.images[0]), np.asarray(generated.images[0]))
+    original = np.asarray(Image.open(wheel.photo))
+    assert all(np.array_equal(np.asarray(photo), original) for photo in wheel.segmenter.rim_photos)
+    # Składanie na bieżącym wyniku: poza maską koła wynik zostaje jak był.
+    outside = np.asarray(Image.open(wheel.mask)) == 0
+    assert np.array_equal(
+        np.asarray(Image.open(second))[outside], np.asarray(Image.open(first))[outside]
+    )
 
 
 @pytest.mark.parametrize(
-    ("rim_size", "direction", "inches", "percent", "sidewall"),
-    [
-        (1, "larger", "1 inch", "4%", "thinner"),
-        (2, "larger", "2 inches", "8%", "thinner"),
-        (-1, "smaller", "1 inch", "4%", "thicker"),
-        (-2, "smaller", "2 inches", "8%", "thicker"),
-    ],
+    "rim_radius",
+    [None, 15],  # SAM nie widzi felgi; „felga” ma 30% średnicy koła (poza 40-95%)
 )
-def test_plus_sizing_prompt_tells_direction_scale_and_sidewall_and_keeps_wheel_diameter(
-    rim_size: int, direction: str, inches: str, percent: str, sidewall: str
+def test_unmeasurable_rim_fails_the_job_before_the_model_runs(
+    tmp_path: Path, rim_radius: int | None
 ) -> None:
-    prompt = build_prompt("Chrome finish.", rim_size=rim_size)
+    wheel = _Wheel(tmp_path, rim_radius=rim_radius)
 
-    assert prompt.startswith(
-        "Replace the rim of the car wheel in image 1 with the alloy rim design shown in image 2."
-    )
-    assert f"about {inches} {direction} in diameter" in prompt
-    assert f"about {percent} of the overall wheel diameter" in prompt
-    assert f"{sidewall} tire sidewall" in prompt
-    assert "Keep the overall outer diameter of the wheel" in prompt
-    # Zmienia się tylko bok opony od strony felgi: bieżnik i zewnętrzna krawędź zostają.
-    assert "Keep the tire tread and the outer edge of the tire unchanged." in prompt
-    # Sprzeczne z plus-sizingiem: felga ma nie wypełniać obecnego otworu opony.
-    assert "fill the tire opening exactly" not in prompt
-    assert "Keep the tire," not in prompt
-    assert prompt.endswith("Photorealistic. Chrome finish.")
+    with pytest.raises(ProcessingFailed) as failed:
+        wheel.generate(1)
+
+    assert failed.value.failure == Failure.RIM_SIZE_UNAVAILABLE
+    assert wheel.editor.calls == []
 
 
-def _editor_processor() -> tuple[SolidEditor, WheelSwapProcessor]:
-    editor = SolidEditor()
-    return editor, WheelSwapProcessor(
-        detector=BoxDetector(), segmenter=DiscSegmenter(radius=10), editor=editor
-    )
+def _editor_processor(
+    rim_radius: int | None = RIM_RADIUS,
+) -> tuple[SolidEditor, WheelSwapProcessor]:
+    """Procesor z atrapami: „SAM 2” widzi koło ze zdjęcia `_wheel_photo`, „mflux” oddaje wycinek."""
+    editor = SolidEditor(echo=True)
+    segmenter = DiscSegmenter(radius=TIRE_RADIUS, rim_radius=rim_radius)
+    return editor, WheelSwapProcessor(detector=BoxDetector(), segmenter=segmenter, editor=editor)
 
 
 def _draft_with_wheel(
@@ -78,10 +215,12 @@ def _draft_with_wheel(
     storage: Storage,
     processor: WheelSwapProcessor,
 ) -> int:
-    """Szkic z felgą i jednym kołem z maską, gotowy do „Generuj”."""
-    job_id = upload(client)
+    """Szkic ze zdjęciem koła (`_wheel_photo`), felgą i maską koła, gotowy do „Generuj”."""
+    with tempfile.TemporaryDirectory() as folder:
+        photo = _wheel_photo(Path(folder) / "auto.png").read_bytes()
+    job_id = upload(client, photo, filename="auto.png")
     drain(session_factory, storage, processor)
-    click_wheel(client, job_id)
+    click_wheel(client, job_id, WHEEL)
     assert drain(session_factory, storage, processor)
     return job_id
 
@@ -106,8 +245,9 @@ def test_chosen_rim_size_reaches_the_editor_also_when_regenerating_one_wheel(
     assert drain(session_factory, storage, processor)
 
     generated, regenerated = editor.calls
-    assert "about 2 inches larger in diameter" in generated.prompt
-    assert regenerated.prompt == generated.prompt
+    assert _model_rim_radius(generated.images[0]) == pytest.approx(39, abs=1)
+    assert _model_rim_radius(regenerated.images[0]) == pytest.approx(39, abs=1)
+    assert regenerated.prompt == generated.prompt == CURRENT_TEMPLATE
     assert regenerated.seed != generated.seed
 
 
@@ -124,9 +264,25 @@ def test_retried_job_edits_with_the_same_rim_size(
     assert drain(session_factory, storage, processor)
 
     [call] = editor.calls
-    assert "about 2 inches smaller in diameter" in call.prompt
+    assert _model_rim_radius(call.images[0]) == pytest.approx(31, abs=1)
     retried_id = int(response.headers["location"].rsplit("/", 1)[1])
     assert _shown_rim_size(client, retried_id) == f"{MINUS}2″"
+
+
+def test_unmeasurable_rim_fails_the_job_with_a_hint_to_generate_without_resizing(
+    client: TestClient, session_factory: sessionmaker[Session], storage: Storage
+) -> None:
+    editor, processor = _editor_processor(rim_radius=None)  # SAM 2 nie widzi felgi
+    job_id = _draft_with_wheel(client, session_factory, storage, processor)
+
+    _generate(client, job_id, "1")
+    assert drain(session_factory, storage, processor)
+
+    status = client.get(f"/jobs/{job_id}/status").text
+    assert TEXTS["status_failed"] in status
+    assert TEXTS["failure_rim_size_unavailable"] in status
+    assert "bez zmiany rozmiaru" in TEXTS["failure_rim_size_unavailable"]
+    assert editor.calls == []
 
 
 @pytest.mark.parametrize("rim_size", ["3", "-3", "1.5", "duży"])

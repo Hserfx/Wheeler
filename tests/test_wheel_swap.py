@@ -127,7 +127,10 @@ def test_model_gets_wheel_crop_then_rim_with_mask_seed_and_default_prompt(tmp_pa
     assert mask[512, 512] == 255 and mask[5, 5] == 0  # koło w środku wycinka, tło poza maską
 
 
-def test_placeholder_processor_runs_whole_pipeline_without_models(tmp_path: Path) -> None:
+@pytest.mark.parametrize("rim_size", [0, 2])
+def test_placeholder_processor_runs_whole_pipeline_without_models(
+    tmp_path: Path, rim_size: int
+) -> None:
     photo = noise_file(tmp_path / "input.png")
     processor = build_processor(WorkerSettings(processor="placeholder"))
     item = SegmentItem(
@@ -141,7 +144,7 @@ def test_placeholder_processor_runs_whole_pipeline_without_models(tmp_path: Path
             photo_path=photo,
             rim_path=_rim(tmp_path / "rim.png"),
             output_dir=tmp_path,
-            params={"seed": 1},
+            params={"seed": 1, "rim_size": rim_size},
             masks={1: mask_path},
         )
     )

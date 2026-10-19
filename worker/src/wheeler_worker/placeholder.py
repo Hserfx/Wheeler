@@ -1,9 +1,9 @@
 """Atrapa modeli (`WHEELER_PROCESSOR=placeholder`): cały pipeline bez GPU i bez wag.
 
 Przydaje się do pracy nad UI: „detektor” znajduje dwa koła w stałych miejscach (dolne rogi
-zdjęcia), „SAM 2” zwraca okrąg wokół kliknięcia albo wpisany w box, „mflux” zwraca
-wycinek w odcieniach szarości, a „BiRefNet” zostawia elipsę wpisaną w kadr. Kompozycja,
-pliki i statusy są prawdziwe.
+zdjęcia), „SAM 2” zwraca okrąg wokół kliknięcia albo wpisany w box (felga: mniejszy okrąg
+w środku koła), „mflux” zwraca wycinek w odcieniach szarości, a „BiRefNet” zostawia elipsę
+wpisaną w kadr. Kompozycja, pliki i statusy są prawdziwe.
 """
 
 from __future__ import annotations
@@ -76,6 +76,20 @@ class CircleSegmenter:
             inside = (xx - cx) ** 2 + (yy - cy) ** 2 <= radius * radius
             masks.append(Image.fromarray(inside.astype(np.uint8) * 255))
         return masks
+
+    def segment_rim(
+        self, image: Image.Image, wheel_mask: Image.Image
+    ) -> list[tuple[Image.Image, float]]:
+        """Felga: okrąg o 0,7 promienia koła w środku jego maski."""
+        box = wheel_mask.getbbox()
+        if box is None:
+            return []
+        x0, y0, x1, y1 = box
+        cx, cy, radius = (x0 + x1) / 2, (y0 + y1) / 2, 0.7 * min(x1 - x0, y1 - y0) / 2
+        width, height = image.size
+        yy, xx = np.mgrid[0:height, 0:width]
+        inside = (xx + 0.5 - cx) ** 2 + (yy + 0.5 - cy) ** 2 <= radius * radius
+        return [(Image.fromarray(inside.astype(np.uint8) * 255), 0.9)]
 
     def release(self) -> None:
         self._weights.release()

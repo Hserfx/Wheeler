@@ -7,6 +7,8 @@ dependencies = [
     "wheeler-shared",
     "pillow>=10.4",
     "numpy>=2.0",
+    # Elipsa felgi i radialny warp przy zmianie rozmiaru felgi (ticket 12); i tak przychodzi z mflux.
+    "opencv-python>=4.10",
     # Modele AI (ładowane leniwie, tylko w procesorze `wheel-swap`): mflux (MLX) + SAM 2 i BiRefNet (torch).
     "mflux",
     "torch>=2.13",

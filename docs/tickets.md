@@ -307,23 +307,23 @@ Rozmiarem steruje geometria, nie prompt (sam prompt model ignoruje, zob. komenta
 
 **Blocked by:** 06, 07, 09
 
-**Status:** claimed
+**Status:** done
 
 - [x] Wybór stopnia w sekcji wyboru felgi na stronie zadania, w formularzu „Generuj” (`#job-form`); domyślnie „bez zmian”. `POST /jobs` przy wgraniu go nie przyjmuje
 - [x] Stopień zapisany w `Job.params` (nowy klucz w `wheeler_shared/edit_params.py`), z walidacją zakresu −2…+2 po stronie serwera; brak klucza oznacza „bez zmian”
 - [x] Jedno ustawienie na całe zadanie: wszystkie koła, „Ponów” (`retry.py`) i „Ponów to koło” używają tej samej wartości
 - [x] Przy „bez zmian” prompt jest identyczny z obecnym szablonem (istniejące zadania i testy bez zmian)
-- [ ] Prompt jest identyczny dla każdego stopnia (obecny szablon „bez zmian”); osobny szablon plus-sizingu znika
+- [x] Prompt jest identyczny dla każdego stopnia (obecny szablon „bez zmian”); osobny szablon plus-sizingu znika
 - [x] Ekran wyniku pokazuje wybrany stopień (np. „Felga: +2″”) obok seeda, tylko gdy ≠ „bez zmian”; siatka Historii bez zmian (szczegóły zadania i tak pokazują wszystkie klucze `Job.params`, etykieta w `PARAM_LABELS`)
-- [ ] Przy stopniu ≠ 0, przed załadowaniem mflux, worker wyznacza dla każdego koła zadania elipsę felgi: maska samej felgi z SAM 2 (punkt w środku koła + punkty negatywne na oponie albo box ~0,8 bboxa koła), elipsa dopasowana (`cv2.fitEllipse`) tylko do tej części konturu felgi, która graniczy z oponą (odporność na zasłonięcie). Potem SAM 2 jest zwalniany, jak dotąd przed mflux
-- [ ] Zewnętrzna krawędź opony = elipsa felgi × k (ten sam środek i obrót; felga i ściana opony są koncentryczne także w 3/4), k z profilu maski koła; gdy k wypada poza 1,15–1,6 (np. zasłonięcie), przyjmowane jest typowe k = 1,32
-- [ ] Radialny warp w układzie tej (obróconej) elipsy, odwzorowanie z prototypu: dla ρ = promień znormalizowany do zewnętrznej krawędzi opony, ρ_f = obecna felga, ρ_c = ρ_f + stopień × 0,04: `[0, ρ_f] → [0, ρ_c]` liniowo (felga), `[ρ_f, 1] → [ρ_c, 1]` liniowo (bok opony), ρ ≥ 1 bez zmian. Docelowy rozmiar nie jest przycinany ani korygowany
-- [ ] Przy „bez zmian” wycinek trafia do modelu bez warpu i bez wyznaczania elipsy (zachowanie i czas jak dotąd)
-- [ ] Wycinek dla modelu i pomiar felgi zawsze z oryginalnego zdjęcia, także przy „Ponów to koło” (bez podwójnego przeskalowania); składanie jak dotąd na bieżącym wyniku, piksele poza maską bit w bit
-- [ ] Gdy felgi nie da się wyznaczyć (brak maski albo średnica felgi poza 40–95% średnicy koła), zadanie kończy się błędem z nowym kodem `rim_size_unavailable` i czytelnym komunikatem (np. „Nie udało się wyznaczyć felgi na kole N — wygeneruj bez zmiany rozmiaru”)
-- [ ] Obrazy diagnostyczne (elipsa felgi i opony na wycinku, wycinek po warpie) w katalogu koła; bez zmian w bazie i w UI
-- [ ] `docs/DESIGN.md` opisuje sterowanie geometryczne zamiast szablonu plus-sizingu
-- [ ] Testy na atrapach modeli: geometria warpu (piksele poza elipsą koła i poza maską bit w bit, felga po warpie ma docelowy promień, przy 0 brak warpu), przekazanie warpowanego wycinka do edytora przez workera (także przy „Ponów to koło” — wycinek z oryginału), błąd `rim_size_unavailable`; dotychczasowe testy parametru i ekranu wyniku zostają
+- [x] Przy stopniu ≠ 0, przed załadowaniem mflux, worker wyznacza dla każdego koła zadania elipsę felgi: maska samej felgi z SAM 2 (punkt w środku koła + punkty negatywne na oponie albo box ~0,8 bboxa koła), elipsa dopasowana (`cv2.fitEllipse`) tylko do tej części konturu felgi, która graniczy z oponą (odporność na zasłonięcie). Potem SAM 2 jest zwalniany, jak dotąd przed mflux
+- [x] Zewnętrzna krawędź opony = elipsa felgi × k (ten sam środek i obrót; felga i ściana opony są koncentryczne także w 3/4), k z profilu maski koła; gdy k wypada poza 1,15–1,6 (np. zasłonięcie), przyjmowane jest typowe k = 1,32
+- [x] Radialny warp w układzie tej (obróconej) elipsy, odwzorowanie z prototypu: dla ρ = promień znormalizowany do zewnętrznej krawędzi opony, ρ_f = obecna felga, ρ_c = ρ_f + stopień × 0,04: `[0, ρ_f] → [0, ρ_c]` liniowo (felga), `[ρ_f, 1] → [ρ_c, 1]` liniowo (bok opony), ρ ≥ 1 bez zmian. Docelowy rozmiar nie jest przycinany ani korygowany
+- [x] Przy „bez zmian” wycinek trafia do modelu bez warpu i bez wyznaczania elipsy (zachowanie i czas jak dotąd)
+- [x] Wycinek dla modelu i pomiar felgi zawsze z oryginalnego zdjęcia, także przy „Ponów to koło” (bez podwójnego przeskalowania); składanie jak dotąd na bieżącym wyniku, piksele poza maską bit w bit
+- [x] Gdy felgi nie da się wyznaczyć (brak maski albo średnica felgi poza 40–95% średnicy koła), zadanie kończy się błędem z nowym kodem `rim_size_unavailable` i czytelnym komunikatem (np. „Nie udało się wyznaczyć felgi na kole N — wygeneruj bez zmiany rozmiaru”)
+- [x] Obrazy diagnostyczne (elipsa felgi i opony na wycinku, wycinek po warpie) w katalogu koła; bez zmian w bazie i w UI
+- [x] `docs/DESIGN.md` opisuje sterowanie geometryczne zamiast szablonu plus-sizingu
+- [x] Testy na atrapach modeli: geometria warpu (piksele poza elipsą koła i poza maską bit w bit, felga po warpie ma docelowy promień, przy 0 brak warpu), przekazanie warpowanego wycinka do edytora przez workera (także przy „Ponów to koło” — wycinek z oryginału), błąd `rim_size_unavailable`; dotychczasowe testy parametru i ekranu wyniku zostają
 
 **Comments:**
 
@@ -364,3 +364,28 @@ Rozmiarem steruje geometria, nie prompt (sam prompt model ignoruje, zob. komenta
   bazy i bez podglądu w UI; wycinek zawsze z oryginału; brak felgi = błąd zadania; typowe k = 1,32 jako
   zapas przy niepewnej krawędzi opony. Weryfikacja tylko testami na atrapach, jakość na prawdziwym modelu
   ocenia użytkownik.
+- 2026-10-19 (agent, sterowanie geometryczne, gałąź `ticket-12-warp`): szablon plus-sizingu usunięty,
+  `build_prompt(suffix)` daje ten sam prompt dla każdego stopnia. Geometria w nowym
+  `wheeler_worker/rim_geometry.py` (numpy + OpenCV, `opencv-python` dopisany do zależności workera, i tak
+  przychodził z mflux): `measure_rim` (reguła wyboru kandydata z `rim_ellipse/NOTES.md`, elipsa
+  `cv2.fitEllipse` tylko z brzegu felgi graniczącego z oponą, k = 20. percentyl profilu maski koła,
+  poza 1,15–1,6 `TYPICAL_K` = 1,32, średnica pionowa felgi 40–95% wysokości koła), `warp_rim`
+  (odwzorowanie z prototypu, `cv2.remap` Lanczos, piksele ρ ≥ 1 kopiowane z wejścia bit w bit),
+  `ungrown_wheel_mask` (maska koła bez `mask_grow`, jako przybliżenie maski SAM) i `outline_rim`
+  (diagnostyka). SAM 2: nowa metoda `Segmenter.segment_rim` (punkt w centroidzie + 8 negatywów na
+  oponie oraz box 0,8 bboxa + punkt, oba multimask; 6 kandydatów); atrapa `placeholder` też ją ma.
+  `WheelSwapProcessor.generate`/`regenerate_wheel`: przy stopniu ≠ 0 `_measure_rims` na oryginale
+  przed `_prepare_edit` (tam zwolnienie SAM 2 przed mflux); `_WheelEdit.apply(original, base, …)`
+  wycina z oryginału, warpuje i składa na `base` (bieżący wynik przy „Ponów to koło”). Pliki
+  diagnostyczne `rim_ellipse.png` i `warped.png` w `wheels/<id>/`; `crop.png` zostaje wycinkiem bez
+  warpu. Nowy kod `Failure.RIM_SIZE_UNAVAILABLE` (`rim_size_unavailable`) z tekstem w `texts.py`.
+  Testy: `tests/test_rim_geometry.py` (warp, pomiar, zasłonięcie, k zapasowe, odrzucenie felgi),
+  `tests/test_rim_size.py` (procesor z atrapami i HTTP: warpowany wycinek trafia do modelu przy
+  generowaniu, „Ponów” i „Ponów to koło” z oryginału bez podwójnego warpu, przy 0 brak pomiaru,
+  błąd `rim_size_unavailable` na stronie zadania). DESIGN i README zaktualizowane.
+  Odstępstwa: komunikat błędu nie podaje numeru koła (w `Job.error` leży sam kod, bez parametrów;
+  numer koła trafia tylko do logu workera): „Nie udało się wyznaczyć felgi na jednym z kół, więc nie
+  da się zmienić jej rozmiaru. Wygeneruj bez zmiany rozmiaru.” „Ponów to koło” także przy „bez zmian”
+  wycina teraz z oryginału (wcześniej z bieżącego wyniku), bo to jedna ścieżka kodu. Adapter SAM 2
+  (`Sam2Segmenter.segment_rim`) nie był uruchamiany na prawdziwym modelu (zgodnie z grillingiem:
+  tylko atrapy).

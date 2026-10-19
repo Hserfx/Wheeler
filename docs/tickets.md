@@ -7,7 +7,7 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
     ├─► 03 ─┬─► 04 ─► 07
 02 ─┘       ├─► 05, 06, 09, 10, 11
 02 ─────────┴─► 08
-06, 07, 09 ─► 12
+06, 07, 09 ─► 12 ─► 13
 ```
 
 ---
@@ -407,3 +407,41 @@ Rozmiarem steruje geometria, nie prompt (sam prompt model ignoruje, zob. komenta
   w jeden typ: stopień jest jeden na zadanie (`_WheelEdit.rim_size`), geometria na koło, więc wspólny typ
   tylko by je powielał. Punkty negatywne i box felgi dla SAM przesunięte o pół piksela (środek bboxa
   w układzie środków pikseli, jak centroid) — pomijalne.
+- 2026-10-19 (test użytkownika + grilling): efekt po warpie oceniony jako nienaturalny. Felga rośnie,
+  a opona stoi w miejscu, a +2″ na zdjęciu zmienia się tylko trochę. Kierunek: rośnie całe koło (felga
+  i zewnętrzna krawędź opony), a dzisiejszy plus-sizing ze stałą średnicą koła zostanie zastąpiony.
+  Najpierw prototyp (ticket 13), ticket implementacyjny dopiero po jego werdykcie. Ten ticket zostaje
+  `done`.
+
+---
+
+# 13: Prototyp: powiększanie całego koła
+
+**What to build:** Prototyp (gałąź `prototype/…`, kod poza produkcyjnym workerem, jak `prototype/plus-sizing-warp`) sprawdzający na prawdziwych zdjęciach i prawdziwym modelu nowe znaczenie stopnia rozmiaru felgi: przy „+N″” rośnie **całe koło**, nie tylko felga. Wynik to arkusze przed/po i `VERDICT.md`, na których podstawie powstanie ticket implementacyjny. Kodu produkcyjnego (worker, UI, `Job.params`) ten ticket nie zmienia.
+
+Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
+
+- **„+N″” = felga +N″ i zewnętrzna średnica koła +N″:** bok opony zostaje tej samej grubości w rzeczywistości („ta sama opona na większej feldze”). „−N″” analogicznie.
+- **Skala cala ze znanego rozmiaru felgi:** 1″ = średnica widocznej felgi w px / (obecny rozmiar felgi + 1,4″). 1,4″ to rant felgi (kołnierz ~17–18 mm z każdej strony, wymiary ETRTO), widoczny na zdjęciu, a nieliczony w rozmiarze nominalnym. Stała nie jest weryfikowana na zdjęciach ze znanym rozmiarem. Obecny rozmiar to później opcjonalne pole „Obecna felga” (14″–22″ co 1″, domyślnie 17″), a w prototypie parametr skryptu z domyślnym 17″.
+- **Punkt styku z ziemią stoi w miejscu:** najniższy punkt elipsy opony, także w ujęciu 3/4. Koło rośnie w górę i na boki, w nadkole, a przy zmniejszaniu opada do tego punktu. Opona nie wchodzi w podłoże i nie zawisa nad nim.
+- **Karoseria zasłania koło i zostaje bit w bit:** maska karoserii z SAM 2 (punkt na błotniku nad nadkolem, ewentualnie z punktami negatywnymi na kole). Powiększone koło zajmuje nową elipsę opony poza maską karoserii, więc góra opony chowa się za błotnikiem.
+- **Zmniejszanie:** odsłonięty obszar (stara maska koła minus nowe koło) w wycinku dla modelu jest wstępnie wypełniony, np. rozmytym, przyciemnionym kolorem z okolicy nadkola, a model domalowuje go w obrębie maski edycji. Maska edycji = (stare koło ∪ nowe koło) minus karoseria.
+- **Felga** mierzona jak w tickecie 12 (SAM 2, elipsa z brzegu felgi graniczącego z oponą). Prompt bez zmian (ten sam dla każdego stopnia).
+- **Zła maska karoserii** (pusta, obejmująca koło albo cały wycinek) kończy później zadanie błędem `rim_size_unavailable`, wspólnym z brakiem felgi. Prototyp ustala, po czym poznać złą maskę.
+
+**Blocked by:** 12
+
+**Status:** ready-for-agent
+
+- [ ] Skrypt prototypu uruchomiony na prawdziwym modelu (SAM 2 + mflux, ustawienia jak w produkcji) na zdjęciach Golf (bok), Sorento (3/4), Vios (zasłonięte) i Clio (zadanie użytkownika), dla stopni −2″, −1″, +1″, +2″ i kontroli „bez zmian”, przy obecnej feldze 17″
+- [ ] Arkusze przed/po na każde zdjęcie: oryginał, wycinek po warpie (z zaznaczoną elipsą felgi, nową elipsą opony i maską karoserii), wynik modelu
+- [ ] Pomiar wyniku: średnica felgi i koła po modelu (SAM 2 na wyniku) w calach według tej samej skali, porównana z docelową; kryterium sukcesu odchylenie ≤ ~0,5″ przy ±2″
+- [ ] Automatyczne sprawdzenie, że piksele maski karoserii i piksele poza maską edycji są bit w bit z oryginałem
+- [ ] Maska karoserii poprawna na wszystkich zdjęciach zestawu (bok, 3/4, zasłonięte), z nakładkami do oceny; opisane przypadki, w których zawodzi, i proponowane kryteria „zła maska” dla `rim_size_unavailable`
+- [ ] `VERDICT.md`: wynik każdego kryterium (rozmiar, karoseria bit w bit, maska karoserii), miejsce na ocenę wyglądu przez użytkownika (koło naturalnie wypełnia nadkole, wnętrze nadkola przy −2″ wiarygodne), czasy i szczyt pamięci, rekomendacja dalszych kroków. Jeśli model „cofa” rozmiar przy −N″: propozycja korekty niedostrzału albo rezygnacji z wartości ujemnych. Proponowany podział ticketu implementacyjnego (pole „Obecna felga” w UI i `Job.params`, maska karoserii z błędem, nowy warp zastępujący warp z ticketu 12, zmniejszanie)
+
+**Comments:**
+
+- 2026-10-19 (grilling): weryfikacja tym razem na prawdziwym modelu, bo implementacja ticketu 12 sprawdzona
+  tylko atrapami trafiła na model, który ignorował prompt. Ticket implementacyjny powstaje dopiero po
+  werdykcie, bo jego zakres zależy od wyników (np. czy zostają wartości ujemne).

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import secrets
-import shutil
 from collections.abc import Iterator
 from typing import Annotated
 from urllib.parse import urlencode
@@ -276,7 +275,7 @@ def retry(
         with session.begin():
             new_id = retry_job(session, storage, job_id, job_dir=job_dir)
     except BaseException as exc:
-        shutil.rmtree(storage.path(job_dir), ignore_errors=True)
+        storage.remove_tree(job_dir)
         if isinstance(exc, LookupError):
             raise HTTPException(status_code=404) from None
         if isinstance(exc, NotRetryable):

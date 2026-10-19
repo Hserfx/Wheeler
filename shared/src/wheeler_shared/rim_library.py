@@ -15,10 +15,8 @@ Funkcje (poza `delete_rim`) nie zatwierdzają transakcji, jak `queue.py`.
 from __future__ import annotations
 
 import shutil
-import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import PurePosixPath
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -26,8 +24,6 @@ from sqlalchemy.orm import Session, sessionmaker
 from wheeler_shared.failures import Failure
 from wheeler_shared.models import Rim, RimStatus
 from wheeler_shared.storage import Storage
-
-RIMS_DIR = "rims"
 
 
 class RimError(Exception):
@@ -49,21 +45,6 @@ class ClaimedRim:
     id: int
     original_path: str
     click: tuple[float, float] | None
-
-
-def new_rim_dir(storage: Storage) -> str:
-    """Tworzy pusty katalog na pliki nowej felgi (`rims/<hex>`) i zwraca ścieżkę względną."""
-    relative = f"{RIMS_DIR}/{uuid.uuid4().hex}"
-    storage.path(relative).mkdir(parents=True, exist_ok=False)
-    return relative
-
-
-def rim_dir_of(relative: str) -> str | None:
-    """Katalog felgi (`rims/<hex>`) zawierający plik albo None."""
-    parts = PurePosixPath(relative).parts
-    if len(parts) >= 3 and parts[0] == RIMS_DIR and parts[1] not in ("", ".", ".."):
-        return f"{RIMS_DIR}/{parts[1]}"
-    return None
 
 
 def add_rim(session: Session, *, original_path: str, name: str | None = None) -> int:
@@ -151,7 +132,7 @@ def delete_rim(session_factory: sessionmaker[Session], storage: Storage, rim_id:
             return
         if rim.status == RimStatus.RUNNING:
             raise RimBusy
-        rim_dir = rim_dir_of(rim.original_path)
+        rim_dir = storage.rim_dir_of(rim.original_path)
         session.delete(rim)
     if rim_dir is not None:
         storage.remove_tree(rim_dir)

@@ -21,6 +21,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from wheeler_shared import storage
 from wheeler_shared.edit_params import EditParams
 from wheeler_shared.failures import Failure, ProcessingFailed
 from wheeler_shared.progress import Progress
@@ -57,8 +58,9 @@ FEATHER = 0.015  # pas wygładzania krawędzi (do wewnątrz maski): ułamek boku
 OVERLAY_RGBA = (37, 99, 235, 110)  # półprzezroczysty niebieski
 
 
-def wheel_dir(output_dir: Path, wheel_id: int) -> Path:
-    target = output_dir / "wheels" / str(wheel_id)
+def wheel_dir(output_dir: Path, wheel: int | str) -> Path:
+    """Katalog plików koła w katalogu zadania (układ: `wheeler_shared.storage.wheel_dir`)."""
+    target = output_dir / storage.wheel_dir(wheel)
     target.mkdir(parents=True, exist_ok=True)
     return target
 
@@ -85,7 +87,7 @@ class WheelSwapProcessor:
         raw_masks = self.segmenter.segment_boxes(photo, boxes) if boxes else []
         wheels: list[MaskFiles] = []
         for raw in raw_masks:
-            target = item.output_dir / "wheels" / f"detected-{len(wheels) + 1}"
+            target = item.output_dir / storage.wheel_dir(f"detected-{len(wheels) + 1}")
             files = _save_mask(raw, params, target)
             if files is not None:  # SAM nic nie znalazł w boxie: pomijamy
                 wheels.append(files)

@@ -266,8 +266,8 @@ class _WheelEdit:
         on_step: StepCallback | None = None,
     ) -> Image.Image:
         """Podmienia felgę w jednym kole: model dostaje wycinek `original` (z `rim`: felga
-        przeskalowana o `rim_size`), wynik jest składany na `base`; piksele poza `mask`
-        zostają z `base` bit w bit."""
+        przeskalowana o `rim_size`, tylko w `mask`), wynik jest składany na `base`; piksele
+        poza `mask` zostają z `base` bit w bit."""
         wheel = mask_box(mask)
         if wheel is None:
             raise ProcessingFailed(Failure.EMPTY_MASK)
@@ -284,7 +284,11 @@ class _WheelEdit:
             local = rim.shifted(-crop.left, -crop.top)
             save_png(outline_rim(source, local), out / "rim_ellipse.png")
             warped = warp_rim(source, local, rim_size=self.rim_size)
-            crop_image = warped.resize(size, Image.Resampling.LANCZOS)
+            # Tylko w masce, którą model zmienia: bok opony (felga * k) potrafi z niej wyjść,
+            # a poza maską kompozycja i tak zostawia oryginał (model widziałby szew).
+            crop_image = Image.composite(
+                warped.resize(size, Image.Resampling.LANCZOS), crop_image, crop_mask
+            )
             save_png(crop_image, out / "warped.png")
         generated = self.editor.edit(
             [crop_image, self.rim],

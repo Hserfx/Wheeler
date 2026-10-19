@@ -150,6 +150,23 @@ def test_model_gets_crop_with_rim_already_resized_and_the_unchanged_prompt(
     assert (tmp_path / "wheels/7/warped.png").is_file()
 
 
+def test_rim_is_resized_only_inside_the_wheel_mask_the_model_edits(tmp_path: Path) -> None:
+    # „SAM 2” widzi felgę 45 px w kole 50 px: profil opony (1,11) poza zakresem, więc typowe
+    # k = 1,32 i krawędź opony (59 px) wychodzi poza maskę koła (50 px + 3%). Poza maską model
+    # nie może zobaczyć przeskalowanego boku opony, bo kompozycja i tak go odetnie (szew).
+    wheel = _Wheel(tmp_path, rim_radius=45)
+
+    wheel.generate(2)
+
+    [call] = wheel.editor.calls
+    with Image.open(tmp_path / "wheels/7/crop.png") as plain_crop:
+        plain = np.asarray(plain_crop.convert("RGB"))
+    model_crop = np.asarray(call.images[0].convert("RGB"))
+    outside = np.asarray(call.mask.convert("L")) == 0
+    assert outside.any() and not np.array_equal(model_crop, plain)
+    assert np.array_equal(model_crop[outside], plain[outside])
+
+
 def test_unchanged_rim_size_sends_the_plain_crop_without_measuring_the_rim(
     tmp_path: Path,
 ) -> None:

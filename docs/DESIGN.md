@@ -77,28 +77,31 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
      kandydatów na maskę samej felgi (multimask: punkt w centroidzie maski koła + 8 punktów
      negatywnych na oponie oraz box 0,8 bboxa koła + ten punkt). Maska koła to zapisana maska bez
      poszerzenia `mask_grow`. Kandydat odpada, gdy jego elipsa (`cv2.fitEllipse` na konturze
-     największej składowej) ma średnicę pionową poza 40–95% wysokości koła albo maska wystaje
-     z maski koła o więcej niż 5%; wygrywa maksimum IoU(maska, elipsa) × ocena SAM. Ostateczna
-     elipsa jest dopasowana tylko do tej części konturu felgi, za którą leży opona (odporność na
-     zasłonięcie). Potem SAM 2 jest zwalniany jak dotąd przed mflux.
+     największej składowej) ma średnicę pionową poza 45–92% wysokości koła (reguła z rozpoznania)
+     albo maska wystaje z maski koła o więcej niż 5%; wygrywa maksimum IoU(maska, elipsa) × ocena
+     SAM. Ostateczna elipsa jest dopasowana tylko do tej części konturu felgi, za którą leży opona
+     (odporność na zasłonięcie), i musi mieć średnicę w 40–95% wysokości koła. Potem SAM 2 jest
+     zwalniany jak dotąd przed mflux.
   2. **Krawędź opony** = elipsa felgi × k (ten sam środek i obrót: felga i ściana opony są
      koncentryczne także w 3/4). k = 20. percentyl profilu promieniowego maski koła w jednostkach
      elipsy felgi (strona lica); poza 1,15–1,6 (np. zasłonięcie) typowe k = 1,32.
   3. **Radialny warp** wycinka w układzie tej (obróconej) elipsy, ρ = promień znormalizowany do
      krawędzi opony, ρ_f = 1/k (obecna felga), ρ_c = ρ_f + stopień × 0,04 (1″ ≈ 4% średnicy koła):
      `[0, ρ_f] → [0, ρ_c]` liniowo (felga), `[ρ_f, 1] → [ρ_c, 1]` liniowo (bok opony), ρ ≥ 1 bez
-     zmian. Docelowy rozmiar nie jest przycinany ani korygowany. Znane zachowanie: przy zmniejszaniu
+     zmian. Warp działa tylko w masce koła, którą zmienia model: poza nią wycinek jest oryginałem
+     (krawędź opony = felga × k potrafi z maski wyjść, a kompozycja i tak by ją odcięła — szew).
+     Docelowy rozmiar nie jest przycinany ani korygowany. Znane zachowanie: przy zmniejszaniu
      model częściowo wraca do oryginału (prototyp: −2″ dało ≈ −1,3″); tego nie korygujemy.
   4. Model dostaje warpowany wycinek, maskę i prompt jak zwykle. Diagnostyka w katalogu koła:
      `rim_ellipse.png` (elipsa felgi i krawędź opony na wycinku) i `warped.png` (wycinek dla modelu);
      bez zmian w bazie i w UI.
 
   Przy „bez zmian” nie ma pomiaru ani warpu (czas jak dotąd). Felga, której nie da się wyznaczyć
-  (brak maski albo średnica poza 40–95%), kończy zadanie błędem `rim_size_unavailable` z podpowiedzią,
+  (brak kandydata w 45–92% albo ostateczna średnica poza 40–95%), kończy zadanie błędem `rim_size_unavailable` z podpowiedzią,
   żeby wygenerować bez zmiany rozmiaru. Cale są przybliżone: z samego zdjęcia nie znamy obecnego
   rozmiaru felgi, sterujemy proporcją średnicy felgi do średnicy koła. Warp mieści się w elipsie
-  opony, a kompozycja i tak bierze spoza maski koła oryginał, więc gwarancja „bit w bit” poza maską
-  zostaje. Zmiana średnicy całego koła (wejście w nadkole) jest poza zakresem, bo wymaga maski
+  opony i w masce koła, a kompozycja i tak bierze spoza maski koła oryginał, więc gwarancja „bit
+  w bit” poza maską zostaje. Zmiana średnicy całego koła (wejście w nadkole) jest poza zakresem, bo wymaga maski
   obejmującej karoserię.
 - **Detektor: Florence-2-large** (`florence-community/Florence-2-large`, fp16 na MPS), zadanie
   `<CAPTION_TO_PHRASE_GROUNDING>` z frazą `wheel`. **Maski: SAM 2.1 hiera-large** (`facebook/sam2.1-hiera-large`

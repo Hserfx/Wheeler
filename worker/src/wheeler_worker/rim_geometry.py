@@ -22,7 +22,11 @@ from PIL import Image
 RIM_FRACTION_PER_INCH = 0.04
 
 # Średnica felgi (pionowa, jak w ujęciu 3/4 nie zawyża jej bieżnik) jako ułamek wysokości maski
-# koła: poza tym zakresem to nie felga (piasta, logo, całe koło) albo pomiar się nie udał.
+# koła. Kandydata SAM wybieramy tylko z tego zakresu (reguła z rozpoznania, `rim_ellipse/NOTES.md`):
+# poza nim to nie felga (piasta, logo, całe koło).
+RIM_CANDIDATE_RANGE = (0.45, 0.92)
+# Ostateczna elipsa (dopasowana do brzegu przy oponie) może od kandydata trochę odejść; poza tym
+# zakresem pomiar się nie udał.
 RIM_DIAMETER_RANGE = (0.40, 0.95)
 # Maska kandydata musi leżeć w masce koła (SAM czasem dokleja kawałek karoserii).
 RIM_INSIDE_WHEEL = 0.95
@@ -132,9 +136,10 @@ def measure_rim(wheel_mask: Image.Image, candidates: Sequence[RimCandidate]) -> 
     """Elipsa felgi i krawędź opony koła z maski koła i kandydatów SAM 2 na maskę felgi.
 
     Kandydat: największa składowa, elipsa z `cv2.fitEllipse` na jej konturze; odpada, gdy jego
-    średnica wypada poza `RIM_DIAMETER_RANGE` wysokości koła albo wystaje z maski koła.
+    średnica wypada poza `RIM_CANDIDATE_RANGE` wysokości koła albo wystaje z maski koła.
     Wygrywa maksimum IoU(maska, elipsa) * ocena SAM. Ostateczna elipsa jest dopasowana tylko do
-    brzegu felgi graniczącego z oponą (odporność na zasłonięcie). `None`: felgi nie wyznaczono.
+    brzegu felgi graniczącego z oponą (odporność na zasłonięcie) i musi mieścić się
+    w `RIM_DIAMETER_RANGE`. `None`: felgi nie wyznaczono.
     """
     wheel = np.asarray(wheel_mask.convert("L")) > 0
     rows = np.nonzero(wheel.any(axis=1))[0]
@@ -150,7 +155,7 @@ def measure_rim(wheel_mask: Image.Image, candidates: Sequence[RimCandidate]) -> 
         if len(contour) < 5:
             continue
         ellipse = _fit(contour)
-        if not _plausible(ellipse, wheel_half_height):
+        if not _within(ellipse, wheel_half_height, RIM_CANDIDATE_RANGE):
             continue
         quality = _iou(rim, ellipse) * score
         if best is None or quality > best[0]:
@@ -158,13 +163,15 @@ def measure_rim(wheel_mask: Image.Image, candidates: Sequence[RimCandidate]) -> 
     if best is None:
         return None
     ellipse_or_none = _fit_tire_edge(best[1], wheel, band=wheel_half_height * 2 * TIRE_BAND)
-    if ellipse_or_none is None or not _plausible(ellipse_or_none, wheel_half_height):
+    if ellipse_or_none is None or not _within(
+        ellipse_or_none, wheel_half_height, RIM_DIAMETER_RANGE
+    ):
         return None
     return RimGeometry(ellipse_or_none, _tire_k(ellipse_or_none, wheel))
 
 
-def _plausible(ellipse: Ellipse, wheel_half_height: float) -> bool:
-    low, high = RIM_DIAMETER_RANGE
+def _within(ellipse: Ellipse, wheel_half_height: float, diameter_range: tuple[float, float]) -> bool:
+    low, high = diameter_range
     return low <= ellipse.half_height() / wheel_half_height <= high
 
 

@@ -138,6 +138,24 @@ def test_implausible_tire_profile_falls_back_to_typical_k() -> None:
 
 
 @pytest.mark.parametrize(
+    "edge_scale",
+    [0.42, 0.935],  # między regułą wyboru 45-92% a granicą pomiaru 40-95%
+)
+def test_candidate_at_the_edge_of_plausible_size_loses_to_a_typical_rim(edge_scale: float) -> None:
+    # Reguła wyboru z rozpoznania (`rim_ellipse/NOTES.md`): felga ma 45-92% średnicy koła.
+    # Kandydat tuż poza nią (np. piasta z ramionami albo felga z kawałkiem opony) przegrywa,
+    # choć SAM ocenia go wyżej.
+    wheel = _mask(_ellipse_inside(SIZE, SIDE_RIM, 80 / 56))
+    edge = _mask(_ellipse_inside(SIZE, SIDE_RIM, edge_scale * 80 / 56))
+    rim = _mask(_ellipse_inside(SIZE, SIDE_RIM))  # 70%
+
+    geometry = measure_rim(wheel, [(edge, 0.99), (rim, 0.8)])
+
+    assert geometry is not None
+    _assert_close(geometry.rim, SIDE_RIM)
+
+
+@pytest.mark.parametrize(
     "rim_scale",
     [0.35, 0.97],  # felga poza 40-95% średnicy koła
 )

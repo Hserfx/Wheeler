@@ -186,13 +186,10 @@ def generate(
     """„Generuj” z felgą wybraną na stronie zadania (`rim_id`) albo już przypisaną i rozmiarem
     felgi (`rim_size`, stopień -2…+2; bez pola zostaje zapisany albo „bez zmian”)."""
     try:
-        size = None if rim_size is None else edit_params.parse_rim_size(rim_size)
-    except ValueError:
+        size = None if rim_size is None else advanced.parse_rim_size(rim_size)
+    except advanced.InvalidParam as exc:
         job = _load_job(session, job_id)
-        message = TEXTS["error_param_rim_size"].format(
-            min=edit_params.RIM_SIZE_MIN, max=edit_params.RIM_SIZE_MAX
-        )
-        return _job_page(request, session, templates, job, message, 400)
+        return _job_page(request, session, templates, job, advanced.error_message(exc), 400)
     try:
         with session.begin():
             if rim_id is not None:
@@ -204,7 +201,7 @@ def generate(
         # Strona zadania z komunikatem: wybór felgi i kół zostaje na miejscu.
         job = _load_job(session, job_id)
         return _job_page(
-            request, session, templates, job, TEXTS["error_no_rim"], 409, rim_size=size
+            request, session, templates, job, TEXTS["error_no_rim"], 409, chosen_rim_size=size
         )
     except EditingError as exc:
         message = TEXTS["error_no_wheel" if isinstance(exc, NoWheelSelected) else "error_job_busy"]
@@ -296,8 +293,8 @@ def _job_context(job: Job) -> dict[str, object]:
         "input_image": job.image(ImageRole.INPUT),
         "result_image": job.image(ImageRole.RESULT),
         "wheel_seed": wheel_seed,
-        # Rozmiar felgi zadania (ekran wyniku; jeden dla wszystkich kół i ponowień).
-        "job_rim_size": EditParams.from_params(job.params).rim_size,
+        # Rozmiar felgi zapisany w zadaniu (jeden dla wszystkich kół i ponowień).
+        "saved_rim_size": EditParams.from_params(job.params).rim_size,
     }
 
 
@@ -316,16 +313,17 @@ def _job_page(
     error: str | None = None,
     status_code: int = 200,
     *,
-    rim_size: int | None = None,
+    chosen_rim_size: int | None = None,
 ) -> Response:
     """Strona zadania; przed „Generuj” z wyborem felgi i jej rozmiaru (krok 3,
-    `editing.can_choose_rim`). `rim_size`: wybór z odrzuconego „Generuj” (inaczej zapisany)."""
+    `editing.can_choose_rim`). `chosen_rim_size`: wybór z odrzuconego „Generuj”; bez niego
+    zaznaczony jest rozmiar zapisany w zadaniu."""
     context = _job_context(job)
     if can_choose_rim(job):
         context.update(picker_context(session, mode="select"))
-        context["rim_sizes"] = range(edit_params.RIM_SIZE_MIN, edit_params.RIM_SIZE_MAX + 1)
-        context["rim_size"] = (
-            rim_size if rim_size is not None else EditParams.from_params(job.params).rim_size
+        context["rim_sizes"] = edit_params.RIM_SIZES
+        context["chosen_rim_size"] = (
+            context["saved_rim_size"] if chosen_rim_size is None else chosen_rim_size
         )
     context["page_error"] = error
     return templates.TemplateResponse(request, "job.html", context, status_code=status_code)

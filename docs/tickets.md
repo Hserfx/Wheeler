@@ -328,3 +328,12 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
   dostają wartość z `Job.params` bez dodatkowego kodu. Ekran wyniku: `data-role="result-rim-size"` w liście kół
   `_result_compare.html`; etykieta w `PARAM_LABELS`, wartość jak „+2″”/„−1″”/„bez zmian”. Testy:
   `tests/test_rim_size.py` (atrapy modeli). Na prawdziwym modelu nie sprawdzane (zgodnie z grillingiem).
+- 2026-10-19 (agent, poprawki po code review, gałąź `review-fixes-12`): walidacja `rim_size` jak pola
+  „Zaawansowane” (`advanced.parse_rim_size` -> `InvalidParam` -> `error_message`; placeholdery rozdzielczości
+  przemianowane na `{resolution_min}`/`{resolution_max}`), komunikat z minusem typograficznym („od −2″ do +2″”).
+  Niezmienniki stopnia w `edit_params.py`: `RIM_SIZES` (zakres) i `rim_size_change` -> `RimSizeChange(inches,
+  larger)` albo `None` („bez zmian”); korzystają z nich `advanced.rim_size_text` i `build_prompt`. Znaki
+  `sign_plus`/`sign_minus` w `texts.py`. Kontekst szablonów: `saved_rim_size` (zapisany, liczony raz)
+  i `chosen_rim_size` (zaznaczony w pickerze). Ekran wyniku: „Felga: +2″” przy seedzie każdego koła.
+  `PLUS_SIZING_TEMPLATE` (i DESIGN) dostał „Keep the tire tread and the outer edge of the tire unchanged.”;
+  prompt przy 0 bez zmian. README: wzmianka o `rim_size`.

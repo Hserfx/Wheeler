@@ -57,6 +57,8 @@ def test_plus_sizing_prompt_tells_direction_scale_and_sidewall_and_keeps_wheel_d
     assert f"about {percent} of the overall wheel diameter" in prompt
     assert f"{sidewall} tire sidewall" in prompt
     assert "Keep the overall outer diameter of the wheel" in prompt
+    # Zmienia się tylko bok opony od strony felgi: bieżnik i zewnętrzna krawędź zostają.
+    assert "Keep the tire tread and the outer edge of the tire unchanged." in prompt
     # Sprzeczne z plus-sizingiem: felga ma nie wypełniać obecnego otworu opony.
     assert "fill the tire opening exactly" not in prompt
     assert "Keep the tire," not in prompt
@@ -139,7 +141,7 @@ def test_rim_size_outside_range_is_refused_and_job_stays_a_draft(
     )
 
     assert response.status_code == 400
-    assert "Rozmiar felgi musi być stopniem od -2 do +2 cali." in response.text
+    assert f"Rozmiar felgi musi być stopniem od {MINUS}2″ do +2″." in response.text
     assert 'id="rim-picker"' in response.text  # wybór felgi i rozmiaru zostaje na miejscu
     assert TEXTS["status_draft"] in client.get(f"/jobs/{job_id}/status").text
     assert _shown_rim_size(client, job_id) is None
@@ -270,10 +272,13 @@ def test_result_screen_shows_chosen_rim_size_next_to_seed(
 
     html = client.get(f"/jobs/{job_id}/status").text
 
-    wheels = re.search(r'<ul[^>]*data-role="wheels".*?</ul>', html, re.S)
-    assert wheels and 'data-role="wheel-seed"' in wheels.group(0)
-    label = re.search(r'data-role="result-rim-size"[^>]*>([^<]*)<', wheels.group(0))
-    assert label and label.group(1).strip() == shown
+    # Przy seedzie każdego koła (ta sama pozycja listy kół), nie osobno.
+    wheels = re.findall(r'<li[^>]*data-wheel-id="\d+".*?</li>', html, re.S)
+    assert wheels
+    for wheel in wheels:
+        assert 'data-role="wheel-seed"' in wheel
+        label = re.search(r'data-role="result-rim-size"[^>]*>([^<]*)<', wheel)
+        assert label and label.group(1).strip() == shown
     assert "result-rim-size" not in client.get("/history").text  # siatka Historii bez zmian
 
 

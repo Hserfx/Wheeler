@@ -22,7 +22,7 @@ import numpy as np
 from PIL import Image
 
 from wheeler_shared import storage
-from wheeler_shared.edit_params import EditParams
+from wheeler_shared.edit_params import EditParams, rim_size_change
 from wheeler_shared.failures import Failure, ProcessingFailed
 from wheeler_shared.progress import Progress
 from wheeler_worker.background import BackgroundRemover
@@ -54,7 +54,8 @@ PROMPT_TEMPLATE = (
     "perspective of the wheel in image 1 and fill the tire opening exactly. Photorealistic."
 )
 # Rozmiar felgi ≠ „bez zmian” (ticket 12): bez „Keep the tire” i „fill the tire opening
-# exactly”, bo felga ma urosnąć albo zmaleć kosztem boku opony przy tej samej średnicy koła.
+# exactly”, bo felga ma urosnąć albo zmaleć kosztem boku opony przy tej samej średnicy koła;
+# bieżnik i zewnętrzna krawędź opony zostają (zmienia się tylko bok od strony felgi).
 # Cale są przybliżone (obecnego rozmiaru felgi nie znamy): 1″ ≈ 4% średnicy całego koła.
 PLUS_SIZING_TEMPLATE = (
     "Replace the rim of the car wheel in image 1 with the alloy rim design shown in image 2. "
@@ -62,8 +63,9 @@ PLUS_SIZING_TEMPLATE = (
     "the shadows and the camera angle of image 1 unchanged. Make the new rim about "
     "{inches} {direction} in diameter than the current rim (about {percent}% of the overall "
     "wheel diameter), with a correspondingly {sidewall} tire sidewall. Keep the overall outer "
-    "diameter of the wheel (tire included) exactly as in image 1. The new rim must follow the "
-    "perspective of the wheel in image 1. Photorealistic."
+    "diameter of the wheel (tire included) exactly as in image 1. Keep the tire tread and the "
+    "outer edge of the tire unchanged. The new rim must follow the perspective of the wheel in "
+    "image 1. Photorealistic."
 )
 RIM_SIZE_PERCENT_PER_INCH = 4
 CROP_MARGIN = 0.25  # margines wycinka: ułamek boku koła z każdej strony
@@ -285,13 +287,13 @@ def _next_result_path(output_dir: Path) -> Path:
 def build_prompt(suffix: str = "", *, rim_size: int = 0) -> str:
     """Prompt edycji: szablon (przy `rim_size` ≠ 0 plus-sizing o tyle cali) i dopisek."""
     template = PROMPT_TEMPLATE
-    if rim_size:
-        inches = abs(rim_size)
+    change = rim_size_change(rim_size)
+    if change is not None:
         template = PLUS_SIZING_TEMPLATE.format(
-            inches=f"{inches} inch" if inches == 1 else f"{inches} inches",
-            direction="larger" if rim_size > 0 else "smaller",
-            percent=inches * RIM_SIZE_PERCENT_PER_INCH,
-            sidewall="thinner" if rim_size > 0 else "thicker",
+            inches=f"{change.inches} inch" if change.inches == 1 else f"{change.inches} inches",
+            direction="larger" if change.larger else "smaller",
+            percent=change.inches * RIM_SIZE_PERCENT_PER_INCH,
+            sidewall="thinner" if change.larger else "thicker",
         )
     suffix = suffix.strip()
     return f"{template} {suffix}" if suffix else template

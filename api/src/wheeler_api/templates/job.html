@@ -34,7 +34,7 @@
     <div class="flex flex-wrap gap-2">
       {% for size in rim_sizes %}
       <label class="cursor-pointer rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 has-[:checked]:border-slate-900 has-[:checked]:bg-slate-900 has-[:checked]:text-white">
-        <input type="radio" name="rim_size" value="{{ size }}" form="job-form" class="sr-only"{% if size == rim_size %} checked{% endif %}>
+        <input type="radio" name="rim_size" value="{{ size }}" form="job-form" class="sr-only"{% if size == chosen_rim_size %} checked{% endif %}>
         <span>{{ size | rim_size_text }}</span>
       </label>
       {% endfor %}

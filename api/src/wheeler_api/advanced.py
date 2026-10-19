@@ -2,6 +2,8 @@
 
 Poszerzenie maski użytkownik podaje w procentach boku koła, w `Job.params` jest ułamkiem
 (jak w `EditParams`). Wartości domyślne i zakresy pochodzą z `wheeler_shared.edit_params`.
+Tym samym wzorcem (`InvalidParam`, `error_message`) walidowany jest rozmiar felgi, który
+przychodzi dopiero z „Generuj” na stronie zadania (`parse_rim_size`), nie z tej sekcji.
 """
 
 from __future__ import annotations
@@ -31,12 +33,14 @@ def error_message(error: InvalidParam) -> str:
     """Komunikat dla użytkownika z dozwolonym zakresem pola."""
     return TEXTS[f"error_param_{error.field}"].format(
         seed_max=edit_params.SEED_MAX,
-        min=edit_params.RESOLUTION_MIN,
-        max=edit_params.RESOLUTION_MAX,
+        resolution_min=edit_params.RESOLUTION_MIN,
+        resolution_max=edit_params.RESOLUTION_MAX,
         step=edit_params.RESOLUTION_STEP,
         grow_min=percent(edit_params.MASK_GROW_MIN),
         grow_max=percent(edit_params.MASK_GROW_MAX),
         length=edit_params.PROMPT_SUFFIX_MAX_LENGTH,
+        rim_size_min=rim_size_text(edit_params.RIM_SIZE_MIN),
+        rim_size_max=rim_size_text(edit_params.RIM_SIZE_MAX),
     )
 
 
@@ -55,10 +59,11 @@ def display_value(key: str, value: object) -> str | None:
 
 def rim_size_text(rim_size: int) -> str:
     """Stopień rozmiaru felgi w UI: „+2″”, „bez zmian”, ujemne z minusem typograficznym."""
-    if rim_size == 0:
+    change = edit_params.rim_size_change(rim_size)
+    if change is None:
         return TEXTS["rim_size_unchanged"]
     return TEXTS["rim_size_inches"].format(
-        sign="+" if rim_size > 0 else "\N{MINUS SIGN}", inches=abs(rim_size)
+        sign=TEXTS["sign_plus" if change.larger else "sign_minus"], inches=change.inches
     )
 
 
@@ -87,6 +92,14 @@ def parse(values: Mapping[str, str]) -> dict[str, Any]:
     if seed is not None:
         params[edit_params.SEED] = seed
     return params
+
+
+def parse_rim_size(text: str) -> int:
+    """Stopień rozmiaru felgi z formularza „Generuj” („-2”…„2”, „+1”); zły: `InvalidParam`."""
+    rim_size = _integer(text, edit_params.RIM_SIZE)
+    if rim_size not in edit_params.RIM_SIZES:
+        raise InvalidParam(edit_params.RIM_SIZE)
+    return rim_size
 
 
 def _integer(text: str, field: str) -> int:

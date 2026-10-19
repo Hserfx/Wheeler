@@ -35,6 +35,7 @@ PROMPT_SUFFIX_MAX_LENGTH = 300
 # Rozmiar felgi względem obecnej w calach (plus-sizing, ticket 12), wybierany przed „Generuj”.
 RIM_SIZE_MIN = -2
 RIM_SIZE_MAX = 2
+RIM_SIZES = range(RIM_SIZE_MIN, RIM_SIZE_MAX + 1)
 
 
 @dataclass(frozen=True)
@@ -63,9 +64,16 @@ class EditParams:
         )
 
 
-def parse_rim_size(text: str) -> int:
-    """Stopień rozmiaru felgi z formularza („-2”…„2”, „+1”); spoza zakresu: `ValueError`."""
-    rim_size = int(text.strip())
-    if not RIM_SIZE_MIN <= rim_size <= RIM_SIZE_MAX:
-        raise ValueError(text)
-    return rim_size
+@dataclass(frozen=True)
+class RimSizeChange:
+    """Stopień rozmiaru felgi ≠ „bez zmian”: o ile cali (zawsze > 0) i w którą stronę."""
+
+    inches: int
+    larger: bool
+
+
+def rim_size_change(rim_size: int) -> RimSizeChange | None:
+    """Stopień `rim_size` z `Job.params` jako zmiana felgi; `None` = „bez zmian” (0)."""
+    if rim_size == 0:
+        return None
+    return RimSizeChange(inches=abs(rim_size), larger=rim_size > 0)

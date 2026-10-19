@@ -70,12 +70,13 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
   (`0` = „bez zmian”, wtedy prompt jest dokładnie powyższym szablonem). Przy stopniu ≠ 0 szablon traci
   sprzeczne z plus-sizingiem „Keep the tire” i „fill the tire opening exactly”, a dostaje kierunek, przybliżoną
   skalę (1″ ≈ 4% średnicy całego koła) i polecenie pocienienia lub pogrubienia boku opony przy tej samej
-  zewnętrznej średnicy koła: „Replace the rim of the car wheel in image 1 with the alloy rim design shown in
+  zewnętrznej średnicy koła, z zachowanym bieżnikiem i zewnętrzną krawędzią opony: „Replace the rim of the car wheel in image 1 with the alloy rim design shown in
   image 2. Keep the car body, the wheel arch, the brake caliper position, the lighting, the shadows and the
   camera angle of image 1 unchanged. Make the new rim about {N inch(es)} {larger|smaller} in diameter than the
   current rim (about {4·N}% of the overall wheel diameter), with a correspondingly {thinner|thicker} tire
-  sidewall. Keep the overall outer diameter of the wheel (tire included) exactly as in image 1. The new rim must
-  follow the perspective of the wheel in image 1. Photorealistic.” Dopisek użytkownika jak wyżej. Cale są
+  sidewall. Keep the overall outer diameter of the wheel (tire included) exactly as in image 1. Keep the tire
+  tread and the outer edge of the tire unchanged. The new rim must follow the perspective of the wheel in
+  image 1. Photorealistic.” Dopisek użytkownika jak wyżej. Cale są
   przybliżone: z samego zdjęcia nie znamy obecnego rozmiaru felgi, sterujemy proporcją średnicy felgi do
   średnicy koła. Rozmiarem steruje wyłącznie prompt (bez pomocy geometrycznej); całość mieści się w obecnej
   masce koła, więc gwarancja „bit w bit” poza maską zostaje. Zmiana średnicy całego koła (wejście w nadkole)

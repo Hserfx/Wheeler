@@ -124,7 +124,7 @@ def start_generation(
     """„Generuj”: zleca podmianę felg we wszystkich kołach z maską (`NoRimSelected` bez felgi).
 
     `seed` (np. losowy) jest zapisywany w parametrach, chyba że zadanie już go ma.
-    `rim_size` (stopień z `edit_params.parse_rim_size`) zastępuje zapisany; `None` zostawia
+    `rim_size` (stopień z `edit_params.RIM_SIZES`) zastępuje zapisany; `None` zostawia
     parametry bez zmian (brak klucza = „bez zmian”).
     """
     job = _lock_draft(session, job_id)

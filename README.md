@@ -73,7 +73,8 @@ done --„Ponów to koło”-------> regenerate_wheel (jedno koło, nowy seed) -
   Kolejka: `wheeler_shared/queue.py`. Parametry edycji, ustawienia domyślne i dozwolone zakresy:
   `wheeler_shared/edit_params.py`. Sekcja „Zaawansowane” na stronie głównej
   (`wheeler_api/advanced.py`) zapisuje w `Job.params` użyte wartości już przy wgraniu zdjęcia;
-  pusty seed jest losowany i zapisywany przy „Generuj”.
+  pusty seed jest losowany i zapisywany przy „Generuj”. Rozmiar felgi (`rim_size`, −2…+2″) nie należy
+  do „Zaawansowane”: wybiera się go obok felgi na stronie zadania i zapisuje dopiero przy „Generuj”.
 - `wheeler_worker/processing.py` definiuje `Processor` z metodą na każdy rodzaj pracy
   (`detect`, `segment`, `generate`, `regenerate_wheel`; tylko pliki, bez bazy). Runner (`runner.py`, `HANDLERS`) pobiera zadanie
   (`FOR UPDATE SKIP LOCKED`), woła procesor i zapisuje wynik albo błąd.

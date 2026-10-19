@@ -301,20 +301,29 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
 
 # 12: Rozmiar felgi (plus-sizing)
 
-**What to build:** Przed „Generuj”, obok wyboru felgi, wybieram rozmiar nowej felgi względem obecnej: `−2″ · −1″ · bez zmian · +1″ · +2″`. Zmienia się tylko średnica felgi, a zewnętrzna średnica koła zostaje: większa felga oznacza niższy profil opony, mniejsza wyższy (jak przy prawdziwym plus-sizingu). Całość mieści się w obecnej masce koła (opona + felga), więc piksele poza maską pozostają bit w bit. Rozmiarem steruje wyłącznie prompt, bez pomocy geometrycznej i bez spike'a.
+**What to build:** Przed „Generuj”, obok wyboru felgi, wybieram rozmiar nowej felgi względem obecnej: `−2″ · −1″ · bez zmian · +1″ · +2″`. Zmienia się tylko średnica felgi, a zewnętrzna średnica koła zostaje: większa felga oznacza niższy profil opony, mniejsza wyższy (jak przy prawdziwym plus-sizingu). Całość mieści się w obecnej masce koła (opona + felga), więc piksele poza maską pozostają bit w bit.
+
+Rozmiarem steruje geometria, nie prompt (sam prompt model ignoruje, zob. komentarze). Przy stopniu ≠ 0 worker przed wywołaniem modelu wyznacza elipsę felgi (SAM 2) i przeskalowuje wycinek koła promieniowo: felga rośnie albo maleje o ~4% średnicy koła na cal, bok opony się dopasowuje, a zewnętrzna krawędź opony zostaje. Model dostaje wycinek z felgą już w docelowym rozmiarze i podmienia tylko jej wzór.
 
 **Blocked by:** 06, 07, 09
 
-**Status:** done
+**Status:** ready-for-agent
 
 - [x] Wybór stopnia w sekcji wyboru felgi na stronie zadania, w formularzu „Generuj” (`#job-form`); domyślnie „bez zmian”. `POST /jobs` przy wgraniu go nie przyjmuje
 - [x] Stopień zapisany w `Job.params` (nowy klucz w `wheeler_shared/edit_params.py`), z walidacją zakresu −2…+2 po stronie serwera; brak klucza oznacza „bez zmian”
 - [x] Jedno ustawienie na całe zadanie: wszystkie koła, „Ponów” (`retry.py`) i „Ponów to koło” używają tej samej wartości
 - [x] Przy „bez zmian” prompt jest identyczny z obecnym szablonem (istniejące zadania i testy bez zmian)
-- [x] Przy stopniu ≠ 0 prompt mówi o kierunku i przybliżonej skali (1″ ≈ 4% średnicy całego koła), każe pocienić lub pogrubić bok opony i zachować zewnętrzną średnicę koła; zastępuje sprzeczne z tym „fill the tire opening exactly”
+- [ ] Prompt jest identyczny dla każdego stopnia (obecny szablon „bez zmian”); osobny szablon plus-sizingu znika
 - [x] Ekran wyniku pokazuje wybrany stopień (np. „Felga: +2″”) obok seeda, tylko gdy ≠ „bez zmian”; siatka Historii bez zmian (szczegóły zadania i tak pokazują wszystkie klucze `Job.params`, etykieta w `PARAM_LABELS`)
-- [x] Szablon promptu i nowy parametr opisane w `docs/DESIGN.md`
-- [x] Testy na atrapach modeli: walidacja parametru, zapis w zadaniu, prompt dla każdego stopnia (w tym identyczność przy 0), przekazanie do edytora przez workera (także przy „Ponów to koło”), widoczność na ekranie wyniku
+- [ ] Przy stopniu ≠ 0, przed załadowaniem mflux, worker wyznacza dla każdego koła zadania elipsę felgi: maska samej felgi z SAM 2 (punkt w środku koła + punkty negatywne na oponie albo box ~0,8 bboxa koła), elipsa dopasowana (`cv2.fitEllipse`) tylko do tej części konturu felgi, która graniczy z oponą (odporność na zasłonięcie). Potem SAM 2 jest zwalniany, jak dotąd przed mflux
+- [ ] Zewnętrzna krawędź opony = elipsa felgi × k (ten sam środek i obrót; felga i ściana opony są koncentryczne także w 3/4), k z profilu maski koła; gdy k wypada poza 1,15–1,6 (np. zasłonięcie), przyjmowane jest typowe k = 1,32
+- [ ] Radialny warp w układzie tej (obróconej) elipsy, odwzorowanie z prototypu: dla ρ = promień znormalizowany do zewnętrznej krawędzi opony, ρ_f = obecna felga, ρ_c = ρ_f + stopień × 0,04: `[0, ρ_f] → [0, ρ_c]` liniowo (felga), `[ρ_f, 1] → [ρ_c, 1]` liniowo (bok opony), ρ ≥ 1 bez zmian. Docelowy rozmiar nie jest przycinany ani korygowany
+- [ ] Przy „bez zmian” wycinek trafia do modelu bez warpu i bez wyznaczania elipsy (zachowanie i czas jak dotąd)
+- [ ] Wycinek dla modelu i pomiar felgi zawsze z oryginalnego zdjęcia, także przy „Ponów to koło” (bez podwójnego przeskalowania); składanie jak dotąd na bieżącym wyniku, piksele poza maską bit w bit
+- [ ] Gdy felgi nie da się wyznaczyć (brak maski albo średnica felgi poza 40–95% średnicy koła), zadanie kończy się błędem z nowym kodem `rim_size_unavailable` i czytelnym komunikatem (np. „Nie udało się wyznaczyć felgi na kole N — wygeneruj bez zmiany rozmiaru”)
+- [ ] Obrazy diagnostyczne (elipsa felgi i opony na wycinku, wycinek po warpie) w katalogu koła; bez zmian w bazie i w UI
+- [ ] `docs/DESIGN.md` opisuje sterowanie geometryczne zamiast szablonu plus-sizingu
+- [ ] Testy na atrapach modeli: geometria warpu (piksele poza elipsą koła i poza maską bit w bit, felga po warpie ma docelowy promień, przy 0 brak warpu), przekazanie warpowanego wycinka do edytora przez workera (także przy „Ponów to koło” — wycinek z oryginału), błąd `rim_size_unavailable`; dotychczasowe testy parametru i ekranu wyniku zostają
 
 **Comments:**
 
@@ -337,3 +346,21 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
   i `chosen_rim_size` (zaznaczony w pickerze). Ekran wyniku: „Felga: +2″” przy seedzie każdego koła.
   `PLUS_SIZING_TEMPLATE` (i DESIGN) dostał „Keep the tire tread and the outer edge of the tire unchanged.”;
   prompt przy 0 bez zmian. README: wzmianka o `rim_size`.
+- 2026-10-19 (test użytkownika): zadanie 6 (Clio, 2 koła, widok z boku) z +2″ — felga bez zmiany średnicy,
+  zmienił się tylko wzór. `Job.params` miał `rim_size: 2`, worker na nowym kodzie, prompt +2″ poprawnie
+  zbudowany: model (Turbo, 8 kroków, maska całego koła) ignoruje polecenie rozmiaru i trzyma geometrię wycinka.
+- 2026-10-19 (prototyp): gałąź `prototype/plus-sizing-warp` (`worker/prototype_plus_sizing/`: `run.py`,
+  `VERDICT.md`, arkusze). Wstępny radialny warp felgi działa: ρ felgi (średnica felgi / koła) kontrola 0,725;
+  warp +2″ → 0,825 (≈ +2,5″) z promptem bazowym i 0,835 z promptem +2″; warp −2″ → 0,675 (≈ −1,3″, model
+  częściowo wraca do oryginału); koło 12 warp +2″ → 0,805 (+2,0″). Jedno auto, jeden seed, widok z boku.
+- 2026-10-19 (rozpoznanie elipsy felgi, ta sama gałąź, `rim_ellipse/NOTES.md` + nakładki): metoda jasności
+  z prototypu zawodzi w 3/4 i przy ciemnych felgach (środek bboxa koła przesunięty o 0,2–0,4 półosi od środka
+  felgi); SAM 2 dał maskę samej felgi na 10/10 kół (także 3/4 i syntetycznie czarne felgi), reguła wyboru
+  kandydata multimask w notatkach; stała ρ = 0,7 myli się średnio o ~1,8″. Etap SAM ~20 s z ładowaniem,
+  szczyt ~3,8 GB.
+- 2026-10-19 (grilling, ponowne otwarcie): ticket wraca do `ready-for-agent` zamiast osobnego ticketu.
+  Ustalone: jeden prompt dla wszystkich stopni; brak korekty niedostrzału przy zmniejszaniu (zapisany jako
+  znane zachowanie) i brak przycinania docelowego rozmiaru; elipsa liczona w workerze przy generowaniu, bez
+  bazy i bez podglądu w UI; wycinek zawsze z oryginału; brak felgi = błąd zadania; typowe k = 1,32 jako
+  zapas przy niepewnej krawędzi opony. Weryfikacja tylko testami na atrapach, jakość na prawdziwym modelu
+  ocenia użytkownik.

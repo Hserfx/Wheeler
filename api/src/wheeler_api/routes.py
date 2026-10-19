@@ -20,6 +20,7 @@ from wheeler_api.thumbnails import ensure_thumbnail
 from wheeler_api.uploads import UploadRejected, save_image_upload
 from wheeler_api.wheel_masks import mask_contains
 from wheeler_shared import edit_params
+from wheeler_shared.db import get_or_raise
 from wheeler_shared.editing import (
     EditingError,
     JobBusy,
@@ -287,15 +288,12 @@ def retry(
 
 
 def _load_job(session: Session, job_id: int) -> Job:
-    job = session.get(
-        Job,
-        job_id,
-        options=[selectinload(Job.images), selectinload(Job.wheels)],
-        populate_existing=True,
-    )
-    if job is None:
-        raise HTTPException(status_code=404)
-    return job
+    try:
+        return get_or_raise(
+            session, Job, job_id, options=[selectinload(Job.images), selectinload(Job.wheels)]
+        )
+    except LookupError:
+        raise HTTPException(status_code=404) from None
 
 
 def _job_context(job: Job) -> dict[str, object]:

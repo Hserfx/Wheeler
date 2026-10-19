@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from wheeler_shared.db import get_or_raise, utcnow
 from wheeler_shared.failures import Failure
 from wheeler_shared.models import Rim, RimStatus
 from wheeler_shared.storage import Storage
@@ -105,7 +105,7 @@ def fail_interrupted_rims(session: Session) -> list[int]:
 
 def accept_rim(session: Session, rim_id: int) -> None:
     """Akceptacja podglądu: felga trafia do biblioteki."""
-    rim = _lock(session, rim_id)
+    rim = get_or_raise(session, Rim, rim_id, lock=True)
     if rim.status != RimStatus.REVIEW:
         raise RimError(rim.status)
     rim.status = RimStatus.READY
@@ -113,7 +113,7 @@ def accept_rim(session: Session, rim_id: int) -> None:
 
 def refine_rim(session: Session, rim_id: int, point: tuple[float, float]) -> None:
     """Klik w felgę na oryginale: worker wytnie ją ponownie, tym razem z kliknięcia."""
-    rim = _lock(session, rim_id)
+    rim = get_or_raise(session, Rim, rim_id, lock=True)
     if rim.status not in (RimStatus.REVIEW, RimStatus.FAILED):
         raise RimError(rim.status)
     rim.click_x, rim.click_y = float(point[0]), float(point[1])
@@ -148,7 +148,7 @@ def use_rim(session: Session, storage: Storage, rim_id: int, *, job_dir: str) ->
     target = f"{job_dir}/rim.png"
     _copy(storage, rim.cut_path, target)
     rim.use_count += 1
-    rim.last_used_at = _now()
+    rim.last_used_at = utcnow()
     return target
 
 
@@ -172,22 +172,11 @@ def library(session: Session) -> list[Rim]:
     )
 
 
-def _lock(session: Session, rim_id: int) -> Rim:
-    rim = session.get(Rim, rim_id, with_for_update=True, populate_existing=True)
-    if rim is None:
-        raise LookupError(rim_id)
-    return rim
-
-
 def _enqueue(rim: Rim) -> None:
     rim.status = RimStatus.QUEUED
-    rim.queued_at = _now()
+    rim.queued_at = utcnow()
     rim.error = None
 
 
 def _copy(storage: Storage, source: str, target: str) -> None:
     shutil.copyfile(storage.path(source), storage.path(target))
-
-
-def _now() -> datetime:
-    return datetime.now(UTC)

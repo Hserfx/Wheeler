@@ -13,12 +13,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import ColumnElement, and_, case, func, literal, or_, select, tuple_, update
 from sqlalchemy.orm import Session
 
+from wheeler_shared.db import utcnow
 from wheeler_shared.failures import Failure
 from wheeler_shared.models import (
     Image,
@@ -83,7 +83,7 @@ def enqueue(job: Job, task: TaskKind) -> None:
     """Wstawia zadanie do kolejki z pracą `task` (koniec kolejki, czyści poprzedni błąd)."""
     job.status = JobStatus.QUEUED
     job.task = task
-    job.queued_at = _now()
+    job.queued_at = utcnow()
     job.error = None
     job.progress = None
     job.cancel_requested = False
@@ -107,7 +107,7 @@ def claim_next_job(session: Session) -> ClaimedJob | None:
         return None
     assert job.task is not None
     job.status = JobStatus.RUNNING
-    job.started_at = _now()
+    job.started_at = utcnow()
     input_image = job.image(ImageRole.INPUT)
     if input_image is None:
         raise RuntimeError(f"Zadanie {job.id} nie ma obrazu wejściowego")
@@ -214,7 +214,7 @@ def complete_job(
     job = session.get_one(Job, job_id)
     job.images.append(Image(role=ImageRole.RESULT, path=result_path, width=width, height=height))
     job.status = JobStatus.DONE
-    job.finished_at = _now()
+    job.finished_at = utcnow()
 
 
 def complete_wheel_regeneration(
@@ -238,7 +238,7 @@ def complete_wheel_regeneration(
         if wheel.pending_seed is not None:
             wheel.seed, wheel.pending_seed = wheel.pending_seed, None
     job.status = JobStatus.DONE
-    job.finished_at = _now()
+    job.finished_at = utcnow()
 
 
 def _back_to_result(job: Job) -> None:
@@ -265,7 +265,7 @@ def fail_job(session: Session, job_id: int, *, error: Failure) -> None:
             job.wheels.remove(wheel)
         return
     job.status = JobStatus.FAILED
-    job.finished_at = _now()
+    job.finished_at = utcnow()
 
 
 def fail_interrupted_jobs(session: Session) -> list[int]:
@@ -295,8 +295,4 @@ def mark_cancelled(session: Session, job_id: int) -> None:
         _back_to_result(job)
         return
     job.status = JobStatus.CANCELLED
-    job.finished_at = _now()
-
-
-def _now() -> datetime:
-    return datetime.now(UTC)
+    job.finished_at = utcnow()

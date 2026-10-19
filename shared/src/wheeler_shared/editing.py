@@ -12,6 +12,7 @@ from collections.abc import Callable
 from sqlalchemy.orm import Session, selectinload
 
 from wheeler_shared import edit_params
+from wheeler_shared.db import get_or_raise
 from wheeler_shared.models import Image, ImageRole, Job, JobStatus, TaskKind, Wheel, WheelSource
 from wheeler_shared.queue import enqueue, mark_cancelled
 from wheeler_shared.rim_library import use_rim
@@ -129,7 +130,7 @@ def cancel_job(session: Session, job_id: int) -> None:
     dostaje prośbę o anulowanie, którą worker sprawdza po każdym kroku modelu i przed kołem
     (`queue.report_progress`), a potem oznacza je jako `cancelled` (`queue.mark_cancelled`).
     """
-    job = _lock(session, job_id)
+    job = get_or_raise(session, Job, job_id, lock=True)
     if job.task is None or not job.task.generates or not job.status.busy:
         raise NotCancellable
     if job.status == JobStatus.QUEUED:
@@ -144,15 +145,13 @@ def regenerate_wheel(session: Session, job_id: int, wheel_id: int, *, seed: int)
 
     `seed` (np. losowy) zastępuje `seed + 1`, gdy jest równy obecnemu seedowi koła.
     """
-    job = session.get(
+    job = get_or_raise(
+        session,
         Job,
         job_id,
-        with_for_update=True,
+        lock=True,
         options=[selectinload(Job.wheels), selectinload(Job.images)],
-        populate_existing=True,
     )
-    if job is None:
-        raise LookupError(job_id)
     wheel = next((w for w in job.masked_wheels if w.id == wheel_id), None)
     if wheel is None:
         raise LookupError(wheel_id)
@@ -173,22 +172,7 @@ def wheel_seed(job: Job, wheel: Wheel) -> int | None:
 
 
 def _lock_draft(session: Session, job_id: int) -> Job:
-    job = session.get(
-        Job,
-        job_id,
-        with_for_update=True,
-        options=[selectinload(Job.wheels)],
-        populate_existing=True,
-    )
-    if job is None:
-        raise LookupError(job_id)
+    job = get_or_raise(session, Job, job_id, lock=True, options=[selectinload(Job.wheels)])
     if job.status != JobStatus.DRAFT:
         raise JobBusy
-    return job
-
-
-def _lock(session: Session, job_id: int) -> Job:
-    job = session.get(Job, job_id, with_for_update=True, populate_existing=True)
-    if job is None:
-        raise LookupError(job_id)
     return job

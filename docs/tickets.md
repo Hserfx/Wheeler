@@ -478,3 +478,5 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
   silhouette/report bez mflux: wejścia modelu bit w bit te same, liczby rozmiaru bez zmian.
   Poprawione wnioski (wyżej i w `VERDICT.md`): zakres zmiany felgi Sorento, rozdzielczość siatki
   sylwetki, co obejmuje sprawdzenie bit w bit, źródła czasów i pamięci (`out/timing.json`), Vios.
+- 2026-10-19 (użytkownik): wygląd, werdykt i rekomendacja z `VERDICT.md` zatwierdzone (powiększanie
+  całego koła, wartości ujemne bez korekty, proponowany podział ticketu implementacyjnego).

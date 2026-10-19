@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import object_session
 
-from wheeler_api.routes import SessionDep, TemplatesDep
+from wheeler_api.deps import SessionDep, TemplatesDep
 from wheeler_shared.models import Job, JobStatus
 from wheeler_shared.worker_state import ModelState, get_model_state
 

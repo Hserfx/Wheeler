@@ -13,13 +13,13 @@ from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 
-from wheeler_api.rim_picker import Mode, picker_context
-from wheeler_api.routes import (
+from wheeler_api.deps import (
     SessionDep,
     SessionFactoryDep,
     StorageDep,
     TemplatesDep,
 )
+from wheeler_api.rim_picker import Mode, picker_context
 from wheeler_api.texts import TEXTS
 from wheeler_api.uploads import UploadRejected, save_image_upload
 from wheeler_shared.rim_library import (

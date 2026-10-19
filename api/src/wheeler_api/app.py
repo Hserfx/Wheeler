@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from wheeler_api import advanced, model_state
+from wheeler_api.job_view import can_cancel, job_progress, job_status_label, progress_label
 from wheeler_api.rim_routes import router as rim_router
 from wheeler_api.routes import router
 from wheeler_api.settings import ApiSettings
@@ -23,11 +24,7 @@ from wheeler_api.texts import (
     PARAM_LABELS,
     STATUS_LABELS,
     TEXTS,
-    can_cancel,
     failure_text,
-    job_progress,
-    job_status_label,
-    progress_label,
 )
 from wheeler_api.uploads import UPLOAD_ACCEPT, display_path
 from wheeler_shared.db import make_engine, make_session_factory

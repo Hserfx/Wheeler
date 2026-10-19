@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import secrets
-from collections.abc import Iterator
 from typing import Annotated
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
-from sqlalchemy.orm import Session, object_session, selectinload, sessionmaker
+from sqlalchemy.orm import Session, object_session, selectinload
 
 from wheeler_api import advanced
+from wheeler_api.deps import SessionDep, SessionFactoryDep, StorageDep, TemplatesDep
 from wheeler_api.rim_picker import picker_context
 from wheeler_api.texts import TEXTS
 from wheeler_api.thumbnails import ensure_thumbnail
@@ -42,35 +42,8 @@ from wheeler_shared.queue import create_job as create_draft_job
 from wheeler_shared.queue import queue_position
 from wheeler_shared.retry import NotRetryable, retry_job
 from wheeler_shared.rim_library import RimNotReady, use_rim
-from wheeler_shared.storage import Storage
 
 router = APIRouter()
-
-
-def get_session_factory(request: Request) -> sessionmaker[Session]:
-    factory: sessionmaker[Session] = request.app.state.session_factory
-    return factory
-
-
-def get_session(request: Request) -> Iterator[Session]:
-    with get_session_factory(request)() as session:
-        yield session
-
-
-def get_storage(request: Request) -> Storage:
-    storage: Storage = request.app.state.storage
-    return storage
-
-
-def get_templates(request: Request) -> Jinja2Templates:
-    templates: Jinja2Templates = request.app.state.templates
-    return templates
-
-
-SessionDep = Annotated[Session, Depends(get_session)]
-SessionFactoryDep = Annotated[sessionmaker[Session], Depends(get_session_factory)]
-StorageDep = Annotated[Storage, Depends(get_storage)]
-TemplatesDep = Annotated[Jinja2Templates, Depends(get_templates)]
 
 
 @router.get("/", response_class=HTMLResponse)

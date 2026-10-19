@@ -97,6 +97,11 @@ TEXTS: Final[dict[str, str]] = {
     "param_prompt_suffix_placeholder": "np. Glossy black finish.",
     "param_prompt_suffix_hint": "Po angielsku; doklejany na końcu promptu.",
     "param_empty": "(brak)",
+    # Etykiety parametrów w szczegółach zadania (`PARAM_LABELS`)
+    "job_param_seed": "Seed",
+    "job_param_resolution": "Rozdzielczość robocza",
+    "job_param_mask_grow": "Poszerzenie maski",
+    "job_param_prompt_suffix": "Dopisek do promptu",
     "error_param_seed": "Seed musi być liczbą całkowitą od 0 do {seed_max} albo pustym polem.",
     "error_param_resolution": (
         "Rozdzielczość robocza musi być wielokrotnością {step} px, od {min} do {max} px."
@@ -225,10 +230,13 @@ TEXTS: Final[dict[str, str]] = {
 # Etykiety parametrów zadania (`Job.params`) w szczegółach zadania. Parametr bez etykiety
 # wyświetla się pod swoim kluczem, więc nowe parametry są widoczne bez zmian w szablonach.
 PARAM_LABELS: Final[dict[str, str]] = {
-    edit_params.SEED: TEXTS["param_seed"],
-    edit_params.RESOLUTION: "Rozdzielczość robocza",
-    edit_params.MASK_GROW: "Poszerzenie maski",
-    edit_params.PROMPT_SUFFIX: TEXTS["param_prompt_suffix"],
+    key: TEXTS[f"job_param_{key}"]
+    for key in (
+        edit_params.SEED,
+        edit_params.RESOLUTION,
+        edit_params.MASK_GROW,
+        edit_params.PROMPT_SUFFIX,
+    )
 }
 
 STATUS_LABELS: Final[dict[JobStatus, str]] = {

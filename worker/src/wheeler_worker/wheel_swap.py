@@ -156,7 +156,9 @@ class WheelSwapProcessor:
         if params.seed is None:
             raise ValueError("Brak seeda w parametrach zadania")
         masks = {wheel_id: _load_mask(path) for wheel_id, path in item.masks.items()}
-        rims = self._measure_rims(item.photo_path, masks, params)
+        geometries = self._measure_rims(
+            item.photo_path, masks, rim_size=params.rim_size, mask_grow=params.mask_grow
+        )
         edit = self._prepare_edit(params, item.rim_path, seed=params.seed)
         original = load_original(item.photo_path)
         result = original
@@ -174,7 +176,7 @@ class WheelSwapProcessor:
                 result,
                 mask,
                 wheel_dir(item.output_dir, wheel_id),
-                rim=rims.get(wheel_id),
+                rim_geometry=geometries.get(wheel_id),
                 on_step=on_step,
             )
         target = save_png(
@@ -189,7 +191,12 @@ class WheelSwapProcessor:
         (felga po zmianie rozmiaru nie jest przeskalowywana drugi raz)."""
         params = EditParams.from_params(item.params)
         mask = _load_mask(item.mask_path)
-        rims = self._measure_rims(item.photo_path, {item.wheel_id: mask}, params)
+        geometries = self._measure_rims(
+            item.photo_path,
+            {item.wheel_id: mask},
+            rim_size=params.rim_size,
+            mask_grow=params.mask_grow,
+        )
         edit = self._prepare_edit(params, item.rim_path, seed=item.seed)
         item.on_progress(Progress(wheel=1, wheels=1))
 
@@ -201,7 +208,7 @@ class WheelSwapProcessor:
             load_original(item.result_path),
             mask,
             wheel_dir(item.output_dir, item.wheel_id),
-            rim=rims.get(item.wheel_id),
+            rim_geometry=geometries.get(item.wheel_id),
             on_step=on_step,
         )
         target = save_png(
@@ -210,23 +217,29 @@ class WheelSwapProcessor:
         return GenerateResult(result_path=target, width=result.width, height=result.height)
 
     def _measure_rims(
-        self, photo_path: Path, masks: dict[int, Image.Image], params: EditParams
+        self,
+        photo_path: Path,
+        masks: dict[int, Image.Image],
+        *,
+        rim_size: int,
+        mask_grow: float,
     ) -> dict[int, RimGeometry]:
-        """Elipsa felgi każdego koła (SAM 2 na oryginale), gdy rozmiar felgi się zmienia;
-        przy „bez zmian” nic nie liczymy. Felgi, której nie da się wyznaczyć: błąd zadania."""
-        if params.rim_size == 0:
+        """Geometria felgi każdego koła (SAM 2 na oryginale; `masks` poszerzone o `mask_grow`),
+        gdy rozmiar felgi się zmienia; przy „bez zmian” nic nie liczymy. Felgi, której nie da
+        się wyznaczyć: błąd zadania."""
+        if rim_size == 0:
             return {}
         photo = load_photo(photo_path)
-        rims: dict[int, RimGeometry] = {}
+        geometries: dict[int, RimGeometry] = {}
         for wheel_id, mask in masks.items():
-            wheel = ungrown_wheel_mask(mask, params.mask_grow)
-            rim = measure_rim(wheel, self.segmenter.segment_rim(photo, wheel))
-            if rim is None:
+            wheel = ungrown_wheel_mask(mask, mask_grow)
+            geometry = measure_rim(wheel, self.segmenter.segment_rim(photo, wheel))
+            if geometry is None:
                 raise ProcessingFailed(
                     Failure.RIM_SIZE_UNAVAILABLE, f"koło {wheel_id}: brak elipsy felgi"
                 )
-            rims[wheel_id] = rim
-        return rims
+            geometries[wheel_id] = geometry
+        return geometries
 
     def _prepare_edit(self, params: EditParams, rim_path: Path, *, seed: int) -> _WheelEdit:
         # Florence-2 i SAM 2 (~3 GB każdy) z mflux (szczyt ~27 GB) nie mieszczą się w 32 GB.
@@ -268,12 +281,12 @@ class _WheelEdit:
         mask: Image.Image,
         out: Path,
         *,
-        rim: RimGeometry | None = None,
+        rim_geometry: RimGeometry | None = None,
         on_step: StepCallback | None = None,
     ) -> Image.Image:
-        """Podmienia felgę w jednym kole: model dostaje wycinek `original` (z `rim`: felga
-        przeskalowana o `rim_size`, tylko w `mask`), wynik jest składany na `base`; piksele
-        poza `mask` zostają z `base` bit w bit."""
+        """Podmienia felgę w jednym kole: model dostaje wycinek `original` (z `rim_geometry`:
+        felga przeskalowana o `rim_size`, tylko w `mask`), wynik jest składany na `base`;
+        piksele poza `mask` zostają z `base` bit w bit."""
         wheel = mask_box(mask)
         if wheel is None:
             raise ProcessingFailed(Failure.EMPTY_MASK)
@@ -286,8 +299,8 @@ class _WheelEdit:
         crop_mask = mask.crop(crop).resize(size, Image.Resampling.BILINEAR)
         save_png(crop_image, out / "crop.png")
         save_png(crop_mask, out / "crop_mask.png")
-        if rim is not None:
-            local = rim.shifted(-crop.left, -crop.top)
+        if rim_geometry is not None:
+            local = rim_geometry.shifted(-crop.left, -crop.top)
             save_png(outline_rim(source, local), out / "rim_ellipse.png")
             warped = warp_rim(source, local, rim_size=self.rim_size)
             # Tylko w masce, którą model zmienia: bok opony (felga * k) potrafi z niej wyjść,

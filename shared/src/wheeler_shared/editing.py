@@ -12,8 +12,20 @@ from collections.abc import Callable
 from sqlalchemy.orm import Session, selectinload
 
 from wheeler_shared import edit_params
-from wheeler_shared.models import ImageRole, Job, JobStatus, TaskKind, Wheel, WheelSource
+from wheeler_shared.db import get_or_raise
+from wheeler_shared.models import (
+    Image,
+    ImageRole,
+    Job,
+    JobStatus,
+    Point,
+    TaskKind,
+    Wheel,
+    WheelSource,
+)
 from wheeler_shared.queue import enqueue, mark_cancelled
+from wheeler_shared.rim_library import use_rim
+from wheeler_shared.storage import Storage
 
 
 class EditingError(Exception):
@@ -28,11 +40,14 @@ class NoWheelSelected(EditingError):
     """Generowanie bez żadnej gotowej maski koła."""
 
 
+class NoRimSelected(EditingError):
+    """Generowanie bez wybranej felgi."""
+
+
 class NotCancellable(EditingError):
     """Anulować można tylko generowanie (albo ponowienie koła) w kolejce lub w trakcie."""
 
 
-Point = tuple[float, float]
 # Czy maska (ścieżka względna pliku L 0/255) obejmuje punkt? Odczyt pliku robi wywołujący (API).
 MaskContains = Callable[[str, Point], bool]
 
@@ -59,9 +74,9 @@ def click_photo(
         job.wheels.remove(hit)
         job.error = None
         return
-    job.wheels.append(
-        Wheel(source=WheelSource.CLICK, click_x=float(point[0]), click_y=float(point[1]))
-    )
+    wheel = Wheel(source=WheelSource.CLICK)
+    wheel.click = point
+    job.wheels.append(wheel)
     enqueue(job, TaskKind.SEGMENT)
 
 
@@ -80,14 +95,39 @@ def request_detection(session: Session, job_id: int) -> None:
     enqueue(_lock_draft(session, job_id), TaskKind.DETECT)
 
 
+def can_choose_rim(job: Job) -> bool:
+    """Felgę wybiera się przed „Generuj”: w szkicu albo w trakcie detekcji/maski z kliknięcia."""
+    if job.status == JobStatus.DRAFT:
+        return True
+    return job.status.busy and job.task is not None and not job.task.generates
+
+
+def choose_rim(session: Session, storage: Storage, job_id: int, rim_id: int) -> None:
+    """Wybór felgi z biblioteki dla szkicu: kopia wyciętej felgi w katalogu zadania
+    (`rim_library.use_rim`, `RimNotReady` dla felgi spoza biblioteki) zastępuje poprzednią."""
+    job = _lock_draft(session, job_id)
+    photo = job.image(ImageRole.INPUT)
+    job_dir = storage.job_dir_of(photo.path) if photo is not None else None
+    if job_dir is None:
+        raise RuntimeError(f"Zadanie {job_id} nie ma katalogu z danymi")
+    path = use_rim(session, storage, rim_id, job_dir=job_dir)
+    rim = job.image(ImageRole.RIM)
+    if rim is None:
+        job.images.append(Image(role=ImageRole.RIM, path=path))
+    else:
+        rim.path, rim.width, rim.height = path, None, None
+
+
 def start_generation(session: Session, job_id: int, *, seed: int) -> None:
-    """„Generuj”: zleca podmianę felg we wszystkich kołach z maską.
+    """„Generuj”: zleca podmianę felg we wszystkich kołach z maską (`NoRimSelected` bez felgi).
 
     `seed` (np. losowy) jest zapisywany w parametrach, chyba że zadanie już go ma.
     """
     job = _lock_draft(session, job_id)
     if not job.masked_wheels or len(job.masked_wheels) != len(job.wheels):
         raise NoWheelSelected
+    if job.image(ImageRole.RIM) is None:
+        raise NoRimSelected
     if job.params.get(edit_params.SEED) is None:
         job.params = {**job.params, edit_params.SEED: seed}
     enqueue(job, TaskKind.GENERATE)
@@ -98,13 +138,18 @@ def cancel_job(session: Session, job_id: int) -> None:
     dostaje prośbę o anulowanie, którą worker sprawdza po każdym kroku modelu i przed kołem
     (`queue.report_progress`), a potem oznacza je jako `cancelled` (`queue.mark_cancelled`).
     """
-    job = _lock(session, job_id)
-    if job.task is None or not job.task.generates or not job.status.busy:
+    job = get_or_raise(session, Job, job_id, lock=True)
+    if not is_cancellable(job):
         raise NotCancellable
     if job.status == JobStatus.QUEUED:
         mark_cancelled(session, job.id)
     else:
         job.cancel_requested = True
+
+
+def is_cancellable(job: Job) -> bool:
+    """Anulować można generowanie (albo ponowienie koła) w kolejce lub w trakcie."""
+    return job.status.busy and job.task is not None and job.task.generates
 
 
 def regenerate_wheel(session: Session, job_id: int, wheel_id: int, *, seed: int) -> None:
@@ -113,15 +158,13 @@ def regenerate_wheel(session: Session, job_id: int, wheel_id: int, *, seed: int)
 
     `seed` (np. losowy) zastępuje `seed + 1`, gdy jest równy obecnemu seedowi koła.
     """
-    job = session.get(
+    job = get_or_raise(
+        session,
         Job,
         job_id,
-        with_for_update=True,
+        lock=True,
         options=[selectinload(Job.wheels), selectinload(Job.images)],
-        populate_existing=True,
     )
-    if job is None:
-        raise LookupError(job_id)
     wheel = next((w for w in job.masked_wheels if w.id == wheel_id), None)
     if wheel is None:
         raise LookupError(wheel_id)
@@ -142,22 +185,7 @@ def wheel_seed(job: Job, wheel: Wheel) -> int | None:
 
 
 def _lock_draft(session: Session, job_id: int) -> Job:
-    job = session.get(
-        Job,
-        job_id,
-        with_for_update=True,
-        options=[selectinload(Job.wheels)],
-        populate_existing=True,
-    )
-    if job is None:
-        raise LookupError(job_id)
+    job = get_or_raise(session, Job, job_id, lock=True, options=[selectinload(Job.wheels)])
     if job.status != JobStatus.DRAFT:
         raise JobBusy
-    return job
-
-
-def _lock(session: Session, job_id: int) -> Job:
-    job = session.get(Job, job_id, with_for_update=True, populate_existing=True)
-    if job is None:
-        raise LookupError(job_id)
     return job

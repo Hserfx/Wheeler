@@ -7,10 +7,8 @@ Przez HTTP i `run_once` (prawdziwy Postgres, atrapy SAM 2 i mflux). Atrapa mflux
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
 from typing import Any
 
-import pytest
 from fake_models import BoxDetector, DiscSegmenter, SolidEditor
 from fastapi.testclient import TestClient
 from helpers import click_wheel, drain, encode, fake_processor, generate, noise_photo, upload
@@ -19,21 +17,12 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from wheeler_api.app import create_app
-from wheeler_api.settings import ApiSettings
 from wheeler_api.texts import TEXTS
 from wheeler_shared.models import Job, Wheel
-from wheeler_shared.queue import INTERRUPTED_ERROR, claim_next_job
+from wheeler_shared.queue import claim_next_job
 from wheeler_shared.storage import Storage
 from wheeler_worker.runner import recover_interrupted_jobs, run_once
 from wheeler_worker.wheel_swap import WheelSwapProcessor
-
-
-@pytest.fixture
-def client(database_url: str, storage: Storage) -> Iterator[TestClient]:
-    settings = ApiSettings(database_url=database_url, data_dir=storage.root)
-    with TestClient(create_app(settings)) as test_client:
-        yield test_client
 
 
 def _status(client: TestClient, job_id: int) -> str:
@@ -159,7 +148,7 @@ def test_generation_interrupted_by_worker_crash_fails_on_restart_and_is_not_retr
     recover_interrupted_jobs(session_factory)  # start nowego procesu workera
 
     status = _status(client, job_id)
-    assert TEXTS["status_failed"] in status and INTERRUPTED_ERROR in status
+    assert TEXTS["status_failed"] in status and TEXTS["failure_interrupted"] in status
     assert "hx-trigger" not in status
     assert f'action="/jobs/{job_id}/retry"' in status
     assert run_once(session_factory, storage, processor) is False

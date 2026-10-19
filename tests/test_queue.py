@@ -3,7 +3,8 @@
 from sqlalchemy.orm import Session, sessionmaker
 
 from wheeler_shared.models import Job, TaskKind
-from wheeler_shared.queue import claim_next_job, create_job, enqueue
+from wheeler_shared.queue import claim_next_job, create_job, enqueue, queue_position
+from wheeler_shared.rim_library import add_rim, claim_next_rim
 
 
 def _job(session_factory: sessionmaker[Session], name: str, params: dict[str, int]) -> int:
@@ -94,3 +95,34 @@ def test_wheel_detection_jumps_ahead_of_queued_generation(
 
     assert _claim(session_factory) == (uploaded, TaskKind.DETECT)
     assert _claim(session_factory) == (generating, TaskKind.GENERATE)
+
+
+def _position(session_factory: sessionmaker[Session], job_id: int) -> int | None:
+    with session_factory() as session:
+        return queue_position(session, session.get_one(Job, job_id))
+
+
+def test_queue_position_counts_work_in_progress_and_everything_claimed_earlier(
+    session_factory: sessionmaker[Session],
+) -> None:
+    running = _job(session_factory, "a", {})
+    mine = _job(session_factory, "b", {})
+    _enqueue(session_factory, running, TaskKind.GENERATE)
+    _enqueue(session_factory, mine, TaskKind.GENERATE)
+    assert _position(session_factory, mine) == 2
+    assert _claim(session_factory) == (running, TaskKind.GENERATE)
+    assert _position(session_factory, mine) == 2  # trwające generowanie stoi przed nami
+
+    uploaded = _job(session_factory, "c", {})
+    _enqueue(session_factory, uploaded, TaskKind.DETECT)  # interaktywne: wyprzedza
+    assert _position(session_factory, mine) == 3
+    assert _position(session_factory, uploaded) == 2
+
+    with session_factory.begin() as session:  # felgi idą przed zadaniami
+        add_rim(session, original_path="rims/x/original.png")
+    assert _position(session_factory, mine) == 4
+    assert _position(session_factory, uploaded) == 3
+    with session_factory.begin() as session:
+        assert claim_next_rim(session) is not None  # wycinana felga też jest przed nami
+    assert _position(session_factory, mine) == 4
+    assert _position(session_factory, running) is None

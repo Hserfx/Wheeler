@@ -24,9 +24,12 @@ from pathlib import Path
 
 import psycopg
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
+from wheeler_api.app import create_app
+from wheeler_api.settings import ApiSettings
 from wheeler_shared.db import make_engine, make_session_factory
 from wheeler_shared.migrate import migrate
 from wheeler_shared.storage import Storage
@@ -131,3 +134,11 @@ def session_factory(database_url: str) -> Iterator[sessionmaker[Session]]:
 @pytest.fixture
 def storage(tmp_path: Path) -> Storage:
     return Storage(tmp_path / "data")
+
+
+@pytest.fixture
+def client(database_url: str, storage: Storage) -> Iterator[TestClient]:
+    """API na świeżej bazie testu, z katalogiem danych `storage`."""
+    settings = ApiSettings(database_url=database_url, data_dir=storage.root)
+    with TestClient(create_app(settings)) as test_client:
+        yield test_client

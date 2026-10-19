@@ -11,12 +11,28 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
-JOBS_DIR = "jobs"
+JOBS_DIR = "jobs"  # zadania: `jobs/<hex>/` (wejście, felga, koła, wynik, miniatury)
+RIMS_DIR = "rims"  # biblioteka felg: `rims/<hex>/` (oryginał, wycięta felga)
+WHEELS_DIR = "wheels"  # w katalogu zadania: `wheels/<id koła>/` (maska, nakładka, wycinki)
+
+
+def wheel_dir(wheel: int | str) -> str:
+    """Katalog plików koła względem katalogu zadania (`wheels/<id>`; z detekcji
+    `wheels/detected-<n>`, bo id koła powstaje dopiero przy zapisie)."""
+    return f"{WHEELS_DIR}/{wheel}"
 
 
 def _ignore_missing(function: Callable[..., object], path: str, exc: BaseException) -> None:
     if not isinstance(exc, FileNotFoundError):
         raise exc
+
+
+def _owner_dir(relative: str, top: str) -> str | None:
+    """`<top>/<hex>` dla pliku leżącego w takim katalogu (np. `jobs/ab12/input.jpg`)."""
+    parts = PurePosixPath(relative).parts
+    if len(parts) >= 3 and parts[0] == top and parts[1] not in ("", ".", ".."):
+        return f"{top}/{parts[1]}"
+    return None
 
 
 class Storage:
@@ -40,17 +56,26 @@ class Storage:
         Wszystko, co należy do zadania (wejście, maski, wycinki, wynik, miniatury), trzymamy
         w tym katalogu: usunięcie zadania kasuje go w całości (`job_dir_of`, `remove_tree`).
         """
-        relative = f"{JOBS_DIR}/{uuid.uuid4().hex}"
-        self.path(relative).mkdir(parents=True, exist_ok=False)
-        return relative
+        return self._new_dir(JOBS_DIR)
+
+    def new_rim_dir(self) -> str:
+        """Tworzy pusty katalog na pliki nowej felgi z biblioteki (`rims/<hex>`)."""
+        return self._new_dir(RIMS_DIR)
 
     @staticmethod
     def job_dir_of(relative: str) -> str | None:
         """Katalog zadania (`jobs/<id>`) zawierający plik albo None dla plików spoza zadań."""
-        parts = PurePosixPath(relative).parts
-        if len(parts) >= 3 and parts[0] == JOBS_DIR and parts[1] not in ("", ".", ".."):
-            return f"{JOBS_DIR}/{parts[1]}"
-        return None
+        return _owner_dir(relative, JOBS_DIR)
+
+    @staticmethod
+    def rim_dir_of(relative: str) -> str | None:
+        """Katalog felgi (`rims/<hex>`) zawierający plik albo None."""
+        return _owner_dir(relative, RIMS_DIR)
+
+    def _new_dir(self, top: str) -> str:
+        relative = f"{top}/{uuid.uuid4().hex}"
+        self.path(relative).mkdir(parents=True, exist_ok=False)
+        return relative
 
     def remove_tree(self, relative: str) -> None:
         """Usuwa katalog z całą zawartością; brak katalogu nie jest błędem."""

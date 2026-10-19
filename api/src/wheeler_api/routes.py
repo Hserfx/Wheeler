@@ -3,30 +3,33 @@
 from __future__ import annotations
 
 import secrets
-import shutil
-from collections.abc import Iterator
 from typing import Annotated
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
-from sqlalchemy.orm import Session, object_session, selectinload, sessionmaker
+from sqlalchemy.orm import Session, object_session, selectinload
 
 from wheeler_api import advanced
+from wheeler_api.deps import SessionDep, SessionFactoryDep, StorageDep, TemplatesDep
 from wheeler_api.rim_picker import picker_context
 from wheeler_api.texts import TEXTS
 from wheeler_api.thumbnails import ensure_thumbnail
 from wheeler_api.uploads import UploadRejected, save_image_upload
 from wheeler_api.wheel_masks import mask_contains
 from wheeler_shared import edit_params
+from wheeler_shared.db import get_or_raise
 from wheeler_shared.editing import (
     EditingError,
     JobBusy,
+    NoRimSelected,
     NotCancellable,
     NoWheelSelected,
+    can_choose_rim,
     cancel_job,
+    choose_rim,
     click_photo,
     regenerate_wheel,
     request_detection,
@@ -39,35 +42,8 @@ from wheeler_shared.queue import create_job as create_draft_job
 from wheeler_shared.queue import queue_position
 from wheeler_shared.retry import NotRetryable, retry_job
 from wheeler_shared.rim_library import RimNotReady, use_rim
-from wheeler_shared.storage import Storage
 
 router = APIRouter()
-
-
-def get_session_factory(request: Request) -> sessionmaker[Session]:
-    factory: sessionmaker[Session] = request.app.state.session_factory
-    return factory
-
-
-def get_session(request: Request) -> Iterator[Session]:
-    with get_session_factory(request)() as session:
-        yield session
-
-
-def get_storage(request: Request) -> Storage:
-    storage: Storage = request.app.state.storage
-    return storage
-
-
-def get_templates(request: Request) -> Jinja2Templates:
-    templates: Jinja2Templates = request.app.state.templates
-    return templates
-
-
-SessionDep = Annotated[Session, Depends(get_session)]
-SessionFactoryDep = Annotated[sessionmaker[Session], Depends(get_session_factory)]
-StorageDep = Annotated[Storage, Depends(get_storage)]
-TemplatesDep = Annotated[Jinja2Templates, Depends(get_templates)]
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -80,15 +56,13 @@ def _home_page(
     session: Session,
     templates: Jinja2Templates,
     *,
-    rim_id: int | None = None,
     error: str | None = None,
     values: dict[str, str] | None = None,
     advanced_error: bool = False,
     status_code: int = 200,
 ) -> Response:
-    """Strona główna; po błędzie pola „Zaawansowane” i wybór felgi zostają."""
+    """Strona główna (krok 1: zdjęcie auta); po błędzie pola „Zaawansowane” zostają."""
     context = {
-        **picker_context(session, mode="select", selected=rim_id),
         "error": error,
         "advanced": values or advanced.default_values(),
         "advanced_open": advanced_error,
@@ -118,25 +92,24 @@ def create_job(
     mask_grow: Annotated[str, Form()] = "",
     prompt_suffix: Annotated[str, Form()] = "",
 ) -> Response:
+    """Krok 1: zdjęcie auta i parametry; detekcja kół rusza od razu. Felgę wybiera się na
+    stronie zadania przed „Generuj”; `rim_id` pozwala wskazać ją już tutaj (opcjonalnie)."""
     values = {
         edit_params.SEED: seed,
         edit_params.RESOLUTION: resolution,
         edit_params.MASK_GROW: mask_grow,
         edit_params.PROMPT_SUFFIX: prompt_suffix,
     }
-    missing = "photo" if photo is None or not photo.filename else None
-    missing = missing or ("rim" if rim_id is None else None)
-    if missing:
+    entered = values if any(values.values()) else None
+    if photo is None or not photo.filename:
         return _home_page(
             request,
             session,
             templates,
-            rim_id=rim_id,
-            error=TEXTS[f"error_no_{missing}"],
-            values=values if any(values.values()) else None,
+            error=TEXTS["error_no_photo"],
+            values=entered,
             status_code=400,
         )
-    assert photo is not None and rim_id is not None
     try:
         params = advanced.parse(values)
     except advanced.InvalidParam as exc:
@@ -144,7 +117,6 @@ def create_job(
             request,
             session,
             templates,
-            rim_id=rim_id,
             error=advanced.error_message(exc),
             values=values,
             advanced_error=True,
@@ -156,34 +128,21 @@ def create_job(
         input_path = save_image_upload(storage, photo, f"{job_dir}/input")
         with session.begin():
             # Zadanie dostaje własną kopię wyciętej felgi (usunięcie z biblioteki jej nie rusza).
-            rim_path = use_rim(session, storage, rim_id, job_dir=job_dir)
+            rim_path = (
+                None if rim_id is None else use_rim(session, storage, rim_id, job_dir=job_dir)
+            )
             job_id = create_draft_job(
                 session, input_path=input_path, rim_path=rim_path, params=params
             )
             request_detection(session, job_id)
-    except UploadRejected as rejected:
-        shutil.rmtree(storage.path(job_dir), ignore_errors=True)
+    except (UploadRejected, RimNotReady) as exc:
+        storage.remove_tree(job_dir)
+        message = exc.message if isinstance(exc, UploadRejected) else TEXTS["error_no_rim"]
         return _home_page(
-            request,
-            session,
-            templates,
-            rim_id=rim_id,
-            error=rejected.message,
-            values=values if any(values.values()) else None,
-            status_code=400,
-        )
-    except RimNotReady:
-        shutil.rmtree(storage.path(job_dir), ignore_errors=True)
-        return _home_page(
-            request,
-            session,
-            templates,
-            error=TEXTS["error_no_rim"],
-            values=values,
-            status_code=400,
+            request, session, templates, error=message, values=entered, status_code=400
         )
     except BaseException:
-        shutil.rmtree(storage.path(job_dir), ignore_errors=True)
+        storage.remove_tree(job_dir)
         raise
     return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
@@ -215,13 +174,25 @@ def click_wheel(
 
 @router.post("/jobs/{job_id}/generate")
 def generate(
-    job_id: int, request: Request, session: SessionDep, templates: TemplatesDep
+    job_id: int,
+    request: Request,
+    session: SessionDep,
+    storage: StorageDep,
+    templates: TemplatesDep,
+    rim_id: Annotated[int | None, Form()] = None,
 ) -> Response:
+    """„Generuj” z felgą wybraną na stronie zadania (`rim_id`) albo już przypisaną."""
     try:
         with session.begin():
-            start_generation(session, job_id, seed=secrets.randbelow(2**31))
+            if rim_id is not None:
+                choose_rim(session, storage, job_id, rim_id)
+            start_generation(session, job_id, seed=_random_seed())
     except LookupError:
         raise HTTPException(status_code=404) from None
+    except (NoRimSelected, RimNotReady):
+        # Strona zadania z komunikatem: wybór felgi i kół zostaje na miejscu.
+        job = _load_job(session, job_id)
+        return _job_page(request, session, templates, job, TEXTS["error_no_rim"], 409)
     except EditingError as exc:
         message = TEXTS["error_no_wheel" if isinstance(exc, NoWheelSelected) else "error_job_busy"]
         return templates.TemplateResponse(
@@ -237,7 +208,7 @@ def regenerate(
     """„Ponów to koło”: jedno koło gotowego wyniku od nowa z nowym (losowym) seedem."""
     try:
         with session.begin():
-            regenerate_wheel(session, job_id, wheel_id, seed=secrets.randbelow(2**31))
+            regenerate_wheel(session, job_id, wheel_id, seed=_random_seed())
     except LookupError:
         raise HTTPException(status_code=404) from None
     except JobBusy:
@@ -278,7 +249,7 @@ def retry(
         with session.begin():
             new_id = retry_job(session, storage, job_id, job_dir=job_dir)
     except BaseException as exc:
-        shutil.rmtree(storage.path(job_dir), ignore_errors=True)
+        storage.remove_tree(job_dir)
         if isinstance(exc, LookupError):
             raise HTTPException(status_code=404) from None
         if isinstance(exc, NotRetryable):
@@ -289,16 +260,18 @@ def retry(
     return RedirectResponse(f"/jobs/{new_id}", status_code=303)
 
 
+def _random_seed() -> int:
+    """Losowy seed z dozwolonego zakresu (0..`SEED_MAX`), gdy użytkownik go nie podał."""
+    return secrets.randbelow(edit_params.SEED_MAX + 1)
+
+
 def _load_job(session: Session, job_id: int) -> Job:
-    job = session.get(
-        Job,
-        job_id,
-        options=[selectinload(Job.images), selectinload(Job.wheels)],
-        populate_existing=True,
-    )
-    if job is None:
-        raise HTTPException(status_code=404)
-    return job
+    try:
+        return get_or_raise(
+            session, Job, job_id, options=[selectinload(Job.images), selectinload(Job.wheels)]
+        )
+    except LookupError:
+        raise HTTPException(status_code=404) from None
 
 
 def _job_context(job: Job) -> dict[str, object]:
@@ -317,8 +290,23 @@ def _job_context(job: Job) -> dict[str, object]:
 def job_page(
     job_id: int, request: Request, session: SessionDep, templates: TemplatesDep
 ) -> Response:
-    job = _load_job(session, job_id)
-    return templates.TemplateResponse(request, "job.html", _job_context(job))
+    return _job_page(request, session, templates, _load_job(session, job_id))
+
+
+def _job_page(
+    request: Request,
+    session: Session,
+    templates: Jinja2Templates,
+    job: Job,
+    error: str | None = None,
+    status_code: int = 200,
+) -> Response:
+    """Strona zadania; przed „Generuj” z wyborem felgi (krok 3, `editing.can_choose_rim`)."""
+    context = _job_context(job)
+    if can_choose_rim(job):
+        context.update(picker_context(session, mode="select"))
+    context["page_error"] = error
+    return templates.TemplateResponse(request, "job.html", context, status_code=status_code)
 
 
 @router.get("/jobs/{job_id}/status", response_class=HTMLResponse)

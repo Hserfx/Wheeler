@@ -13,13 +13,25 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import ColumnElement, case, func, literal, select, tuple_, update
+from sqlalchemy import ColumnElement, and_, case, func, literal, or_, select, tuple_, update
 from sqlalchemy.orm import Session
 
-from wheeler_shared.models import Image, ImageRole, Job, JobStatus, TaskKind, Wheel, WheelSource
+from wheeler_shared.db import utcnow
+from wheeler_shared.failures import Failure
+from wheeler_shared.models import (
+    GENERATING_TASKS,
+    Image,
+    ImageRole,
+    Job,
+    JobStatus,
+    Rim,
+    RimStatus,
+    TaskKind,
+    Wheel,
+    WheelSource,
+)
 from wheeler_shared.progress import Progress
 
 
@@ -54,12 +66,15 @@ class SavedMask:
 
 
 def create_job(
-    session: Session, *, input_path: str, rim_path: str, params: Mapping[str, Any]
+    session: Session, *, input_path: str, rim_path: str | None, params: Mapping[str, Any]
 ) -> int:
-    """Nowe zadanie (szkic) ze zdjęciem auta i felgą (ścieżki względne); zwraca jego id."""
+    """Nowe zadanie (szkic) ze zdjęciem auta i opcjonalnie felgą (ścieżki względne); zwraca id.
+
+    Felgę można wybrać później, przed „Generuj” (`editing.choose_rim`)."""
     job = Job(status=JobStatus.DRAFT, params=dict(params))
     job.images.append(Image(role=ImageRole.INPUT, path=input_path))
-    job.images.append(Image(role=ImageRole.RIM, path=rim_path))
+    if rim_path is not None:
+        job.images.append(Image(role=ImageRole.RIM, path=rim_path))
     session.add(job)
     session.flush()
     return job.id
@@ -69,14 +84,14 @@ def enqueue(job: Job, task: TaskKind) -> None:
     """Wstawia zadanie do kolejki z pracą `task` (koniec kolejki, czyści poprzedni błąd)."""
     job.status = JobStatus.QUEUED
     job.task = task
-    job.queued_at = _now()
+    job.queued_at = utcnow()
     job.error = None
     job.progress = None
     job.cancel_requested = False
 
 
 def _generate_last() -> ColumnElement[int]:
-    return case((Job.task.in_([TaskKind.GENERATE, TaskKind.REGENERATE_WHEEL]), 1), else_=0)
+    return case((Job.task.in_(GENERATING_TASKS), 1), else_=0)
 
 
 def claim_next_job(session: Session) -> ClaimedJob | None:
@@ -93,7 +108,7 @@ def claim_next_job(session: Session) -> ClaimedJob | None:
         return None
     assert job.task is not None
     job.status = JobStatus.RUNNING
-    job.started_at = _now()
+    job.started_at = utcnow()
     input_image = job.image(ImageRole.INPUT)
     if input_image is None:
         raise RuntimeError(f"Zadanie {job.id} nie ma obrazu wejściowego")
@@ -108,9 +123,7 @@ def claim_next_job(session: Session) -> ClaimedJob | None:
         wheels=tuple(
             ClaimedWheel(
                 id=wheel.id,
-                click=None
-                if wheel.click_x is None or wheel.click_y is None
-                else (wheel.click_x, wheel.click_y),
+                click=wheel.click,
                 mask_path=wheel.mask_path,
                 pending_seed=wheel.pending_seed,
             )
@@ -121,20 +134,35 @@ def claim_next_job(session: Session) -> ClaimedJob | None:
 
 
 def queue_position(session: Session, job: Job) -> int | None:
-    """Pozycja zadania w kolejce (1 = następne do pobrania), w kolejności `claim_next_job`."""
+    """Pozycja zadania w kolejce workera (1 = ruszy następne, nic przed nim nie stoi).
+
+    Liczy wszystko, co worker zrobi wcześniej: trwającą pracę (zadanie albo wycinaną felgę),
+    felgi w kolejce (worker bierze je przed zadaniami, `runner.run_once`) i zadania przed nim
+    w kolejności `claim_next_job`. Praca interaktywna zlecona później może je jeszcze wyprzedzić.
+    """
     if job.status != JobStatus.QUEUED or job.task is None or job.queued_at is None:
         return None
     mine = (1 if job.task.generates else 0, job.queued_at, job.id)
-    ahead = session.scalar(
+    jobs_ahead = session.scalar(
         select(func.count())
         .select_from(Job)
         .where(
-            Job.status == JobStatus.QUEUED,
-            Job.task.is_not(None),
-            tuple_(_generate_last(), Job.queued_at, Job.id) < tuple_(*map(literal, mine)),
+            or_(
+                Job.status == JobStatus.RUNNING,
+                and_(
+                    Job.status == JobStatus.QUEUED,
+                    Job.task.is_not(None),
+                    tuple_(_generate_last(), Job.queued_at, Job.id) < tuple_(*map(literal, mine)),
+                ),
+            )
         )
     )
-    return int(ahead or 0) + 1
+    rims_ahead = session.scalar(
+        select(func.count())
+        .select_from(Rim)
+        .where(Rim.status.in_([RimStatus.QUEUED, RimStatus.RUNNING]))
+    )
+    return int(jobs_ahead or 0) + int(rims_ahead or 0) + 1
 
 
 def report_progress(session: Session, job_id: int, progress: Progress) -> bool:
@@ -185,7 +213,7 @@ def complete_job(
     job = session.get_one(Job, job_id)
     job.images.append(Image(role=ImageRole.RESULT, path=result_path, width=width, height=height))
     job.status = JobStatus.DONE
-    job.finished_at = _now()
+    job.finished_at = utcnow()
 
 
 def complete_wheel_regeneration(
@@ -209,7 +237,7 @@ def complete_wheel_regeneration(
         if wheel.pending_seed is not None:
             wheel.seed, wheel.pending_seed = wheel.pending_seed, None
     job.status = JobStatus.DONE
-    job.finished_at = _now()
+    job.finished_at = utcnow()
 
 
 def _back_to_result(job: Job) -> None:
@@ -219,10 +247,12 @@ def _back_to_result(job: Job) -> None:
     job.status = JobStatus.DONE
 
 
-def fail_job(session: Session, job_id: int, *, error: str) -> None:
-    """Błąd pracy workera. Nieudana detekcja albo segmentacja wraca do szkicu (można kliknąć
-    koło), nieudane ponowienie koła wraca do poprzedniego wyniku (`done` z błędem), nieudane
-    generowanie kończy zadanie statusem `failed`."""
+def fail_job(session: Session, job_id: int, *, error: Failure) -> None:
+    """Błąd pracy workera (`error`: kod przyczyny, tekst w UI z `texts.failure_text`).
+
+    Nieudana detekcja albo segmentacja wraca do szkicu (można kliknąć koło), nieudane
+    ponowienie koła wraca do poprzedniego wyniku (`done` z błędem), nieudane generowanie
+    kończy zadanie statusem `failed`."""
     job = session.get_one(Job, job_id)
     job.error = error
     if job.task == TaskKind.REGENERATE_WHEEL:
@@ -234,10 +264,7 @@ def fail_job(session: Session, job_id: int, *, error: str) -> None:
             job.wheels.remove(wheel)
         return
     job.status = JobStatus.FAILED
-    job.finished_at = _now()
-
-
-INTERRUPTED_ERROR = "Przerwane: worker został zatrzymany albo uległ awarii w trakcie zadania."
+    job.finished_at = utcnow()
 
 
 def fail_interrupted_jobs(session: Session) -> list[int]:
@@ -254,7 +281,7 @@ def fail_interrupted_jobs(session: Session) -> list[int]:
         if job.cancel_requested:
             mark_cancelled(session, job.id)
         else:
-            fail_job(session, job.id, error=INTERRUPTED_ERROR)
+            fail_job(session, job.id, error=Failure.INTERRUPTED)
     return [job.id for job in jobs]
 
 
@@ -267,8 +294,4 @@ def mark_cancelled(session: Session, job_id: int) -> None:
         _back_to_result(job)
         return
     job.status = JobStatus.CANCELLED
-    job.finished_at = _now()
-
-
-def _now() -> datetime:
-    return datetime.now(UTC)
+    job.finished_at = utcnow()

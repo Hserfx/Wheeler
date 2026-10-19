@@ -21,12 +21,14 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from wheeler_shared import storage
 from wheeler_shared.edit_params import EditParams
+from wheeler_shared.failures import Failure, ProcessingFailed
 from wheeler_shared.progress import Progress
 from wheeler_worker.background import BackgroundRemover
 from wheeler_worker.compositing import composite, crop_box_for, grow_mask, mask_box, working_size
 from wheeler_worker.detector import WheelDetector
-from wheeler_worker.photos import load_photo, read_metadata, save_png
+from wheeler_worker.photos import load_original, load_photo, read_metadata, save_png
 from wheeler_worker.processing import (
     CutRimItem,
     CutRimResult,
@@ -56,8 +58,9 @@ FEATHER = 0.015  # pas wygładzania krawędzi (do wewnątrz maski): ułamek boku
 OVERLAY_RGBA = (37, 99, 235, 110)  # półprzezroczysty niebieski
 
 
-def wheel_dir(output_dir: Path, wheel_id: int) -> Path:
-    target = output_dir / "wheels" / str(wheel_id)
+def wheel_dir(output_dir: Path, wheel: int | str) -> Path:
+    """Katalog plików koła w katalogu zadania (układ: `wheeler_shared.storage.wheel_dir`)."""
+    target = output_dir / storage.wheel_dir(wheel)
     target.mkdir(parents=True, exist_ok=True)
     return target
 
@@ -84,7 +87,7 @@ class WheelSwapProcessor:
         raw_masks = self.segmenter.segment_boxes(photo, boxes) if boxes else []
         wheels: list[MaskFiles] = []
         for raw in raw_masks:
-            target = item.output_dir / "wheels" / f"detected-{len(wheels) + 1}"
+            target = item.output_dir / storage.wheel_dir(f"detected-{len(wheels) + 1}")
             files = _save_mask(raw, params, target)
             if files is not None:  # SAM nic nie znalazł w boxie: pomijamy
                 wheels.append(files)
@@ -98,7 +101,7 @@ class WheelSwapProcessor:
             raw = self.segmenter.segment_click(photo, point)
             files = _save_mask(raw, params, wheel_dir(item.output_dir, wheel_id))
             if files is None:
-                raise ValueError("Nie udało się wyznaczyć maski koła w klikniętym miejscu")
+                raise ProcessingFailed(Failure.NOTHING_AT_CLICK, f"pusta maska w {point}")
             masks[wheel_id] = files
         return SegmentResult(masks=masks)
 
@@ -114,7 +117,7 @@ class WheelSwapProcessor:
         foreground = self._rim_foreground(photo, item.click)
         cut = cut_out(photo, foreground)
         if cut is None:
-            raise ValueError("Nie znaleziono felgi na zdjęciu")
+            raise ProcessingFailed(Failure.RIM_NOT_FOUND, "pusta maska pierwszego planu")
         return CutRimResult(cut_path=save_png(cut, item.output_dir / "cut.png"))
 
     def _rim_foreground(self, photo: Image.Image, click: tuple[float, float] | None) -> Image.Image:
@@ -135,7 +138,7 @@ class WheelSwapProcessor:
         if params.seed is None:
             raise ValueError("Brak seeda w parametrach zadania")
         edit = self._prepare_edit(params, item.rim_path, seed=params.seed)
-        result = load_photo(item.photo_path)
+        result = load_original(item.photo_path)
         wheels = len(item.masks)
         # Koła po kolei, każde osobnym wywołaniem modelu, z tym samym seedem i promptem.
         # Raport przed kołem i po każdym kroku: tu odbiorca może przerwać pracę (anulowanie).
@@ -166,7 +169,10 @@ class WheelSwapProcessor:
             item.on_progress(Progress(wheel=1, wheels=1, step=step, steps=steps))
 
         result = edit.apply(
-            load_photo(item.result_path), mask, wheel_dir(item.output_dir, item.wheel_id), on_step
+            load_original(item.result_path),
+            mask,
+            wheel_dir(item.output_dir, item.wheel_id),
+            on_step,
         )
         target = save_png(
             result, _next_result_path(item.output_dir), metadata=read_metadata(item.photo_path)
@@ -214,11 +220,12 @@ class _WheelEdit:
         """Podmienia felgę w jednym kole; piksele poza `mask` zostają bit w bit."""
         wheel = mask_box(mask)
         if wheel is None:
-            raise ValueError("Pusta maska koła")
+            raise ProcessingFailed(Failure.EMPTY_MASK)
         side = max(wheel.width, wheel.height)
         crop = crop_box_for(wheel, photo.size, margin=CROP_MARGIN)
         size = working_size(crop, resolution=self.resolution)
-        crop_image = photo.crop(crop).resize(size, Image.Resampling.LANCZOS)
+        # Model dostaje RGB; `photo` jest w trybie wyniku (`photos.load_original`).
+        crop_image = photo.crop(crop).convert("RGB").resize(size, Image.Resampling.LANCZOS)
         crop_mask = mask.crop(crop).resize(size, Image.Resampling.BILINEAR)
         save_png(crop_image, out / "crop.png")
         save_png(crop_mask, out / "crop_mask.png")

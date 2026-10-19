@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import re
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -21,13 +20,6 @@ from wheeler_shared.models import Image as DbImage
 from wheeler_shared.models import ImageRole, Job
 from wheeler_shared.queue import claim_next_job, create_job
 from wheeler_shared.storage import Storage
-
-
-@pytest.fixture
-def client(database_url: str, storage: Storage) -> Iterator[TestClient]:
-    settings = ApiSettings(database_url=database_url, data_dir=storage.root)
-    with TestClient(create_app(settings)) as test_client:
-        yield test_client
 
 
 def _upload(client: TestClient) -> int:

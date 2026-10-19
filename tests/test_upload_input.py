@@ -2,42 +2,29 @@
 
 from __future__ import annotations
 
-import io
-import re
-from collections.abc import Iterator
-
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from helpers import click_wheel, drain, encode, fake_processor, generate, jpeg, library_rim, upload
+from helpers import (
+    click_wheel,
+    drain,
+    encode,
+    fake_processor,
+    fetch,
+    generate,
+    image_src,
+    jpeg,
+    library_rim,
+    upload,
+    upload_photo,
+)
 from photo_files import GPS_IFD, MAKE, display_profile, phone_file, phone_heic, quadrants
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
-from wheeler_api.app import create_app
-from wheeler_api.settings import ApiSettings
 from wheeler_api.texts import TEXTS
 from wheeler_shared.storage import Storage
 from wheeler_worker.runner import run_once
-
-
-@pytest.fixture
-def client(database_url: str, storage: Storage) -> Iterator[TestClient]:
-    settings = ApiSettings(database_url=database_url, data_dir=storage.root)
-    with TestClient(create_app(settings)) as test_client:
-        yield test_client
-
-
-def _image_src(html: str, role: str) -> str:
-    match = re.search(rf'<img[^>]+src="(/files/[^"]+)"[^>]*data-role="{role}"', html)
-    assert match, html
-    return match.group(1)
-
-
-def _fetch(client: TestClient, url: str) -> Image.Image:
-    response = client.get(url)
-    assert response.status_code == 200, url
-    return Image.open(io.BytesIO(response.content))
 
 
 def test_iphone_heic_is_shown_upright_and_gives_png_with_icc_and_without_gps(
@@ -48,7 +35,7 @@ def test_iphone_heic_is_shown_upright_and_gives_png_with_icc_and_without_gps(
     page = client.get(f"/jobs/{job_id}").text
     # Przeglądarka nie wyświetli HEIC: wybór koła pokazuje obrócony podgląd w pełnym rozmiarze,
     # więc współrzędne kliknięcia (naturalWidth/Height) są w układzie obróconego zdjęcia.
-    preview = _fetch(client, _image_src(page, "input"))
+    preview = fetch(client, image_src(page, "input"))
     assert preview.format in {"JPEG", "PNG"} and preview.size == (64, 48)
     top_left = np.asarray(preview.convert("RGB"))[5, 5].astype(int)
     assert np.abs(top_left - (250, 30, 30)).max() < 16
@@ -62,21 +49,24 @@ def test_iphone_heic_is_shown_upright_and_gives_png_with_icc_and_without_gps(
     assert run_once(session_factory, storage, processor)
 
     status = client.get(f"/jobs/{job_id}/status").text
-    result = _fetch(client, _image_src(status, "result"))
+    result = fetch(client, image_src(status, "result"))
     assert result.format == "PNG" and result.size == (64, 48)
     assert result.info.get("icc_profile") == display_profile()
     exif = result.getexif()
     assert exif.get(MAKE) == "Apple" and not exif.get_ifd(GPS_IFD)
     assert tuple(np.asarray(result.convert("RGB"))[36, 48]) == (10, 200, 30)
-    _fetch(client, _image_src(status, "input"))  # wejście HEIC też ma podgląd po zakończeniu
+    fetch(client, image_src(status, "input"))  # wejście HEIC też ma podgląd po zakończeniu
 
 
-def test_home_page_accepts_heic_by_picker_drop_and_paste(client: TestClient) -> None:
-    page = client.get("/").text
-    assert page.count('accept="image/jpeg,image/png,image/webp,image/heic,image/heif') == 2
-    assert page.count('data-role="drop-zone"') == 2
-    assert "@drop.prevent" in page and "@paste.window" in page
-    assert TEXTS["upload_drop_hint"] in page
+def test_photo_and_rim_fields_accept_heic_by_picker_drop_and_paste(client: TestClient) -> None:
+    accept = 'accept="image/jpeg,image/png,image/webp,image/heic,image/heif'
+    home = client.get("/").text  # zdjęcie auta
+    assert home.count(accept) == 1 and home.count('data-role="drop-zone"') == 1
+    assert "@drop.prevent" in home and "@paste.window" in home
+    assert TEXTS["upload_drop_hint"] in home
+    job = client.get(f"/jobs/{upload_photo(client)}").text  # nowa felga przed „Generuj”
+    assert job.count(accept) == 1 and job.count('data-role="drop-zone"') == 1
+    assert "@paste.window" in job and "rim-paste" in job
 
 
 def _post(client: TestClient, field: str, name: str, data: bytes) -> str:
@@ -163,7 +153,7 @@ def test_common_formats_with_exif_orientation_are_shown_upright(
     job_id = upload(client, phone_file(quadrants(64, 48), format), filename=name)
 
     page = client.get(f"/jobs/{job_id}").text
-    shown = _fetch(client, _image_src(page, "input"))
+    shown = fetch(client, image_src(page, "input"))
     # Obrócone według EXIF już na serwerze: nie zależy od tego, jak przeglądarka traktuje EXIF.
     assert shown.size == (64, 48)
     top_left = np.asarray(shown.convert("RGB"))[5, 5].astype(int)

@@ -77,10 +77,16 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
 - **Detekcja kół:** Florence-2-large (phrase grounding „wheel”), wybrany w spike'u zamiast Grounding DINO.
 - **Maski:** SAM 2, zarówno do precyzyjnego kształtu wykrytych kół, jak i do „dodaj koło” jednym kliknięciem (prompt punktowy).
 - **Usuwanie tła z felgi referencyjnej:** BiRefNet lub rembg, uruchamiane przy dodawaniu felgi do biblioteki.
+  Ustalenie po review: jeśli wycięcie obejmuje coś poza felgą (np. karoserię), użytkownik klika felgę na
+  oryginale i worker wycina ją ponownie z kliknięcia (SAM 2), także po nieudanym wycięciu.
 
 ### Pipeline edycji
 
 1. **Wejście:** JPEG/PNG/WebP/HEIC (`pillow-heif`), obrót według EXIF. Limit 40 MPx / 50 MB.
+   Gwarancja „bit w bit” obejmuje każde przyjęte wejście (ustalone po review): wynik zachowuje tryb
+   oryginału (RGB, RGBA, L, LA; alfa bez zmian w całym obrazie), paleta jest rozwijana do RGB/RGBA,
+   obraz 1-bitowy do L. Wejścia, których PNG wyniku nie odda wiernie (16 bitów na kanał, CMYK itp.),
+   są odrzucane przy wgraniu z komunikatem.
 2. **Detekcja kół** (kilka sekund) i maski SAM 2. Użytkownik akceptuje lub koryguje je w UI.
 3. **Maska kompozycji = całe koło** (opona + felga), lekko poszerzona. Prompt każe zachować oponę i zmienić tylko felgę. Opona jest generowana na nowo, ale ma wyglądać prawie identycznie. Dzięki temu nowa felga może mieć inną średnicę wizualną.
 4. **Każde koło edytujemy osobno:** wycinek wokół koła przeskalowany do rozdzielczości roboczej (1024 px, Turbo traci detal poniżej). Wywołanie z `image_paths=[wycinek, felga]` i maską koła, bo maska mflux działa na pierwszej referencji. Rozmiar wyjścia podajemy jawnie (`width`/`height`), bo domyślnie wyznacza go ostatni obraz. Ten sam seed i prompt dla wszystkich kół jednego zdjęcia.
@@ -89,9 +95,21 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
 
 ## Kolejka zadań
 
-- Zadania przetwarzane są pojedynczo w kolejności FIFO, bo GPU jest jedno.
+- Zadania przetwarzane są pojedynczo, bo GPU jest jedno. W obrębie rodzaju pracy obowiązuje FIFO
+  (po chwili wstawienia do kolejki).
+- **Świadome odstępstwo od czystego FIFO (ustalone po review):** krótka praca, na którą użytkownik
+  czeka przy ekranie, idzie przed generowaniem. Kolejność: najpierw wycinanie felg do biblioteki
+  (~1 s), potem detekcja kół i maski z kliknięcia (~1 s), na końcu generowanie i „ponów to koło”
+  (~2 min na koło). Trwającej pracy nic nie przerywa. Bez tego klik w koło czekałby na wszystkie
+  wcześniej zlecone generowania.
+- Pozycja w kolejce pokazywana w UI liczy wszystko, co worker zrobi przed danym zadaniem: trwającą
+  pracę, felgi w kolejce i zadania przed nim w powyższej kolejności (praca interaktywna zlecona
+  później może je jeszcze wyprzedzić).
 - Zadanie można anulować, a przerwanie następuje między krokami lub kołami.
 - Zadanie przerwane przez awarię lub restart workera dostaje status `failed`, a UI pokazuje przycisk „ponów”. Bez automatycznych ponowień.
+  To samo dotyczy felgi wycinanej w chwili awarii (`failed`, można ją wyciąć ponownie albo odrzucić).
+- Ustalenie po review: „ponów” jest dostępne także dla zadania anulowanego, nie tylko nieudanego
+  (nowe zadanie z tymi samymi plikami, kołami i parametrami).
 - Postęp raportowany per koło i per krok denoisingu.
 
 ## Baza danych (PostgreSQL)
@@ -112,7 +130,11 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
   4. „Generuj”: postęp per koło i per krok (polling HTMX co ~1 s), z możliwością anulowania.
   5. Wynik z suwakiem przed/po, przyciskiem „ponów to koło” (inny seed) i pobieraniem PNG.
 - **Sekcja „Zaawansowane”** jest domyślnie zwinięta i zawiera seed, rozdzielczość roboczą, poszerzenie maski i dopisek do promptu. Użyte wartości zapisujemy w historii zadania.
+  Ustalenie po review: rozdzielczość robocza 992–1152 px co 32 px. Dolna granica wynika z utraty detalu
+  przez Turbo poniżej ~1024 px (spike sprawdził 992 i 1056 bez różnic), górna z zapasu pamięci przy q8.
 - **Podstrona „Historia”:** miniatury, podgląd, ręczne usuwanie.
+- **Podstrona „Biblioteka felg”** (ustalenie po review): przegląd felg z licznikiem użyć, dodawanie
+  i usuwanie z biblioteki. Na stronie zadania (krok 3) jest ten sam wybór felgi, bez usuwania.
 
 ## Konwencje inżynierskie
 

@@ -7,20 +7,19 @@ albo `manage` (strona biblioteki, z usuwaniem). `rim_id` to felga zaznaczona w f
 
 from __future__ import annotations
 
-import shutil
 from typing import Annotated
 
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 
-from wheeler_api.rim_picker import Mode, picker_context
-from wheeler_api.routes import (
+from wheeler_api.deps import (
     SessionDep,
     SessionFactoryDep,
     StorageDep,
     TemplatesDep,
 )
+from wheeler_api.rim_picker import Mode, picker_context
 from wheeler_api.texts import TEXTS
 from wheeler_api.uploads import UploadRejected, save_image_upload
 from wheeler_shared.rim_library import (
@@ -29,7 +28,6 @@ from wheeler_shared.rim_library import (
     accept_rim,
     add_rim,
     delete_rim,
-    new_rim_dir,
     refine_rim,
 )
 
@@ -88,13 +86,13 @@ def create_rim(
             error=TEXTS["error_rim_file"],
             status_code=400,
         )
-    rim_dir = new_rim_dir(storage)
+    rim_dir = storage.new_rim_dir()
     try:
         original = save_image_upload(storage, rim, f"{rim_dir}/original")
         with session.begin():
             add_rim(session, original_path=original, name=name)
     except UploadRejected as rejected:
-        shutil.rmtree(storage.path(rim_dir), ignore_errors=True)
+        storage.remove_tree(rim_dir)
         return _picker(
             request,
             session,
@@ -105,7 +103,7 @@ def create_rim(
             status_code=400,
         )
     except BaseException:
-        shutil.rmtree(storage.path(rim_dir), ignore_errors=True)
+        storage.remove_tree(rim_dir)
         raise
     return _picker(request, session, templates, mode=mode, selected=rim_id)
 

@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session, selectinload
 from wheeler_shared.editing import EditingError
 from wheeler_shared.models import Image, ImageRole, Job, JobStatus, TaskKind, Wheel
 from wheeler_shared.queue import enqueue
-from wheeler_shared.storage import Storage
+from wheeler_shared.storage import Storage, wheel_dir
 
 RETRYABLE = (JobStatus.FAILED, JobStatus.CANCELLED)
 
@@ -91,7 +91,7 @@ def retry_job(session: Session, storage: Storage, job_id: int, *, job_dir: str) 
 
     for old, new in zip(masked, retried.wheels, strict=True):
         assert old.mask_path is not None
-        folder = f"wheels/{new.id}"
+        folder = wheel_dir(new.id)
         new.mask_path = copy(old.mask_path, f"{folder}/{PurePosixPath(old.mask_path).name}")
         if old.overlay_path is not None:
             new.overlay_path = copy(

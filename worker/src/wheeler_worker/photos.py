@@ -1,7 +1,9 @@
 """Odczyt zdjęć wejściowych i zapis wyników (jedno miejsce na formaty i metadane, ticket 10).
 
 Wejście: JPEG, PNG, WebP, HEIC (`pillow-heif`), obrócone według orientacji EXIF; współrzędne
-kliknięć, masek i kompozycji są w układzie obróconego zdjęcia. Wynik: PNG z profilem ICC
+kliknięć, masek i kompozycji są w układzie obróconego zdjęcia. Modele dostają RGB
+(`load_photo`), a kompozycja oryginał w trybie, który wynik zachowuje bit w bit
+(`load_original`, `wheeler_shared.photo_modes`). Wynik: PNG z profilem ICC
 oryginału i jego EXIF bez lokalizacji GPS (orientacja usunięta, bo piksele są już obrócone).
 """
 
@@ -12,6 +14,9 @@ from pathlib import Path
 
 import pillow_heif
 from PIL import ExifTags, Image, ImageOps
+
+from wheeler_shared.failures import Failure, ProcessingFailed
+from wheeler_shared.photo_modes import edit_mode
 
 pillow_heif.register_heif_opener()
 
@@ -31,6 +36,17 @@ def load_photo(path: Path) -> Image.Image:
     """Zdjęcie jako RGB, obrócone według EXIF (współrzędne kliknięć i masek są w tym układzie)."""
     with Image.open(path) as source:
         return ImageOps.exif_transpose(source).convert("RGB")
+
+
+def load_original(path: Path) -> Image.Image:
+    """Zdjęcie do kompozycji wyniku w trybie z `photo_modes.edit_mode` (RGB, RGBA, L, LA),
+    obrócone według EXIF. Tryb, którego wynik nie zachowa wiernie: `ProcessingFailed`."""
+    with Image.open(path) as source:
+        mode = edit_mode(source.mode, transparency="transparency" in source.info)
+        if mode is None:
+            raise ProcessingFailed(Failure.UNSUPPORTED_PHOTO, f"tryb {source.mode}: {path}")
+        image = ImageOps.exif_transpose(source)
+    return image if image.mode == mode else image.convert(mode)
 
 
 def read_metadata(path: Path) -> PhotoMetadata:

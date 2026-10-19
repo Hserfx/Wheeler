@@ -3,10 +3,10 @@
 Zadanie (`Job`) to jedna edycja jednego zdjęcia, widoczna w Historii. Przechodzi przez kroki,
 z których część wykonuje worker (`TaskKind`), a część użytkownik (status `draft`):
 
-    wgranie --> queued/running (detect) --> draft (maski wykrytych kół jako nakładki)
+    wgranie zdjęcia auta --> queued/running (detect) --> draft (maski wykrytych kół jako nakładki)
     draft --klik obok masek--> queued/running (segment) --> draft (nowe koło dodane)
     draft --klik w maskę--> draft (koło usunięte, bez workera)
-    draft --„Generuj”----> queued/running (generate) --> done | failed | cancelled
+    draft --felga + „Generuj”--> queued/running (generate) --> done | failed | cancelled
     done --„Ponów to koło”--> queued/running (regenerate_wheel) --> done (błąd/anulowanie
         też wracają do done z poprzednim wynikiem)
 
@@ -66,7 +66,11 @@ class TaskKind(enum.StrEnum):
     @property
     def generates(self) -> bool:
         """Praca modelu edycji (mflux): długa, w kolejce za pracą interaktywną, z postępem."""
-        return self in (TaskKind.GENERATE, TaskKind.REGENERATE_WHEEL)
+        return self in GENERATING_TASKS
+
+
+# Jedno źródło dla `TaskKind.generates` i kolejności w kolejce (`queue._generate_last`).
+GENERATING_TASKS: frozenset[TaskKind] = frozenset({TaskKind.GENERATE, TaskKind.REGENERATE_WHEEL})
 
 
 class WheelSource(enum.StrEnum):
@@ -80,6 +84,13 @@ class ImageRole(enum.StrEnum):
     INPUT = "input"
     RIM = "rim"  # felga referencyjna (w 06 może leżeć w bibliotece, poza katalogiem zadania)
     RESULT = "result"
+
+
+Point = tuple[float, float]  # x, y w pikselach zdjęcia (po obrocie EXIF)
+
+
+def _point(x: float | None, y: float | None) -> Point | None:
+    return None if x is None or y is None else (x, y)
 
 
 def _str_enum(enum_cls: type[enum.StrEnum], name: str) -> Enum:
@@ -103,6 +114,7 @@ class Job(Base):
     )
     task: Mapped[TaskKind | None] = mapped_column(_str_enum(TaskKind, "task_kind"))
     params: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    # Kod przyczyny niepowodzenia (`wheeler_shared.failures.Failure`), nie tekst dla UI.
     error: Mapped[str | None] = mapped_column(Text)
     # Liczba kół znalezionych przez detektor (None = detekcja się nie odbyła albo nie udała).
     wheels_detected: Mapped[int | None] = mapped_column(Integer)
@@ -175,6 +187,14 @@ class Wheel(Base):
     job: Mapped[Job] = relationship(back_populates="wheels")
 
     @property
+    def click(self) -> Point | None:
+        return _point(self.click_x, self.click_y)
+
+    @click.setter
+    def click(self, value: Point | None) -> None:
+        self.click_x, self.click_y = (float(value[0]), float(value[1])) if value else (None, None)
+
+    @property
     def box(self) -> tuple[int, int, int, int] | None:
         if self.box_left is None or self.box_top is None:
             return None
@@ -220,8 +240,16 @@ class Rim(Base):
     # Klik w felgę na oryginale (piksele po obrocie EXIF): wycięcie przez SAM 2 zamiast BiRefNet.
     click_x: Mapped[float | None] = mapped_column(Float)
     click_y: Mapped[float | None] = mapped_column(Float)
-    error: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)  # kod `Failure`, jak `Job.error`
     use_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    @property
+    def click(self) -> Point | None:
+        return _point(self.click_x, self.click_y)
+
+    @click.setter
+    def click(self, value: Point | None) -> None:
+        self.click_x, self.click_y = (float(value[0]), float(value[1])) if value else (None, None)

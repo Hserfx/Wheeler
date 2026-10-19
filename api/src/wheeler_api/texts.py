@@ -6,8 +6,8 @@ Szablony odwołują się do nich przez `t.<klucz>`; w szablonach nie wpisujemy t
 from typing import Final
 
 from wheeler_shared import edit_params
-from wheeler_shared.models import Job, JobStatus, TaskKind
-from wheeler_shared.progress import Progress
+from wheeler_shared.failures import Failure
+from wheeler_shared.models import JobStatus
 from wheeler_shared.worker_state import ModelState
 
 TEXTS: Final[dict[str, str]] = {
@@ -39,14 +39,13 @@ TEXTS: Final[dict[str, str]] = {
     "delete_done": "Usunięto zadania: {count}.",
     "delete_skipped": "Pominięto zadania w trakcie przetwarzania: {count}.",
     # Strona główna
-    "upload_heading": "Wgraj zdjęcie samochodu i wybierz felgę",
+    "upload_heading": "Wgraj zdjęcie samochodu",
     "upload_hint": (
-        "Pliki JPEG, PNG, WebP lub HEIC, do 50 MB i 40 MPx. Koło do podmiany wskażesz "
-        "w następnym kroku."
+        "Pliki JPEG, PNG, WebP lub HEIC, do 50 MB i 40 MPx. Koła wykryjemy automatycznie, "
+        "a felgę wybierzesz w następnym kroku."
     ),
     "upload_drop_hint": "Przeciągnij plik tutaj albo wklej go ze schowka (Ctrl+V / ⌘V).",
     "upload_photo_label": "Zdjęcie samochodu",
-    "upload_rim_label": "Felga",
     "upload_choose": "Wybierz plik",
     "upload_no_file_chosen": "Nie wybrano pliku",
     "upload_submit": "Dalej",
@@ -97,6 +96,11 @@ TEXTS: Final[dict[str, str]] = {
     "param_prompt_suffix_placeholder": "np. Glossy black finish.",
     "param_prompt_suffix_hint": "Po angielsku; doklejany na końcu promptu.",
     "param_empty": "(brak)",
+    # Etykiety parametrów w szczegółach zadania (`PARAM_LABELS`)
+    "job_param_seed": "Seed",
+    "job_param_resolution": "Rozdzielczość robocza",
+    "job_param_mask_grow": "Poszerzenie maski",
+    "job_param_prompt_suffix": "Dopisek do promptu",
     "error_param_seed": "Seed musi być liczbą całkowitą od 0 do {seed_max} albo pustym polem.",
     "error_param_resolution": (
         "Rozdzielczość robocza musi być wielokrotnością {step} px, od {min} do {max} px."
@@ -116,6 +120,11 @@ TEXTS: Final[dict[str, str]] = {
     "generate_submit": "Generuj",
     "generate_hint": "Generowanie trwa około 2 minut na każde koło.",
     "job_rim": "Felga",
+    "rim_choose_heading": "Felga",
+    "rim_choose_hint": (
+        "Wybierz felgę z biblioteki albo dodaj nową (sprawdzisz ją przed dodaniem). "
+        "Felgę trzeba wybrać przed „Generuj”; możesz to zrobić już w trakcie wykrywania kół."
+    ),
     # Zadanie
     "job_heading": "Zadanie nr {id}",
     "job_input": "Zdjęcie wejściowe",
@@ -184,6 +193,10 @@ TEXTS: Final[dict[str, str]] = {
         "Plik „{name}” nie jest obsługiwanym zdjęciem. Wgraj plik JPEG, PNG, WebP lub HEIC."
     ),
     "error_upload_too_large": "Plik „{name}” jest za duży. Limit to {limit} MB.",
+    "error_upload_mode": (
+        "Zdjęcie „{name}” ma format pikseli, którego nie da się zachować bez zmian poza "
+        "kołami (np. 16 bitów na kanał albo CMYK). Zapisz je jako 8-bitowe RGB i wgraj ponownie."
+    ),
     "error_upload_too_many_pixels": (
         "Zdjęcie „{name}” ma za dużą rozdzielczość. Limit to {limit} MPx (megapikseli)."
     ),
@@ -197,15 +210,32 @@ TEXTS: Final[dict[str, str]] = {
     "error_not_retryable": "Ponowić można tylko zadanie zakończone niepowodzeniem lub anulowane.",
     "error_generic": "Wystąpił błąd.",
     "error_back": "Wróć na stronę główną",
+    # Przyczyny niepowodzenia pracy workera (`wheeler_shared.failures.Failure`, `failure_text`)
+    "failure_internal": "Błąd wewnętrzny workera. Szczegóły są w jego logu (.run/worker.log).",
+    "failure_interrupted": (
+        "Przerwane: worker został zatrzymany albo uległ awarii w trakcie zadania."
+    ),
+    "failure_legacy_job": "Zadanie z poprzedniej wersji aplikacji (bez felgi i maski koła).",
+    "failure_nothing_at_click": "W klikniętym miejscu nie znaleziono koła.",
+    "failure_empty_mask": "Maska koła jest pusta.",
+    "failure_rim_not_found": "Na zdjęciu nie znaleziono felgi.",
+    "failure_no_rim": "Zadanie nie ma wybranej felgi.",
+    "failure_unsupported_photo": (
+        "Zdjęcie ma format pikseli, którego nie da się zachować bez zmian (np. 16 bitów "
+        "na kanał albo CMYK)."
+    ),
 }
 
 # Etykiety parametrów zadania (`Job.params`) w szczegółach zadania. Parametr bez etykiety
 # wyświetla się pod swoim kluczem, więc nowe parametry są widoczne bez zmian w szablonach.
 PARAM_LABELS: Final[dict[str, str]] = {
-    edit_params.SEED: TEXTS["param_seed"],
-    edit_params.RESOLUTION: "Rozdzielczość robocza",
-    edit_params.MASK_GROW: "Poszerzenie maski",
-    edit_params.PROMPT_SUFFIX: TEXTS["param_prompt_suffix"],
+    key: TEXTS[f"job_param_{key}"]
+    for key in (
+        edit_params.SEED,
+        edit_params.RESOLUTION,
+        edit_params.MASK_GROW,
+        edit_params.PROMPT_SUFFIX,
+    )
 }
 
 STATUS_LABELS: Final[dict[JobStatus, str]] = {
@@ -218,39 +248,14 @@ STATUS_LABELS: Final[dict[JobStatus, str]] = {
 }
 
 
-def job_status_label(job: Job) -> str:
-    """Status zadania dla użytkownika; praca workera nad maską ma własny opis."""
-    if job.status.busy and job.task == TaskKind.SEGMENT:
-        return TEXTS["status_segmenting"]
-    if job.status.busy and job.task == TaskKind.DETECT:
-        return TEXTS["status_detecting"]
-    if job.status.busy and job.cancel_requested:
-        return TEXTS["status_cancelling"]
-    if job.status.busy and job.task == TaskKind.REGENERATE_WHEEL:
-        return TEXTS["status_regenerating"]
-    return STATUS_LABELS[job.status]
-
-
-def job_progress(job: Job) -> Progress | None:
-    """Postęp generowania, gdy worker nad nim pracuje."""
-    if job.status != JobStatus.RUNNING or job.task is None or not job.task.generates:
-        return None
-    return Progress.from_json(job.progress)
-
-
-def progress_label(progress: Progress) -> str:
-    if progress.steps is None:
-        return TEXTS["progress_wheel"].format(wheel=progress.wheel, wheels=progress.wheels)
-    return TEXTS["progress_step"].format(
-        wheel=progress.wheel, wheels=progress.wheels, step=progress.step, steps=progress.steps
-    )
-
-
-def can_cancel(job: Job) -> bool:
-    """Przycisk „Anuluj”: generowanie w kolejce albo w trakcie, bez wcześniejszej prośby."""
-    return (
-        job.status.busy and job.task is not None and job.task.generates and not job.cancel_requested
-    )
+def failure_text(code: str | None) -> str:
+    """Komunikat dla kodu niepowodzenia z `Job.error`/`Rim.error`; nieznany kod (np. dawny
+    tekst wyjątku) daje komunikat o błędzie wewnętrznym, nigdy surowy tekst z bazy."""
+    try:
+        failure = Failure(code or Failure.INTERNAL)
+    except ValueError:
+        failure = Failure.INTERNAL
+    return TEXTS[f"failure_{failure.value}"]
 
 
 MODEL_STATE_LABELS: Final[dict[ModelState, str]] = {

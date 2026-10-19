@@ -77,6 +77,8 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
 - **Detekcja kół:** Florence-2-large (phrase grounding „wheel”), wybrany w spike'u zamiast Grounding DINO.
 - **Maski:** SAM 2, zarówno do precyzyjnego kształtu wykrytych kół, jak i do „dodaj koło” jednym kliknięciem (prompt punktowy).
 - **Usuwanie tła z felgi referencyjnej:** BiRefNet lub rembg, uruchamiane przy dodawaniu felgi do biblioteki.
+  Ustalenie po review: jeśli wycięcie obejmuje coś poza felgą (np. karoserię), użytkownik klika felgę na
+  oryginale i worker wycina ją ponownie z kliknięcia (SAM 2), także po nieudanym wycięciu.
 
 ### Pipeline edycji
 
@@ -105,6 +107,9 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
   później może je jeszcze wyprzedzić).
 - Zadanie można anulować, a przerwanie następuje między krokami lub kołami.
 - Zadanie przerwane przez awarię lub restart workera dostaje status `failed`, a UI pokazuje przycisk „ponów”. Bez automatycznych ponowień.
+  To samo dotyczy felgi wycinanej w chwili awarii (`failed`, można ją wyciąć ponownie albo odrzucić).
+- Ustalenie po review: „ponów” jest dostępne także dla zadania anulowanego, nie tylko nieudanego
+  (nowe zadanie z tymi samymi plikami, kołami i parametrami).
 - Postęp raportowany per koło i per krok denoisingu.
 
 ## Baza danych (PostgreSQL)
@@ -125,7 +130,11 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
   4. „Generuj”: postęp per koło i per krok (polling HTMX co ~1 s), z możliwością anulowania.
   5. Wynik z suwakiem przed/po, przyciskiem „ponów to koło” (inny seed) i pobieraniem PNG.
 - **Sekcja „Zaawansowane”** jest domyślnie zwinięta i zawiera seed, rozdzielczość roboczą, poszerzenie maski i dopisek do promptu. Użyte wartości zapisujemy w historii zadania.
+  Ustalenie po review: rozdzielczość robocza 992–1152 px co 32 px. Dolna granica wynika z utraty detalu
+  przez Turbo poniżej ~1024 px (spike sprawdził 992 i 1056 bez różnic), górna z zapasu pamięci przy q8.
 - **Podstrona „Historia”:** miniatury, podgląd, ręczne usuwanie.
+- **Podstrona „Biblioteka felg”** (ustalenie po review): przegląd felg z licznikiem użyć, dodawanie
+  i usuwanie z biblioteki. Na stronie zadania (krok 3) jest ten sam wybór felgi, bez usuwania.
 
 ## Konwencje inżynierskie
 

@@ -37,7 +37,7 @@ just logs api
 | Katalog   | Zawartość |
 |-----------|-----------|
 | `shared/` | `wheeler_shared`: modele SQLAlchemy, migracje Alembica (`migrations/`), kolejka zadań (`queue.py`), magazyn plików (`storage.py`), konfiguracja |
-| `api/`    | `wheeler_api`: FastAPI + Jinja2 + HTMX/Alpine; teksty UI w `texts.py`; obraz `api/Containerfile` |
+| `api/`    | `wheeler_api`: FastAPI + Jinja2 + HTMX/Alpine; teksty UI w `texts.py`, stan zadania dla szablonów w `job_view.py`, zależności tras w `deps.py`; obraz `api/Containerfile` |
 | `worker/` | `wheeler_worker`: natywny worker; `runner.py` (pętla kolejki), `processing.py` (procesory) |
 | `tests/`  | pytest, w tym testy integracyjne na prawdziwym Postgresie |
 
@@ -58,8 +58,12 @@ done --„Ponów to koło”-------> regenerate_wheel (jedno koło, nowy seed) -
 
 - Detektor, SAM 2 i mflux działają wyłącznie w natywnym workerze, więc detekcja po wgraniu
   (`TaskKind.DETECT`) i maska po kliknięciu (`TaskKind.SEGMENT`) idą przez kolejkę. Obie mają
-  pierwszeństwo przed generowaniem, w obrębie rodzaju obowiązuje FIFO po `queued_at`. Nieudana
-  detekcja albo segmentacja wraca do szkicu z komunikatem (koło można dodać kliknięciem).
+  pierwszeństwo przed generowaniem, w obrębie rodzaju obowiązuje FIFO po `queued_at` (świadome
+  odstępstwo od FIFO, DESIGN.md „Kolejka zadań”; `queue_position` liczy trwającą pracę i felgi).
+  Nieudana detekcja albo segmentacja wraca do szkicu z komunikatem (koło można dodać kliknięciem).
+- Błędy workera: `Job.error`/`Rim.error` trzymają kod `wheeler_shared.failures.Failure`
+  (procesor rzuca `ProcessingFailed(kod)`, każdy inny wyjątek to `internal`), a szablony pokazują
+  tekst z `texts.py` (`failure_text`). Wyjątki bibliotek trafiają tylko do logu workera.
 - Koła (`Wheel`): `source` (`detected` | `click`), maska, nakładka i `box_*` (prostokąt maski,
   wstępny filtr przy trafianiu kliknięciem). `Job.wheels_detected` = liczba kół z detekcji
   (0 -> UI mówi „Nie wykryto żadnego koła”). Klik trafia w maskę, gdy plik maski ma w tym punkcie
@@ -107,8 +111,8 @@ done --„Ponów to koło”-------> regenerate_wheel (jedno koło, nowy seed) -
   jeden proces workera. „Ponów” (`wheeler_shared/retry.py`) tworzy nowe zadanie z kopiami plików,
   tymi samymi kołami i parametrami (z seedem) i od razu wstawia je do kolejki.
 - Biblioteka felg (`wheeler_shared/rim_library.py`, UI: fragment `_rim_picker.html` na stronie
-  zadania (przed „Generuj”) i na `/rims`, trasy w `wheeler_api/rim_routes.py`). Felga (`Rim`) ma własną kolejkę
-  w tabeli `rims`, obsługiwaną przez worker przed zadaniami (`runner._cut_next_rim`,
+  zadania (przed „Generuj”) i na `/rims`, trasy w `wheeler_api/rim_routes.py`). Felga (`Rim`) ma
+  własną kolejkę w tabeli `rims`, obsługiwaną przez worker przed zadaniami (`runner._cut_next_rim`,
   `Processor.cut_rim`):
 
   ```
@@ -164,11 +168,12 @@ Testy integracyjne (`tests/conftest.py`):
   równolegle uruchamiać `just test`. Kontenery mają etykiety `wheeler.test=1` i
   `wheeler.test.worktree=<hash ścieżki>`, po których `just test-clean` sprząta tylko własne.
 - Fixture `database_url` tworzy na każdy test świeżą bazę i wykonuje na niej migracje.
-  `session_factory` i `storage` (katalog danych w `tmp_path`) budują się na nim.
+  `session_factory`, `storage` (katalog danych w `tmp_path`) i `client` (`TestClient` API)
+  budują się na nim.
 - `WHEELER_TEST_PG_ADMIN_URL` pozwala wskazać istniejący serwer zamiast startować kontener.
 - Test przepływu (`tests/test_upload_flow.py`) używa `TestClient` dla API i `run_once` workera
   z prawdziwym `WheelSwapProcessor` i atrapami modeli (`tests/fake_models.py`); GPU nie jest
-  potrzebne. Kroki „wgraj, kliknij, generuj” są w `tests/helpers.py` (`upload`, `drain`,
-  `finish_job`). Po `upload` zadanie czeka w kolejce na detekcję kół: przed kliknięciem koła
+  potrzebne. Kroki „wgraj, kliknij, generuj” są w `tests/helpers.py` (`upload` ze zdjęciem
+  i felgą, `upload_photo` bez felgi, `drain`, `finish_job`, `image_src`/`fetch`). Po `upload` zadanie czeka w kolejce na detekcję kół: przed kliknięciem koła
   przetwórz kolejkę (`drain`; atrapa `fake_processor` nie wykrywa kół, `BoxDetector` zwraca zadane boxy).
 - Logika wycinania i kompozycji: `tests/test_compositing.py`, bez modelu.

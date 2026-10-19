@@ -307,7 +307,7 @@ Rozmiarem steruje geometria, nie prompt (sam prompt model ignoruje, zob. komenta
 
 **Blocked by:** 06, 07, 09
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [x] Wybór stopnia w sekcji wyboru felgi na stronie zadania, w formularzu „Generuj” (`#job-form`); domyślnie „bez zmian”. `POST /jobs` przy wgraniu go nie przyjmuje
 - [x] Stopień zapisany w `Job.params` (nowy klucz w `wheeler_shared/edit_params.py`), z walidacją zakresu −2…+2 po stronie serwera; brak klucza oznacza „bez zmian”

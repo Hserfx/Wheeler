@@ -12,3 +12,14 @@ __pycache__/
 # CSS generowany przez Tailwinda (`just css`)
 api/src/wheeler_api/static/app.css
 .claude/
+# Sekrety i lokalna konfiguracja
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# Wagi modeli, gdyby trafiły do repo
+*.safetensors
+*.pt
+*.gguf
+.DS_Store

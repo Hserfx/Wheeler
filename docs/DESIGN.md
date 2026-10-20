@@ -66,7 +66,7 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
   body, the wheel arch, the brake caliper position, the lighting, the shadows and the camera angle of image 1
   unchanged. The new rim must follow the perspective of the wheel in image 1 and fill the tire opening exactly.
   Photorealistic.” Dopisek użytkownika doklejamy na końcu.
-- **Rozmiar koła (tickety 12–16):** stopień `rim_size` od −2 do +2 cali względem obecnej felgi
+- **Rozmiar koła (tickety 12–17):** stopień `rim_size` od −2 do +2 cali względem obecnej felgi
   (`0` = „bez zmian”). Rośnie (albo maleje) **całe koło**: felga +N″ i zewnętrzna średnica koła +N″,
   bok opony zostaje tej samej grubości („ta sama opona na większej feldze”), a najniższy punkt opony
   (styk z ziemią) stoi w miejscu. Powiększone koło wchodzi w nadkole i chowa się za karoserią, która
@@ -114,9 +114,12 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
      przeskalowane koło. **Maska edycji** = (stare ∪ nowe koło) poszerzone o `mask_grow`, minus
      karoseria: to maska modelu i maska kompozycji (zamiast zapisanej maski koła). Wycinek dla modelu
      jest kwadratem wokół maski edycji (margines 25% jak zwykle), poza maską modelu dokładnie
-     wycinkiem oryginału. Przy zmniejszaniu odsłonięte nadkole (stare koło minus nowe) zostaje
-     w masce edycji z pikselami starej opony, a model je domalowuje (wstępne wypełnienie: ticket 17).
-     Docelowy rozmiar nie jest przycinany ani korygowany; prototyp: przy −2″ sylwetka −1,75″.
+     wycinkiem oryginału. Przy zmniejszaniu odsłonięte nadkole (stare koło minus nowe, poza
+     karoserią) zostaje w masce edycji i jest w wycinku wstępnie wypełnione: mediana koloru pasa
+     wokół górnej połowy starego koła (6% boku koła, bez karoserii) × 0,5, z krawędzią rozmytą
+     (σ = 2% boku koła); model domalowuje z tego wnętrze nadkola. Docelowy rozmiar nie jest
+     przycinany ani korygowany, także przy wartościach ujemnych (bez korekty niedostrzału,
+     decyzja z ticketu 13; prototyp: przy −2″ sylwetka −1,75″).
   6. Model dostaje wycinek z kołem w nowym rozmiarze, maskę edycji i prompt jak zwykle. Diagnostyka
      w katalogu koła: `crop.png` (wycinek oryginału wokół maski edycji), `crop_mask.png` (maska
      edycji), `rim_ellipse.png` (stara felga i opona na biało, nowa felga na zielono, nowa krawędź

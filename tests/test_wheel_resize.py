@@ -1,4 +1,4 @@
-"""Zmiana rozmiaru całego koła (ticket 16): skala cala, nowe koło i plan wycinka dla modelu.
+"""Zmiana rozmiaru całego koła (tickety 16 i 17): skala cala, nowe koło i plan wycinka dla modelu.
 
 Czyste funkcje `wheeler_worker.wheel_resize` na syntetycznych kołach (przeniesione z prototypu
 `prototype/whole-wheel-resize`, `test_whole_wheel.py`): ciemna opona z jasną felgą na tle
@@ -188,3 +188,32 @@ def test_wheel_cut_by_the_photo_edge_grows_without_touching_anything_outside_the
     assert _mask(plan.wheel)[:, -1].sum() > _mask(wheel)[:, -1].sum()
     untouched = ~_mask(plan.edit_mask)
     assert np.array_equal(np.asarray(plan.model_input)[untouched], np.asarray(photo)[untouched])
+
+
+def test_smaller_wheel_prefills_the_exposed_arch_dark_instead_of_the_old_tire() -> None:
+    photo, wheel, body = _car()
+
+    plan = plan_resize(photo, wheel, OLD, body, rim_size=-2, inch=10.0, mask_grow=MASK_GROW)
+
+    # Odsłonięte nadkole: stare koło minus nowe, poza karoserią; model może je domalować.
+    exposed = _mask(wheel) & ~_mask(plan.wheel) & ~_mask(body)
+    assert exposed.sum() > 1000
+    assert (exposed <= _mask(plan.edit_mask)).all()
+    # Wypełnienie: kolor pasa nad górną połową starego koła (tło 160) x 0,5, czyli ok. 80,
+    # z rozmytą krawędzią; ani śladu starej opony (10).
+    filled = np.asarray(plan.model_input.convert("L"))[exposed].astype(float)
+    assert 60 <= filled.mean() <= 100
+    assert (filled > TIRE + 20).mean() > 0.95
+    untouched = ~_mask(plan.edit_mask)
+    assert np.array_equal(np.asarray(plan.model_input)[untouched], np.asarray(photo)[untouched])
+
+
+def test_larger_wheel_covers_the_whole_old_wheel_so_nothing_is_prefilled() -> None:
+    photo, wheel, body = _car()
+
+    plan = plan_resize(photo, wheel, OLD, body, rim_size=2, inch=10.0, mask_grow=MASK_GROW)
+
+    pixels = np.asarray(plan.model_input)
+    # Poza nowym kołem obraz wejściowy to oryginał (bez przyciemnionej plamy).
+    outside = ~_mask(plan.wheel)
+    assert np.array_equal(pixels[outside], np.asarray(photo)[outside])

@@ -26,6 +26,13 @@ from wheeler_worker.rim_geometry import BoolArray, Ellipse, RimGeometry
 # ze znanym rozmiarem.
 RIM_FLANGE_INCHES = 1.4
 
+# Wstępne wypełnienie odsłoniętego nadkola przy zmniejszaniu (ticket 17, `VERDICT.md`): pas
+# wokół górnej połowy starego koła szerokości 6% boku koła, jego mediana koloru x 0,5,
+# krawędź rozmyta gaussem o sigma 2% boku koła.
+PREFILL_BAND = 0.06
+PREFILL_DARKEN = 0.5
+PREFILL_BLUR = 0.02
+
 
 def inch_px(rim: Ellipse, *, current_rim: int) -> float:
     """Pikseli na cal: średnica widocznej felgi / (obecny rozmiar nominalny + rant). Dłuższa oś
@@ -95,7 +102,8 @@ def plan_resize(
     felga [0, rho_f'] -> [0, rho_f], bok opony [rho_f', 1] -> [rho_f, 1], dalej (bieżnik
     w 3/4) jednokładność z oponą wokół punktu styku. Nowa maska koła = stara maska tym samym
     odwzorowaniem, widoczna tylko poza karoserią. Przy zmniejszaniu odsłonięte nadkole zostaje
-    w masce edycji ze starymi pikselami (model je domalowuje)."""
+    w masce edycji, wstępnie wypełnione przyciemnionym kolorem okolicy nadkola (`_prefill`);
+    model je domalowuje."""
     new = resized_geometry(old, rim_size=rim_size, inch=inch)
     old_wheel = _bool(wheel_mask)
     visible = ~_bool(body_mask)
@@ -118,8 +126,12 @@ def plan_resize(
     )
     new_wheel = moved & visible
     edit = _bool(grow_wheel_mask(_image(old_wheel | moved), mask_grow)) & visible
+    exposed = old_wheel & ~moved & visible
+    original = rgb.copy()
     region = rgb[local]
     region[new_wheel[local]] = warped[new_wheel[local]]
+    if exposed.any():
+        _prefill(rgb, original, exposed, old_wheel=old_wheel, visible=visible, center_y=old.tire.cy)
     return ResizePlan(
         geometry=new,
         wheel=_image(new_wheel),
@@ -160,6 +172,41 @@ def _window(old_wheel: BoolArray, old: RimGeometry, new: RimGeometry, mask_grow:
         min(width, math.ceil(right) + pad),
         min(height, math.ceil(bottom) + pad),
     )
+
+
+def _prefill(
+    pixels: npt.NDArray[np.uint8],
+    original: npt.NDArray[np.uint8],
+    exposed: BoolArray,
+    *,
+    old_wheel: BoolArray,
+    visible: BoolArray,
+    center_y: float,
+) -> None:
+    """Wypełnia w miejscu `exposed` w `pixels` medianą koloru `original` w pasie wokół górnej
+    połowy starego koła (nadkole, bez karoserii) x `PREFILL_DARKEN`, z krawędzią rozmytą
+    w sąsiedztwo; poza `exposed` nic się nie zmienia. Liczone w oknie wokół starego koła."""
+    box = mask_box(_image(old_wheel))
+    assert box is not None  # `exposed` jest częścią starego koła
+    side = max(box.right - box.left, box.bottom - box.top)
+    band = max(1, round(side * PREFILL_BAND))
+    sigma = max(1.0, side * PREFILL_BLUR)
+    height, width = old_wheel.shape
+    pad = band + math.ceil(4 * sigma) + 1
+    top, left = max(0, box.top - pad), max(0, box.left - pad)
+    local = (slice(top, min(height, box.bottom + pad)), slice(left, min(width, box.right + pad)))
+    wheel = old_wheel[local]
+    disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * band + 1, 2 * band + 1))
+    ring = (cv2.dilate(wheel.astype(np.uint8), disk) > 0) & ~wheel & visible[local]
+    ring[max(0, int(center_y) - top) :] = False
+    if not ring.any():  # cała góra pod karoserią: okolica koła
+        ring = ~wheel & visible[local]
+    color = np.median(original[local][ring], axis=0) * PREFILL_DARKEN
+    filled = pixels[local].astype(np.float32)
+    hole = exposed[local]
+    filled[hole] = color
+    blurred = cv2.GaussianBlur(filled, (0, 0), sigma)
+    pixels[local][hole] = np.clip(np.rint(blurred[hole]), 0, 255).astype(np.uint8)
 
 
 def _wheel_maps(

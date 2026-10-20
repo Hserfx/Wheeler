@@ -48,6 +48,7 @@ MIN_EDGE_POINTS = 20
 
 FloatArray = npt.NDArray[np.floating[Any]]
 BoolArray = npt.NDArray[np.bool_]
+IntArray = npt.NDArray[np.intp]
 # Kandydat na maskę samej felgi (SAM 2, multimask): maska L (>0 = felga) i ocena IoU modelu.
 RimCandidate = tuple[Image.Image, float]
 
@@ -242,21 +243,59 @@ def _tire_ratio(rim: Ellipse, wheel: BoolArray) -> float:
     """Odległość od środka felgi do brzegu maski koła w jednostkach elipsy felgi (1 = brzeg
     felgi), percentyl `TIRE_RATIO_PERCENTILE` po kątach; poza `TIRE_RATIO_RANGE`:
     `TYPICAL_TIRE_RATIO`."""
-    height, width = wheel.shape
-    angles = np.deg2rad(np.arange(0, 360, 10))[:, None]
-    steps = np.arange(1.0, 3.0, 0.005)[None, :]
-    ray_xs, ray_ys = rim.from_unit(steps * np.cos(angles), steps * np.sin(angles))
-    xs, ys = np.rint(ray_xs).astype(int), np.rint(ray_ys).astype(int)
-    on_image = (xs >= 0) & (xs < width) & (ys >= 0) & (ys < height)
-    in_wheel = on_image & wheel[np.clip(ys, 0, height - 1), np.clip(xs, 0, width - 1)]
-    # Pierwszy krok poza kołem; kąt, w którym już brzeg felgi jest poza kołem, pomijamy.
-    leaves = np.where(in_wheel.all(axis=1), steps.shape[1], np.argmin(in_wheel, axis=1))
-    profile = steps[0, np.maximum(leaves - 1, 0)][leaves > 0]
+    rays = wheel_rays(
+        rim,
+        wheel,
+        angles=np.deg2rad(np.arange(0, 360, 10)),
+        steps=np.arange(1.0, 3.0, 0.005),
+    )
+    # Kąt, w którym już brzeg felgi jest poza kołem, pomijamy.
+    profile = rays.steps[np.maximum(rays.leaves - 1, 0)][rays.leaves > 0]
     if profile.size == 0:
         return TYPICAL_TIRE_RATIO
     ratio = float(np.percentile(profile, TIRE_RATIO_PERCENTILE))
     low, high = TIRE_RATIO_RANGE
     return ratio if low <= ratio <= high else TYPICAL_TIRE_RATIO
+
+
+@dataclass(frozen=True)
+class WheelRays:
+    """Promienie od środka elipsy pod kątami `angles` (radiany, w układzie elipsy, `to_unit`),
+    próbkowane krokami `steps` (w jednostkach elipsy, 1 = jej brzeg). `leaves`: indeks
+    pierwszego kroku poza maską koła (piksele spoza zdjęcia są poza kołem; `len(steps)`:
+    promień nie wychodzi z koła). `exit_xs`, `exit_ys`: piksel tego kroku przycięty do
+    zdjęcia, prawdziwy tylko przy `exit_on_image` (promień, który wychodzi z koła poza
+    zdjęciem, nie trafia na krawędź opony i jego użytkownicy go odrzucają)."""
+
+    steps: FloatArray
+    leaves: IntArray
+    exit_on_image: BoolArray
+    exit_xs: IntArray
+    exit_ys: IntArray
+
+
+def wheel_rays(
+    ellipse: Ellipse, wheel: BoolArray, *, angles: FloatArray, steps: FloatArray
+) -> WheelRays:
+    """Marsz promieni od środka `ellipse` do wyjścia z maski koła `wheel`."""
+    height, width = wheel.shape
+    ray_xs, ray_ys = ellipse.from_unit(
+        steps[None, :] * np.cos(angles)[:, None], steps[None, :] * np.sin(angles)[:, None]
+    )
+    xs, ys = np.rint(ray_xs).astype(np.intp), np.rint(ray_ys).astype(np.intp)
+    on_image = (xs >= 0) & (xs < width) & (ys >= 0) & (ys < height)
+    xs, ys = np.clip(xs, 0, width - 1), np.clip(ys, 0, height - 1)
+    in_wheel = on_image & wheel[ys, xs]
+    leaves = np.where(in_wheel.all(axis=1), steps.size, np.argmin(in_wheel, axis=1))
+    exits = np.minimum(leaves, steps.size - 1)
+    rows = np.arange(leaves.size)
+    return WheelRays(
+        steps=steps,
+        leaves=leaves,
+        exit_on_image=on_image[rows, exits] & (leaves < steps.size),
+        exit_xs=xs[rows, exits],
+        exit_ys=ys[rows, exits],
+    )
 
 
 def outline_rim(image: Image.Image, geometry: RimGeometry) -> Image.Image:

@@ -510,18 +510,37 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
 
 **Blocked by:** 13
 
-**Status:** claimed
+**Status:** done
 
-- [ ] `Segmenter.segment_body` (publiczna metoda protokołu; adapter SAM 2.1 i atrapy `placeholder`/testowe), prompt jak w prototypie: punkty dodatnie nad oponą (`body_prompt`, `up_angle`), ujemne w środku felgi i na oponie oraz ujemne w szczelinie nadkola (`arch_gap_points`), multimask w dwóch wariantach; maska wnętrza nadkola z SAM
-- [ ] Kolejność z `VERDICT.md`: (a) kryteria `BodyMaskStats.problem` na **surowych** kandydatach SAM (pusta, > 5% koła, > 85% wycinka poza kołem, < 25% strefy błotnika) i wybór `choose_body`; brak dobrego kandydata → `rim_size_unavailable`, bez brania najlepszego ze złych; (b) potem odjęcie wnętrza nadkola i `clean_body_mask`; (c) `foreign_occlusion` > 5% na masce po czyszczeniu → `rim_size_unavailable`
-- [ ] Wspólny marsz promieni `rim_geometry.wheel_rays` (refaktor `_tire_ratio` z gałęzi prototypu, commit `2eeffbd`, bez zmiany zachowania): promienie wychodzące poza zdjęcie są odrzucane, nie przycinane
-- [ ] Liczone razem z felgą w `_measure_rims` (wycinek z oryginału, także przy „Ponów to koło”); SAM zwalniany przed mflux jak dziś; przy „bez zmian” brak pomiaru (czas jak dotąd)
-- [ ] Diagnostyka w katalogu koła (np. `body.png` i nakładka na `rim_ellipse.png`); bez zmian w bazie i w UI
-- [ ] Testy na syntetycznych kołach (przeniesione z `test_whole_wheel.py`) i na atrapach przez workera: dobra maska przechodzi, każde kryterium złej maski i obce zasłonięcie dają `rim_size_unavailable`, SAM zwalniany przed pierwszym krokiem mflux
+- [x] `Segmenter.segment_body` (publiczna metoda protokołu; adapter SAM 2.1 i atrapy `placeholder`/testowe), prompt jak w prototypie: punkty dodatnie nad oponą (`body_prompt`, `up_angle`), ujemne w środku felgi i na oponie oraz ujemne w szczelinie nadkola (`arch_gap_points`), multimask w dwóch wariantach; maska wnętrza nadkola z SAM
+- [x] Kolejność z `VERDICT.md`: (a) kryteria `BodyMaskStats.problem` na **surowych** kandydatach SAM (pusta, > 5% koła, > 85% wycinka poza kołem, < 25% strefy błotnika) i wybór `choose_body`; brak dobrego kandydata → `rim_size_unavailable`, bez brania najlepszego ze złych; (b) potem odjęcie wnętrza nadkola i `clean_body_mask`; (c) `foreign_occlusion` > 5% na masce po czyszczeniu → `rim_size_unavailable`
+- [x] Wspólny marsz promieni `rim_geometry.wheel_rays` (refaktor `_tire_ratio` z gałęzi prototypu, commit `2eeffbd`, bez zmiany zachowania): promienie wychodzące poza zdjęcie są odrzucane, nie przycinane
+- [x] Liczone razem z felgą w `_measure_rims` (wycinek z oryginału, także przy „Ponów to koło”); SAM zwalniany przed mflux jak dziś; przy „bez zmian” brak pomiaru (czas jak dotąd)
+- [x] Diagnostyka w katalogu koła (np. `body.png` i nakładka na `rim_ellipse.png`); bez zmian w bazie i w UI
+- [x] Testy na syntetycznych kołach (przeniesione z `test_whole_wheel.py`) i na atrapach przez workera: dobra maska przechodzi, każde kryterium złej maski i obce zasłonięcie dają `rim_size_unavailable`, SAM zwalniany przed pierwszym krokiem mflux
 
 **Comments:**
 
 - 2026-10-19: z rekomendacji w `VERDICT.md` (gałąź `prototype/whole-wheel-resize`, `worker/prototype_whole_wheel/` (`VERDICT.md`, `whole_wheel.py`, `test_whole_wheel.py`, `run.py`)). Na zestawie z prototypu kryteria przepuszczają wszystkie wybrane maski (surowe: strefa błotnika 56–98%, koło ≤ 1,9%, wycinek 3–50%), a obce zasłonięcie zatrzymuje Vios koło 1 (zderzak drugiego auta, 30%). Pierwsze podejście bez punktów w szczelinie nadkola (`out/v1/`) wciągało nadkole do karoserii.
+- 2026-10-20 (agent, gałąź `ticket-15`): nowy `wheeler_worker/body_mask.py` (kryteria `BodyMaskStats.problem`,
+  `choose_body`, `body_prompt`/`BodyPrompt`, `arch_gap_points`, `choose_liner`, `clean_body_mask`,
+  `foreign_occlusion`, `outline_body`; całość w kolejności z `VERDICT.md` w `body_for_resize`, wynik: maska albo
+  `BodyMaskProblem`, w tym nowe `FOREIGN_OCCLUSION`). `Segmenter.segment_body(image, wheel_mask, rim)` ->
+  `BodySegments(with_gap, without_gap, liner)`: adapter SAM 2.1 liczy prompt z `body_prompt` (jak `segment_rim`
+  swój), jeden embedding na trzy prompty; atrapy `placeholder` (pas nad kołem) i testowe (`DiscSegmenter.body`,
+  domyślnie `fender_mask`). `rim_geometry.wheel_rays(ellipse, wheel, angles=, steps=)` (refaktor `_tire_ratio`
+  bez zmiany zachowania; `arch_gap_points` z niego korzysta i odrzuca promienie wychodzące poza zdjęcie).
+  `_measure_rims` zwraca `_MeasuredWheel(rim, body)`; kryteria w wycinku `_wheel_crop` (ten sam co dla modelu).
+  Diagnostyka: `body.png` (maska w wycinku) i czerwona poświata karoserii na `rim_ellipse.png`. Powód odrzucenia
+  tylko w `ProcessingFailed.detail` (log). Tekst `failure_rim_size_unavailable` obejmuje teraz też karoserię;
+  DESIGN (krok 4) i README zaktualizowane. Testy: `tests/test_body_mask.py` (karoseria przeniesiona z `test_whole_wheel.py`; geometria
+  nowego koła zostaje dla ticketu 16; + `body_prompt`, `body_for_resize`), `tests/test_rim_size.py` (dobra maska i diagnostyka, każde kryterium
+  i obce zasłonięcie -> `rim_size_unavailable` z właściwym powodem, kolejność `rim`, `body`, `release` przed
+  mflux, „bez zmian” bez pomiaru, „Ponów to koło” mierzy karoserię na oryginale). Odstępstwa: dwa warianty
+  karoserii to „z ujemnymi w szczelinie” i „bez nich” (prototyp miał jeszcze trzeci, same dodatnie — pominięty,
+  zgodnie z „dwoma wariantami” w tickecie); test ticketu 12 „warp tylko w masce koła” (felga 45 px, opona
+  z typowego k wystaje z maski) dostał atrapę nakładki nadkola wokół koła, bo bez niej teraz słusznie kończy
+  się obcym zasłonięciem. Adapter SAM 2 nie uruchomiony na prawdziwym modelu (ticket tego nie wymaga).
 
 ---
 

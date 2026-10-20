@@ -2,8 +2,8 @@
 
 Przydaje się do pracy nad UI: „detektor” znajduje dwa koła w stałych miejscach (dolne rogi
 zdjęcia), „SAM 2” zwraca okrąg wokół kliknięcia albo wpisany w box (felga: mniejszy okrąg
-w środku koła), „mflux” zwraca wycinek w odcieniach szarości, a „BiRefNet” zostawia elipsę
-wpisaną w kadr. Kompozycja, pliki i statusy są prawdziwe.
+w środku koła, karoseria: pas nad kołem), „mflux” zwraca wycinek w odcieniach szarości,
+a „BiRefNet” zostawia elipsę wpisaną w kadr. Kompozycja, pliki i statusy są prawdziwe.
 """
 
 from __future__ import annotations
@@ -11,9 +11,11 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image, ImageOps
 
+from wheeler_worker.body_mask import BodySegments
+from wheeler_worker.compositing import mask_box
 from wheeler_worker.model_lifecycle import NO_OBSERVER, LoadObserver
 from wheeler_worker.rim_editor import StepCallback
-from wheeler_worker.rim_geometry import RimCandidate, wheel_ellipse
+from wheeler_worker.rim_geometry import RimCandidate, RimGeometry, wheel_ellipse
 from wheeler_worker.wheel_swap import WheelSwapProcessor
 
 
@@ -87,6 +89,18 @@ class CircleSegmenter:
         yy, xx = np.mgrid[0:height, 0:width].astype(np.float32)
         inside = wheel.scaled(0.7).radius(xx, yy) <= 1
         return [(Image.fromarray(inside.astype(np.uint8) * 255), 0.9)]
+
+    def segment_body(
+        self, image: Image.Image, wheel_mask: Image.Image, rim: RimGeometry
+    ) -> BodySegments:
+        """Karoseria: pas zdjęcia nad kołem, ze szczeliną nadkola 2% boku koła."""
+        body = Image.new("L", image.size, 0)
+        box = mask_box(wheel_mask)
+        if box is not None:
+            top = box.top - max(1, round(0.02 * max(box.width, box.height)))
+            if top > 0:
+                body.paste(255, (0, 0, image.width, top))
+        return BodySegments(with_gap=[(body, 0.9)], without_gap=[], liner=[])
 
     def release(self) -> None:
         self._weights.release()

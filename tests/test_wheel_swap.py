@@ -12,7 +12,6 @@ from photo_files import display_profile
 from PIL import Image
 
 from wheeler_shared.progress import Progress
-from wheeler_worker.compositing import grow_mask
 from wheeler_worker.processing import (
     DetectItem,
     GenerateItem,
@@ -153,14 +152,8 @@ def test_placeholder_processor_runs_whole_pipeline_without_models(
     output = np.asarray(Image.open(result.result_path).convert("RGB"))
     original = np.asarray(Image.open(photo).convert("RGB"))
     inside = np.asarray(Image.open(mask_path).convert("L")) > 0
-    allowed = inside
-    if rim_size:
-        # Całe koło rośnie (ticket 16): zmiana wychodzi poza zapisaną maskę koła, ale nie
-        # w karoserię atrapy (pas zdjęcia nad kołem).
-        allowed = np.asarray(grow_mask(Image.open(mask_path), pixels=15)) > 0
-        allowed[: np.nonzero(inside)[0].min()] = False
     assert output.shape == original.shape
-    assert np.array_equal(output[~allowed], original[~allowed])
+    assert np.array_equal(output[~inside], original[~inside])
     assert not np.array_equal(output[inside], original[inside])
 
 

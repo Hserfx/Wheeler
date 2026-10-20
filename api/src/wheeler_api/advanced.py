@@ -2,9 +2,8 @@
 
 Poszerzenie maski użytkownik podaje w procentach boku koła, w `Job.params` jest ułamkiem
 (jak w `EditParams`). Wartości domyślne i zakresy pochodzą z `wheeler_shared.edit_params`.
-Tym samym wzorcem (`InvalidParam`, `error_message`) walidowany jest rozmiar felgi i obecna
-felga, które przychodzą dopiero z „Generuj” na stronie zadania (`parse_rim_size`,
-`parse_current_rim`), nie z tej sekcji.
+Tym samym wzorcem (`InvalidParam`, `error_message`) walidowany jest rozmiar felgi, który
+przychodzi dopiero z „Generuj” na stronie zadania (`parse_rim_size`), nie z tej sekcji.
 """
 
 from __future__ import annotations
@@ -42,8 +41,6 @@ def error_message(error: InvalidParam) -> str:
         length=edit_params.PROMPT_SUFFIX_MAX_LENGTH,
         rim_size_min=rim_size_text(edit_params.RIM_SIZE_MIN),
         rim_size_max=rim_size_text(edit_params.RIM_SIZE_MAX),
-        current_rim_min=current_rim_text(edit_params.CURRENT_RIM_MIN),
-        current_rim_max=current_rim_text(edit_params.CURRENT_RIM_MAX),
     )
 
 
@@ -57,8 +54,6 @@ def display_value(key: str, value: object) -> str | None:
         return TEXTS["param_empty"]
     if key == edit_params.RIM_SIZE and isinstance(value, int):
         return rim_size_text(value)
-    if key == edit_params.CURRENT_RIM and isinstance(value, int):
-        return current_rim_text(value)
     return None
 
 
@@ -70,11 +65,6 @@ def rim_size_text(rim_size: int) -> str:
     return TEXTS["rim_size_inches"].format(
         sign=TEXTS["sign_plus" if change.larger else "sign_minus"], inches=change.inches
     )
-
-
-def current_rim_text(current_rim: int) -> str:
-    """Obecna felga w UI: „17″”."""
-    return TEXTS["current_rim_inches"].format(inches=current_rim)
 
 
 def default_values() -> dict[str, str]:
@@ -110,14 +100,6 @@ def parse_rim_size(text: str) -> int:
     if rim_size not in edit_params.RIM_SIZES:
         raise InvalidParam(edit_params.RIM_SIZE)
     return rim_size
-
-
-def parse_current_rim(text: str) -> int:
-    """Obecna felga z formularza „Generuj” („14”…„22”); zła: `InvalidParam`."""
-    current_rim = _integer(text, edit_params.CURRENT_RIM)
-    if current_rim not in edit_params.CURRENT_RIMS:
-        raise InvalidParam(edit_params.CURRENT_RIM)
-    return current_rim
 
 
 def _integer(text: str, field: str) -> int:

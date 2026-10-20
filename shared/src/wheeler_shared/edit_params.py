@@ -16,7 +16,6 @@ RESOLUTION = "resolution"
 MASK_GROW = "mask_grow"
 PROMPT_SUFFIX = "prompt_suffix"
 RIM_SIZE = "rim_size"
-CURRENT_RIM = "current_rim"
 
 # Dozwolone zakresy (sekcja „Zaawansowane”, ticket 09; wyniki spike'a 01).
 SEED_MAX = 2**31 - 1
@@ -33,16 +32,10 @@ RESOLUTION_MAX = 1152
 MASK_GROW_MIN = 0.0
 MASK_GROW_MAX = 0.10
 PROMPT_SUFFIX_MAX_LENGTH = 300
-# Rozmiar felgi (i całego koła, ticket 16) względem obecnej w calach, wybierany przed „Generuj”.
+# Rozmiar felgi względem obecnej w calach (plus-sizing, ticket 12), wybierany przed „Generuj”.
 RIM_SIZE_MIN = -2
 RIM_SIZE_MAX = 2
 RIM_SIZES = range(RIM_SIZE_MIN, RIM_SIZE_MAX + 1)
-# Obecny rozmiar felgi auta w calach (pole „Obecna felga”, ticket 14), co 1″; skala cala przy
-# zmianie rozmiaru (ticket 16): 1″ = średnica felgi w px / (obecna felga + rant 1,4″).
-CURRENT_RIM_MIN = 14
-CURRENT_RIM_MAX = 22
-CURRENT_RIMS = range(CURRENT_RIM_MIN, CURRENT_RIM_MAX + 1)
-DEFAULT_CURRENT_RIM = 17
 
 
 @dataclass(frozen=True)
@@ -55,10 +48,8 @@ class EditParams:
     # Dopisek użytkownika doklejany na końcu szablonu promptu.
     prompt_suffix: str = ""
     # Średnica nowej felgi względem obecnej w calach (0 = bez zmian); zewnętrzna średnica koła
-    # zmienia się o tyle samo (ta sama opona, ticket 16).
+    # zostaje, więc zmienia się profil opony.
     rim_size: int = 0
-    # Obecny rozmiar felgi auta w calach (brak klucza = 17″).
-    current_rim: int = DEFAULT_CURRENT_RIM
 
     @classmethod
     def from_params(cls, params: Mapping[str, Any]) -> EditParams:
@@ -70,7 +61,6 @@ class EditParams:
             mask_grow=float(params.get(MASK_GROW, defaults.mask_grow)),
             prompt_suffix=str(params.get(PROMPT_SUFFIX, defaults.prompt_suffix)),
             rim_size=int(params.get(RIM_SIZE, defaults.rim_size)),
-            current_rim=int(params.get(CURRENT_RIM, defaults.current_rim)),
         )
 
 

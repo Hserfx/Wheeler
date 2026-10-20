@@ -1,7 +1,7 @@
-"""Pomiar felgi przed zmianą rozmiaru koła (ticket 12): elipsa felgi i krawędź opony.
+"""Geometria zmiany rozmiaru felgi (ticket 12): pomiar elipsy felgi i radialny warp wycinka.
 
-Czyste funkcje `wheeler_worker.rim_geometry` na syntetycznych maskach. Zmiana rozmiaru koła:
-`test_wheel_resize.py`.
+Czyste funkcje `wheeler_worker.rim_geometry` na syntetycznych kołach: jasna felga w ciemnej
+oponie na zaszumionym tle.
 """
 
 from __future__ import annotations
@@ -10,19 +10,20 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 import pytest
-from helpers import ellipse_inside
+from helpers import ellipse_inside, wheel_photo
 from PIL import Image
 
 from wheeler_worker.rim_geometry import (
     TYPICAL_TIRE_RATIO,
     Ellipse,
+    RimGeometry,
     measure_rim,
+    warp_rim,
 )
 
 
 def test_ellipse_follows_the_opencv_convention_also_when_rotated() -> None:
-    # Elipsy z `cv2.fitEllipse` (pomiar) i warp w układzie `Ellipse` (`wheel_resize`) muszą
-    # się zgadzać:
+    # Elipsy z `cv2.fitEllipse` (pomiar) i warp w układzie `Ellipse` muszą się zgadzać:
     # wnętrze `Ellipse` to wypełniona elipsa narysowana przez OpenCV.
     ellipse = Ellipse(cx=110, cy=95, width=60, height=100, angle=20)
     drawn = np.zeros((200, 220), dtype=np.uint8)
@@ -32,6 +33,46 @@ def test_ellipse_follows_the_opencv_convention_also_when_rotated() -> None:
 
     iou = (inside & (drawn > 0)).sum() / (inside | (drawn > 0)).sum()
     assert iou > 0.95  # obrót w drugą stronę: 0,65
+
+
+def _bright(image: Image.Image) -> npt.NDArray[np.bool_]:
+    return np.asarray(np.asarray(image.convert("L")) > 125)
+
+
+def test_larger_rim_grows_to_target_radius_and_keeps_pixels_outside_tire_edge() -> None:
+    # Felga rho_f = 0,7 zewnętrznej krawędzi opony (promień 80): +2″ -> rho = 0,78 (62,4 px).
+    rim = Ellipse(cx=100, cy=100, width=112, height=112, angle=0)
+    geometry = RimGeometry(rim=rim, tire_ratio=80 / 56)
+    photo = wheel_photo((200, 200), rim, geometry.tire_ratio)
+
+    warped = warp_rim(photo, geometry, rim_size=2)
+
+    assert warped.size == photo.size and warped.mode == "RGB"
+    bright = _bright(warped)
+    assert bright[ellipse_inside(photo.size, rim.scaled(60 / 56))].all()
+    assert not bright[
+        ~ellipse_inside(photo.size, rim.scaled(65 / 56))
+        & ellipse_inside(photo.size, rim.scaled(78 / 56))
+    ].any()  # bok opony cieńszy, ale jest
+    outside = ~ellipse_inside(photo.size, geometry.tire)
+    assert np.array_equal(np.asarray(warped)[outside], np.asarray(photo)[outside])
+
+
+def test_smaller_rim_in_three_quarter_view_shrinks_along_the_rotated_rim_ellipse() -> None:
+    # Ujęcie 3/4: felga to obrócona elipsa. rho_f = 1/1,4 ≈ 0,714, -2″ -> rho ≈ 0,634,
+    # czyli felga ≈ 0,888 obecnej.
+    rim = Ellipse(cx=110, cy=95, width=60, height=100, angle=20)
+    geometry = RimGeometry(rim=rim, tire_ratio=1.4)
+    photo = wheel_photo((220, 200), rim, geometry.tire_ratio)
+
+    warped = warp_rim(photo, geometry, rim_size=-2)
+
+    bright = _bright(warped)
+    assert bright[ellipse_inside(photo.size, rim.scaled(0.85))].all()
+    ring = ellipse_inside(photo.size, rim) & ~ellipse_inside(photo.size, rim.scaled(0.93))
+    assert not bright[ring].any()  # tu była felga, teraz grubszy bok opony
+    outside = ~ellipse_inside(photo.size, geometry.tire)
+    assert np.array_equal(np.asarray(warped)[outside], np.asarray(photo)[outside])
 
 
 def _mask(inside: npt.NDArray[np.bool_]) -> Image.Image:

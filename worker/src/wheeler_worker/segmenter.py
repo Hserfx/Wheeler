@@ -11,9 +11,8 @@ from typing import Any, Protocol
 from PIL import Image
 
 from wheeler_shared.failures import Failure, ProcessingFailed
-from wheeler_worker.body_mask import BodySegments, Point, ScoredMask, body_prompt
 from wheeler_worker.model_lifecycle import NO_OBSERVER, LoadObserver
-from wheeler_worker.rim_geometry import RimCandidate, RimGeometry, wheel_ellipse
+from wheeler_worker.rim_geometry import RimCandidate, wheel_ellipse
 from wheeler_worker.torch_models import free_torch_memory, torch_device
 
 
@@ -32,15 +31,6 @@ class Segmenter(Protocol):
         """Kandydaci na maskę samej felgi koła `wheel_mask` (L, maska SAM bez poszerzenia):
         maski L (0/255) w rozmiarze `image` z oceną modelu; wybiera z nich
         `rim_geometry.measure_rim`. Pusta lista: nic nie znaleziono."""
-        ...
-
-    def segment_body(
-        self, image: Image.Image, wheel_mask: Image.Image, rim: RimGeometry, /
-    ) -> BodySegments:
-        """Kandydaci na maskę karoserii zasłaniającej koło `wheel_mask` (L, maska SAM bez
-        poszerzenia, felga i opona `rim`) i na maskę wnętrza nadkola, maski L (0/255)
-        w rozmiarze `image` z oceną modelu, razem z promptem (`body_mask.body_prompt`), z którego
-        powstali; wybiera z nich `body_mask.body_for_resize`."""
         ...
 
     def release(self) -> None:
@@ -183,59 +173,6 @@ class Sam2Segmenter:
                     for i in range(masks.shape[0])
                 )
         return candidates
-
-    def segment_body(
-        self, image: Image.Image, wheel_mask: Image.Image, rim: RimGeometry
-    ) -> BodySegments:
-        """Prompt punktowy `body_mask.body_prompt` (prototyp `prototype/whole-wheel-resize`),
-        multimask po 3 kandydatów: karoseria z ujemnymi w szczelinie nadkola i bez nich,
-        wnętrze nadkola z dodatnimi w szczelinie i ujemnymi na błotniku i kole. Bez ujemnych
-        w szczelinie SAM wciąga wnętrze nadkola do karoserii."""
-        import torch
-
-        prompt = body_prompt(rim, wheel_mask)
-        rgb = image.convert("RGB")
-        negatives = [*prompt.negatives, *prompt.gap]
-        with torch.no_grad():
-            embeddings = self._embed(rgb)
-            with_gap = self._points(rgb, embeddings, prompt.positives, negatives)
-            without_gap = self._points(rgb, embeddings, prompt.positives, prompt.negatives)
-            liner = (
-                self._points(rgb, embeddings, prompt.liner, [*prompt.positives, *prompt.negatives])
-                if prompt.liner
-                else []
-            )
-        return BodySegments(prompt=prompt, with_gap=with_gap, without_gap=without_gap, liner=liner)
-
-    def _points(
-        self,
-        rgb: Image.Image,
-        embeddings: Any,
-        positives: list[Point],
-        negatives: list[Point],
-    ) -> list[ScoredMask]:
-        """Trzy maski SAM 2 (multimask) z oceną dla promptu z punktów dodatnich i ujemnych."""
-        import numpy as np
-
-        points = [[float(x), float(y)] for x, y in (*positives, *negatives)]
-        labels = [1] * len(positives) + [0] * len(negatives)
-        inputs = self._processor(
-            images=rgb, input_points=[[points]], input_labels=[[labels]], return_tensors="pt"
-        ).to(self._device)
-        out = self._model(
-            image_embeddings=embeddings,
-            input_points=inputs["input_points"],
-            input_labels=inputs["input_labels"],
-            multimask_output=True,
-        )
-        masks = self._processor.post_process_masks(
-            out.pred_masks.cpu(), inputs["original_sizes"].cpu()
-        )[0][0]
-        scores = out.iou_scores[0, 0].float().cpu().numpy()
-        return [
-            (Image.fromarray(masks[i].numpy().astype(np.uint8) * 255), float(scores[i]))
-            for i in range(masks.shape[0])
-        ]
 
     def segment_click(self, image: Image.Image, point: tuple[float, float]) -> Image.Image:
         import numpy as np

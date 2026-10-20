@@ -52,11 +52,9 @@
       {%- if seed is not none %}
       <span class="text-xs text-slate-500">{{ t.wheel_seed }} <span data-role="wheel-seed" class="font-mono">{{ seed }}</span></span>
       {%- endif %}
-      {#- Rozmiar felgi (ticket 12) i obecna felga (ticket 14) obok seeda; jedne na zadanie,
-          tylko gdy stopień ≠ „bez zmian”. #}
+      {#- Rozmiar felgi (ticket 12) obok seeda; jeden na zadanie, tylko gdy ≠ „bez zmian”. #}
       {%- if saved_rim_size %}
       <span class="text-xs text-slate-500" data-role="result-rim-size">{{ t.result_rim_size.format(size=saved_rim_size | rim_size_text) }}</span>
-      <span class="text-xs text-slate-500" data-role="result-current-rim">{{ t.result_current_rim.format(size=saved_current_rim | current_rim_text) }}</span>
       {%- endif %}
       <form action="/jobs/{{ job.id }}/wheels/{{ wheel.id }}/regenerate" method="post"
             x-data="{ sending: false }" @submit="sending = true">

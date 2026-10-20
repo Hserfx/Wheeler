@@ -1,8 +1,7 @@
-"""Elipsa felgi i krawędź opony koła (ticket 12): pomiar przed zmianą rozmiaru koła.
+"""Rozmiar felgi sterowany geometrią (plus-sizing, ticket 12): elipsa felgi i radialny warp.
 
 Sam prompt rozmiaru model ignoruje (trzyma geometrię wycinka), więc przy stopniu ≠ 0 worker
-mierzy felgę i oponę (SAM 2 + ten moduł), a `wheel_resize` zmienia rozmiar koła w wycinku,
-zanim ten trafi do modelu (ticket 16).
+przeskalowuje felgę w wycinku, zanim ten trafi do modelu (prototyp `prototype/plus-sizing-warp`).
 
 Czysty numpy + OpenCV, bez modeli. Układ: piksele obrazu, elipsy jak w `cv2.fitEllipse`.
 """
@@ -20,6 +19,10 @@ import numpy.typing as npt
 from PIL import Image
 
 from wheeler_worker.compositing import mask_box
+
+# Zmiana średnicy felgi na cal stopnia jako ułamek średnicy koła (zewnętrznej krawędzi opony).
+# Cale są przybliżone: obecnego rozmiaru felgi nie znamy, sterujemy proporcją felga/koło.
+RIM_FRACTION_PER_INCH = 0.04
 
 # Średnica felgi (pionowa, jak w ujęciu 3/4 nie zawyża jej bieżnik) jako ułamek wysokości maski
 # koła. Kandydata SAM wybieramy tylko z tego zakresu (reguła z rozpoznania, `rim_ellipse/NOTES.md`):
@@ -42,13 +45,9 @@ TIRE_RATIO_PERCENTILE = 20
 # opona; brzegi ucięte zasłonięciem odpadają.
 TIRE_BAND = 0.02
 MIN_EDGE_POINTS = 20
-# Kolory diagnostyki (RGB): felga, krawędź opony.
-RIM_COLOR = (0, 255, 0)
-TIRE_COLOR = (255, 220, 0)
 
 FloatArray = npt.NDArray[np.floating[Any]]
 BoolArray = npt.NDArray[np.bool_]
-IntArray = npt.NDArray[np.intp]
 # Kandydat na maskę samej felgi (SAM 2, multimask): maska L (>0 = felga) i ocena IoU modelu.
 RimCandidate = tuple[Image.Image, float]
 
@@ -122,6 +121,37 @@ def wheel_ellipse(wheel_mask: Image.Image) -> Ellipse | None:
         return None
     center_x, center_y = (box.left + box.right - 1) / 2, (box.top + box.bottom - 1) / 2
     return Ellipse(center_x, center_y, box.width, box.height, 0.0)
+
+
+def warp_rim(image: Image.Image, geometry: RimGeometry, *, rim_size: int) -> Image.Image:
+    """Felga większa albo mniejsza o `rim_size` cali, zewnętrzna krawędź opony bez zmian.
+
+    Radialnie w układzie elipsy opony (rho = 1 na zewnętrznej krawędzi opony), rho_f = felga,
+    rho_c = rho_f + `rim_size` * 4%: [0, rho_f] -> [0, rho_c] liniowo (felga),
+    [rho_f, 1] -> [rho_c, 1] liniowo (bok opony), rho ≥ 1 bez zmian (piksele bit w bit).
+    Docelowego rozmiaru nie przycinamy ani nie korygujemy. `geometry` w pikselach `image`;
+    wynik RGB.
+    """
+    rgb = np.asarray(image.convert("RGB"))
+    height, width = rgb.shape[:2]
+    tire = geometry.tire
+    ys, xs = np.mgrid[0:height, 0:width].astype(np.float32)
+    rho = tire.radius(xs, ys)
+    rho_rim = 1 / geometry.tire_ratio
+    rho_new = rho_rim + rim_size * RIM_FRACTION_PER_INCH
+    # Odwzorowanie odwrotne (cel -> źródło), jak wymaga `cv2.remap`.
+    source = np.where(
+        rho < rho_new,
+        rho * rho_rim / rho_new,
+        rho_rim + (rho - rho_new) * (1 - rho_rim) / (1 - rho_new),
+    )
+    # Promień skaluje wektor od środka liniowo, więc obrót elipsy nie wymaga osobnego układu.
+    scale = np.divide(source, rho, out=np.ones_like(rho), where=rho > 1e-6)
+    map_x = (tire.cx + (xs - tire.cx) * scale).astype(np.float32)
+    map_y = (tire.cy + (ys - tire.cy) * scale).astype(np.float32)
+    warped = cv2.remap(rgb, map_x, map_y, cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REFLECT)
+    inside = rho < 1
+    return Image.fromarray(np.where(inside[..., None], warped, rgb))
 
 
 def measure_rim(wheel_mask: Image.Image, candidates: Sequence[RimCandidate]) -> RimGeometry | None:
@@ -212,14 +242,16 @@ def _tire_ratio(rim: Ellipse, wheel: BoolArray) -> float:
     """Odległość od środka felgi do brzegu maski koła w jednostkach elipsy felgi (1 = brzeg
     felgi), percentyl `TIRE_RATIO_PERCENTILE` po kątach; poza `TIRE_RATIO_RANGE`:
     `TYPICAL_TIRE_RATIO`."""
-    rays = wheel_rays(
-        rim,
-        wheel,
-        angles=np.deg2rad(np.arange(0, 360, 10)),
-        steps=np.arange(1.0, 3.0, 0.005),
-    )
-    # Kąt, w którym już brzeg felgi jest poza kołem, pomijamy.
-    profile = rays.steps[np.maximum(rays.leaves - 1, 0)][rays.leaves > 0]
+    height, width = wheel.shape
+    angles = np.deg2rad(np.arange(0, 360, 10))[:, None]
+    steps = np.arange(1.0, 3.0, 0.005)[None, :]
+    ray_xs, ray_ys = rim.from_unit(steps * np.cos(angles), steps * np.sin(angles))
+    xs, ys = np.rint(ray_xs).astype(int), np.rint(ray_ys).astype(int)
+    on_image = (xs >= 0) & (xs < width) & (ys >= 0) & (ys < height)
+    in_wheel = on_image & wheel[np.clip(ys, 0, height - 1), np.clip(xs, 0, width - 1)]
+    # Pierwszy krok poza kołem; kąt, w którym już brzeg felgi jest poza kołem, pomijamy.
+    leaves = np.where(in_wheel.all(axis=1), steps.shape[1], np.argmin(in_wheel, axis=1))
+    profile = steps[0, np.maximum(leaves - 1, 0)][leaves > 0]
     if profile.size == 0:
         return TYPICAL_TIRE_RATIO
     ratio = float(np.percentile(profile, TIRE_RATIO_PERCENTILE))
@@ -227,57 +259,10 @@ def _tire_ratio(rim: Ellipse, wheel: BoolArray) -> float:
     return ratio if low <= ratio <= high else TYPICAL_TIRE_RATIO
 
 
-@dataclass(frozen=True)
-class WheelRays:
-    """Promienie od środka elipsy pod kątami `angles` (radiany, w układzie elipsy, `to_unit`),
-    próbkowane krokami `steps` (w jednostkach elipsy, 1 = jej brzeg). `leaves`: indeks
-    pierwszego kroku poza maską koła (piksele spoza zdjęcia są poza kołem; `len(steps)`:
-    promień nie wychodzi z koła). `exit_xs`, `exit_ys`: piksel tego kroku przycięty do
-    zdjęcia, prawdziwy tylko przy `exit_on_image` (promień, który wychodzi z koła poza
-    zdjęciem, nie trafia na krawędź opony i jego użytkownicy go odrzucają)."""
-
-    steps: FloatArray
-    leaves: IntArray
-    exit_on_image: BoolArray
-    exit_xs: IntArray
-    exit_ys: IntArray
-
-
-def wheel_rays(
-    ellipse: Ellipse, wheel: BoolArray, *, angles: FloatArray, steps: FloatArray
-) -> WheelRays:
-    """Marsz promieni od środka `ellipse` do wyjścia z maski koła `wheel`."""
-    height, width = wheel.shape
-    ray_xs, ray_ys = ellipse.from_unit(
-        steps[None, :] * np.cos(angles)[:, None], steps[None, :] * np.sin(angles)[:, None]
-    )
-    xs, ys = np.rint(ray_xs).astype(np.intp), np.rint(ray_ys).astype(np.intp)
-    on_image = (xs >= 0) & (xs < width) & (ys >= 0) & (ys < height)
-    xs, ys = np.clip(xs, 0, width - 1), np.clip(ys, 0, height - 1)
-    in_wheel = on_image & wheel[ys, xs]
-    leaves = np.where(in_wheel.all(axis=1), steps.size, np.argmin(in_wheel, axis=1))
-    exits = np.minimum(leaves, steps.size - 1)
-    rows = np.arange(leaves.size)
-    return WheelRays(
-        steps=steps,
-        leaves=leaves,
-        exit_on_image=on_image[rows, exits] & (leaves < steps.size),
-        exit_xs=xs[rows, exits],
-        exit_ys=ys[rows, exits],
-    )
-
-
-def outline_rim(
-    image: Image.Image,
-    geometry: RimGeometry,
-    *,
-    rim_color: tuple[int, int, int] = RIM_COLOR,
-    tire_color: tuple[int, int, int] = TIRE_COLOR,
-) -> Image.Image:
-    """Obraz diagnostyczny: elipsa felgi (domyślnie zielona) i zewnętrzna krawędź opony
-    (domyślnie żółta)."""
+def outline_rim(image: Image.Image, geometry: RimGeometry) -> Image.Image:
+    """Obraz diagnostyczny: elipsa felgi (zielona) i zewnętrzna krawędź opony (żółta)."""
     rgb = np.array(image.convert("RGB"))  # kopia zapisywalna dla cv2
     thickness = max(1, image.width // 300)
-    cv2.ellipse(rgb, geometry.rim.as_cv2(), rim_color, thickness)
-    cv2.ellipse(rgb, geometry.tire.as_cv2(), tire_color, thickness)
+    cv2.ellipse(rgb, geometry.rim.as_cv2(), (0, 255, 0), thickness)
+    cv2.ellipse(rgb, geometry.tire.as_cv2(), (255, 220, 0), thickness)
     return Image.fromarray(rgb)

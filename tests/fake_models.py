@@ -8,14 +8,10 @@ from dataclasses import dataclass, field
 import numpy as np
 from PIL import Image
 
-from wheeler_worker.body_mask import BodySegments, body_prompt
-from wheeler_worker.compositing import mask_box
 from wheeler_worker.rim_editor import StepCallback
-from wheeler_worker.rim_geometry import RimCandidate, RimGeometry, wheel_ellipse
+from wheeler_worker.rim_geometry import RimCandidate, wheel_ellipse
 
 Box = tuple[float, float, float, float]  # x0, y0, x1, y1 w pikselach zdjęcia
-# „SAM 2” na karoserię: (zdjęcie, maska koła bez poszerzenia) -> maska karoserii.
-BodyFake = Callable[[Image.Image, Image.Image], Image.Image]
 
 
 def disc_mask(size: tuple[int, int], center: tuple[float, float], radius: int) -> Image.Image:
@@ -26,35 +22,18 @@ def disc_mask(size: tuple[int, int], center: tuple[float, float], radius: int) -
     return Image.fromarray(inside.astype(np.uint8) * 255)
 
 
-def fender_mask(wheel_mask: Image.Image, gap: int = 4) -> Image.Image:
-    """Błotnik: wszystko powyżej koła, z `gap` px szczeliny nadkola nad górą maski koła."""
-    body = Image.new("L", wheel_mask.size, 0)
-    box = mask_box(wheel_mask)
-    if box is not None and box.top - gap > 0:
-        body.paste(255, (0, 0, wheel_mask.width, box.top - gap))
-    return body
-
-
-def _fender(photo: Image.Image, wheel_mask: Image.Image) -> Image.Image:
-    return fender_mask(wheel_mask)
-
-
 @dataclass
 class DiscSegmenter:
     """„SAM 2”: koło to dysk o promieniu `radius` wokół kliknięcia, a felga dysk o promieniu
     `rim_radius` w środku maski koła (`None`: felgi nie widać, brak kandydatów).
 
-    Karoseria: jeden kandydat z `body` (domyślnie błotnik nad kołem, `fender_mask`), bez
-    wnętrza nadkola. `rim_photos` i `body_photos` zapamiętują zdjęcia, na których szukano
-    felgi i karoserii, a `log` kolejność pomiarów i zwolnień modelu („rim”, „body”,
-    „release”)."""
+    `rim_photos` zapamiętuje zdjęcia, na których szukano felgi, a `log` kolejność pomiarów
+    felgi i zwolnień modelu („rim”, „release”)."""
 
     radius: int = 50
     rim_radius: int | None = None
-    body: BodyFake = _fender
     clicks: list[tuple[float, float]] = field(default_factory=list)
     rim_photos: list[Image.Image] = field(default_factory=list)
-    body_photos: list[Image.Image] = field(default_factory=list)
     log: list[str] = field(default_factory=list)
 
     def segment_click(self, image: Image.Image, point: tuple[float, float]) -> Image.Image:
@@ -79,18 +58,6 @@ class DiscSegmenter:
         if self.rim_radius is None or wheel is None:
             return []
         return [(disc_mask(image.size, (wheel.cx, wheel.cy), self.rim_radius), 0.9)]
-
-    def segment_body(
-        self, image: Image.Image, wheel_mask: Image.Image, rim: RimGeometry
-    ) -> BodySegments:
-        self.body_photos.append(image.copy())
-        self.log.append("body")
-        return BodySegments(
-            prompt=body_prompt(rim, wheel_mask),
-            with_gap=[(self.body(image, wheel_mask), 0.9)],
-            without_gap=[],
-            liner=[],
-        )
 
     def release(self) -> None:
         self.log.append("release")
@@ -120,13 +87,6 @@ class NothingSegmenter:
 
     def segment_rim(self, image: Image.Image, wheel_mask: Image.Image) -> list[RimCandidate]:
         return []
-
-    def segment_body(
-        self, image: Image.Image, wheel_mask: Image.Image, rim: RimGeometry
-    ) -> BodySegments:
-        return BodySegments(
-            prompt=body_prompt(rim, wheel_mask), with_gap=[], without_gap=[], liner=[]
-        )
 
     def release(self) -> None:
         pass

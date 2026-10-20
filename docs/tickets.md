@@ -490,7 +490,7 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
 
 **Blocked by:** 13
 
-**Status:** done
+**Status:** needs-triage
 
 - [x] Pole „Obecna felga” w sekcji felgi, w formularzu „Generuj” (`#job-form`), jak wybór `rim_size`; domyślnie 17″. `POST /jobs` przy wgraniu go nie przyjmuje
 - [x] Nowy klucz w `Job.params` (`wheeler_shared/edit_params.py`, pole w `EditParams`), walidacja 14–22 po stronie serwera jak `rim_size` (`advanced.parse_…` → `InvalidParam` → czytelny komunikat); brak klucza oznacza 17″
@@ -515,6 +515,7 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
   `tests/test_current_rim.py`. DESIGN i README: wzmianka o polu. Odstępstwa: stała rantu 1,4″
   zostaje w prototypie (przeniesie ją ticket 16 razem z `inch_px`); podpowiedź pod stopniem
   rozmiaru („zewnętrzna średnica koła zostaje”) bez zmian, bo zmienia się ona w tickecie 16.
+- 2026-10-20 (użytkownik): zmiany cofnięte na `integration` — poprzednia wersja (plus-sizing z ticketu 12, stan `1b9e595`) oceniona jako lepsza. Kod ticketów 14–17 został na gałęziach `ticket-14`…`ticket-17` i `review-fixes-14-17` (merge `c3a4917`). Dalszy kierunek do ustalenia.
 
 ---
 
@@ -524,7 +525,7 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
 
 **Blocked by:** 13
 
-**Status:** done
+**Status:** needs-triage
 
 - [x] `Segmenter.segment_body` (publiczna metoda protokołu; adapter SAM 2.1 i atrapy `placeholder`/testowe), prompt jak w prototypie: punkty dodatnie nad oponą (`body_prompt`, `up_angle`), ujemne w środku felgi i na oponie oraz ujemne w szczelinie nadkola (`arch_gap_points`), multimask w dwóch wariantach; maska wnętrza nadkola z SAM
 - [x] Kolejność z `VERDICT.md`: (a) kryteria `BodyMaskStats.problem` na **surowych** kandydatach SAM (pusta, > 5% koła, > 85% wycinka poza kołem, < 25% strefy błotnika) i wybór `choose_body`; brak dobrego kandydata → `rim_size_unavailable`, bez brania najlepszego ze złych; (b) potem odjęcie wnętrza nadkola i `clean_body_mask`; (c) `foreign_occlusion` > 5% na masce po czyszczeniu → `rim_size_unavailable`
@@ -560,6 +561,7 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
   `_bool`/`_image` i ręczne wycinki `Box` zastąpione wspólnymi `compositing.mask_array`/`mask_image`
   i `Box.slices`, sprawdzenie „punkt w obrazie i w masce” w `_in_mask`; `_measure_rims` →
   `_measure_wheels` (mierzy felgę i karoserię). Bez zmiany zachowania.
+- 2026-10-20 (użytkownik): zmiany cofnięte na `integration` — poprzednia wersja (plus-sizing z ticketu 12, stan `1b9e595`) oceniona jako lepsza. Kod ticketów 14–17 został na gałęziach `ticket-14`…`ticket-17` i `review-fixes-14-17` (merge `c3a4917`). Dalszy kierunek do ustalenia.
 
 ---
 
@@ -569,7 +571,7 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
 
 **Blocked by:** 14, 15
 
-**Status:** done
+**Status:** needs-triage
 
 - [x] `resized_geometry` + `plan_resize` z prototypu w workerze zamiast `warp_rim`: skala cala z obecnej felgi (`inch_px`, dłuższa oś elipsy felgi / (obecna + 1,4″)), jednokładność wokół `lowest_point`, odwzorowanie felga/bok opony jak w `VERDICT.md`
 - [x] Maska edycji = (stare koło ∪ nowe koło) poszerzone o `mask_grow`, minus karoseria z ticketu 15; wycinek dla modelu wokół maski edycji; kompozycja przez maskę edycji zamiast zapisanej maski koła
@@ -624,6 +626,7 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
   z pikseli koła w `model_input`), `rim_size: int` w `plan_resize` i `resized_geometry` (ułamek 0,25″
   był tylko w prototypie, do siatki sylwetki w `run.py`; testy workera go nie używają), stałe kolorów
   na górze `rim_geometry`.
+- 2026-10-20 (użytkownik): zmiany cofnięte na `integration` — poprzednia wersja (plus-sizing z ticketu 12, stan `1b9e595`) oceniona jako lepsza. Kod ticketów 14–17 został na gałęziach `ticket-14`…`ticket-17` i `review-fixes-14-17` (merge `c3a4917`). Dalszy kierunek do ustalenia.
 
 ---
 
@@ -633,7 +636,7 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
 
 **Blocked by:** 16
 
-**Status:** done
+**Status:** needs-triage
 
 - [x] Wypełnienie jak `_prefill` w prototypie: mediana koloru pasa nad górną połową starego koła × 0,5, krawędź rozmyta (σ = 2% boku koła)
 - [x] Test: odsłonięty obszar leży w masce edycji i nie zawiera pikseli starej opony; poza maską edycji bit w bit
@@ -662,3 +665,4 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
   brzegu: najciemniejszy piksel wypełnienia ~46 (rozmycie przy nowej oponie), opona 10. Odsłonięty
   obszar w teście to stare koło poza elipsą nowej opony powiększoną o 1% (~1 px), bo nowe koło to
   stara maska po warpie (najbliższy sąsiad) i jego brzeg może wyjść o piksel poza elipsę.
+- 2026-10-20 (użytkownik): zmiany cofnięte na `integration` — poprzednia wersja (plus-sizing z ticketu 12, stan `1b9e595`) oceniona jako lepsza. Kod ticketów 14–17 został na gałęziach `ticket-14`…`ticket-17` i `review-fixes-14-17` (merge `c3a4917`). Dalszy kierunek do ustalenia.

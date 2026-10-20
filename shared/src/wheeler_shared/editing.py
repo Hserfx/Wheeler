@@ -119,19 +119,13 @@ def choose_rim(session: Session, storage: Storage, job_id: int, rim_id: int) -> 
 
 
 def start_generation(
-    session: Session,
-    job_id: int,
-    *,
-    seed: int,
-    rim_size: int | None = None,
-    current_rim: int | None = None,
+    session: Session, job_id: int, *, seed: int, rim_size: int | None = None
 ) -> None:
     """„Generuj”: zleca podmianę felg we wszystkich kołach z maską (`NoRimSelected` bez felgi).
 
     `seed` (np. losowy) jest zapisywany w parametrach, chyba że zadanie już go ma.
     `rim_size` (stopień z `edit_params.RIM_SIZES`) zastępuje zapisany; `None` zostawia
-    parametry bez zmian (brak klucza = „bez zmian”). Tak samo `current_rim` (obecna felga
-    z `edit_params.CURRENT_RIMS`; brak klucza = 17″).
+    parametry bez zmian (brak klucza = „bez zmian”).
     """
     job = _lock_draft(session, job_id)
     if not job.masked_wheels or len(job.masked_wheels) != len(job.wheels):
@@ -142,8 +136,6 @@ def start_generation(
         job.params = {**job.params, edit_params.SEED: seed}
     if rim_size is not None:
         job.params = {**job.params, edit_params.RIM_SIZE: rim_size}
-    if current_rim is not None:
-        job.params = {**job.params, edit_params.CURRENT_RIM: current_rim}
     enqueue(job, TaskKind.GENERATE)
 
 

@@ -13,7 +13,8 @@ import pytest
 from helpers import ellipse_inside
 from PIL import Image
 
-from wheeler_worker.compositing import grow_wheel_mask
+from wheeler_worker import wheel_resize
+from wheeler_worker.compositing import Box, grow_wheel_mask
 from wheeler_worker.rim_geometry import Ellipse, RimGeometry
 from wheeler_worker.wheel_resize import inch_px, plan_resize, resized_geometry
 
@@ -85,13 +86,17 @@ MASK_GROW = 0.03
 
 
 def _car(
-    size: tuple[int, int] = SIZE, wheel: RimGeometry = OLD, fender_y: int = FENDER_Y
+    size: tuple[int, int] = SIZE,
+    wheel: RimGeometry = OLD,
+    fender_y: int = FENDER_Y,
+    noise: int = 4,
 ) -> tuple[Image.Image, Image.Image, Image.Image]:
-    """Zdjęcie, maska koła (widoczna opona + felga) i maska karoserii: tło z lekkim szumem,
+    """Zdjęcie, maska koła (widoczna opona + felga) i maska karoserii: tło z szumem ±`noise`,
     koło, a nad `fender_y` błotnik zasłaniający górę opony."""
     width, height = size
     rng = np.random.default_rng(1)
-    pixels = rng.integers(BACKGROUND - 4, BACKGROUND + 5, (height, width, 3)).astype(np.uint8)
+    low, high = max(0, BACKGROUND - noise), min(256, BACKGROUND + noise + 1)
+    pixels = rng.integers(low, high, (height, width, 3)).astype(np.uint8)
     tire = ellipse_inside(size, wheel.tire)
     pixels[tire] = TIRE
     pixels[ellipse_inside(size, wheel.rim)] = RIM
@@ -217,3 +222,22 @@ def test_larger_wheel_covers_the_whole_old_wheel_so_nothing_is_prefilled() -> No
     # Poza nowym kołem obraz wejściowy to oryginał (bez przyciemnionej plamy).
     outside = ~_mask(plan.wheel)
     assert np.array_equal(pixels[outside], np.asarray(photo)[outside])
+
+
+@pytest.mark.parametrize("rim_size", [-2, 2])
+def test_plan_in_the_window_equals_the_plan_on_the_whole_photo(
+    rim_size: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Warp liczony w oknie wokół koła (szybciej niż na całym zdjęciu) musi dać to samo co na
+    # całym zdjęciu, także bez zapasu na `mask_grow`: Lanczos czyta 4 px sąsiedztwa, więc okno
+    # potrzebuje własnego zapasu, inaczej przy brzegu okna czyta odbicie zamiast zdjęcia.
+    # Tło z pełnym szumem: odbicie lekko zaszumionego tła różni się od niego za mało.
+    photo, wheel, body = _car(noise=BACKGROUND)
+    windowed = plan_resize(photo, wheel, OLD, body, rim_size=rim_size, inch=10.0, mask_grow=0)
+    whole = Box(0, 0, *SIZE)
+    monkeypatch.setattr(wheel_resize, "_window", lambda *args: whole)
+
+    reference = plan_resize(photo, wheel, OLD, body, rim_size=rim_size, inch=10.0, mask_grow=0)
+
+    assert np.array_equal(_mask(windowed.edit_mask), _mask(reference.edit_mask))
+    assert np.array_equal(np.asarray(windowed.model_input), np.asarray(reference.model_input))

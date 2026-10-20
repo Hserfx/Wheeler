@@ -32,6 +32,9 @@ RIM_FLANGE_INCHES = 1.4
 PREFILL_BAND = 0.06
 PREFILL_DARKEN = 0.5
 PREFILL_BLUR = 0.02
+# Zapas okna warpu (px): `cv2.INTER_LANCZOS4` czyta 8x8 sąsiedztwo (4 px w każdą stronę), więc
+# w oknie z takim zapasem wynik jest ten sam co na całym zdjęciu (bez odbicia przy brzegu okna).
+LANCZOS_REACH = 4
 
 
 def inch_px(rim: Ellipse, *, current_rim: int) -> float:
@@ -142,7 +145,8 @@ def plan_resize(
 
 def _window(old_wheel: BoolArray, old: RimGeometry, new: RimGeometry, mask_grow: float) -> Box:
     """Fragment zdjęcia, w którym warp może cokolwiek zmienić: stare koło (maska i elipsa
-    opony) i jego obraz w jednokładności wokół punktu styku, z zapasem na `mask_grow`."""
+    opony) i jego obraz w jednokładności wokół punktu styku, z zapasem na `mask_grow`
+    i sąsiedztwo interpolacji (`LANCZOS_REACH`)."""
     height, width = old_wheel.shape
     tire = old.tire
     angle = math.radians(tire.angle)
@@ -165,7 +169,7 @@ def _window(old_wheel: BoolArray, old: RimGeometry, new: RimGeometry, mask_grow:
     right = max(right, ground_x + scale * (right - ground_x))
     top = min(top, ground_y + scale * (top - ground_y))
     bottom = max(bottom, ground_y + scale * (bottom - ground_y))
-    pad = math.ceil(max(right - left, bottom - top) * mask_grow) + 2
+    pad = math.ceil(max(right - left, bottom - top) * mask_grow) + LANCZOS_REACH + 1
     return Box(
         max(0, math.floor(left) - pad),
         max(0, math.floor(top) - pad),
@@ -227,7 +231,14 @@ def _wheel_maps(
     source = np.where(rho >= 1, rho, source)
     scale = np.divide(source, rho, out=np.ones_like(rho), where=rho > 1e-9)
     map_x, map_y = old.tire.from_unit(us * scale, vs * scale)
-    return (map_x - window.left).astype(np.float32), (map_y - window.top).astype(np.float32)
+    return _remap_grid(map_x - window.left), _remap_grid(map_y - window.top)
+
+
+def _remap_grid(coords: npt.NDArray[np.float64]) -> npt.NDArray[np.float32]:
+    """Współrzędne źródła zaokrąglone do siatki `cv2.remap` (1/`cv2.INTER_TAB_SIZE` px; remap
+    i tak je zaokrągla) jeszcze w float64: wartości na tej siatce float32 zapisuje dokładnie, więc
+    wynik nie zależy od położenia okna."""
+    return (np.rint(coords * cv2.INTER_TAB_SIZE) / cv2.INTER_TAB_SIZE).astype(np.float32)
 
 
 def _bool(mask: Image.Image) -> BoolArray:

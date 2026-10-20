@@ -18,8 +18,8 @@ import numpy as np
 import numpy.typing as npt
 from PIL import Image
 
-from wheeler_worker.compositing import Box, grow_wheel_mask, mask_box
-from wheeler_worker.rim_geometry import BoolArray, Ellipse, RimGeometry
+from wheeler_worker.compositing import Box, grow_wheel_mask, mask_array, mask_box, mask_image
+from wheeler_worker.rim_geometry import BoolArray, Ellipse, FloatArray, RimGeometry
 
 # Rant felgi (kołnierz ~17-18 mm z każdej strony, ETRTO): widoczny na zdjęciu, a nieliczony
 # w rozmiarze nominalnym felgi. Stała z grillingu ticketu 13, niesprawdzana na zdjęciach
@@ -54,7 +54,7 @@ def lowest_point(ellipse: Ellipse) -> tuple[float, float]:
     return float(xs[0]), float(ys[0])
 
 
-def resized_geometry(old: RimGeometry, *, rim_size: float, inch: float) -> RimGeometry:
+def resized_geometry(old: RimGeometry, *, rim_size: int, inch: float) -> RimGeometry:
     """Koło o `rim_size` cali większe (ujemne: mniejsze): felga i zewnętrzna krawędź opony
     rosną o `rim_size` * `inch` px (dłuższa oś), więc bok opony zostaje tej samej grubości.
     Ten sam obrót i proporcje osi; najniższy punkt opony stoi (jednokładność wokół niego)."""
@@ -74,32 +74,40 @@ def resized_geometry(old: RimGeometry, *, rim_size: float, inch: float) -> RimGe
 
 
 @dataclass(frozen=True)
+class MeasuredWheel:
+    """Pomiar koła przed zmianą rozmiaru (rozmiar zdjęcia): maska koła bez poszerzenia
+    (`wheel`), felga i opona (`rim`) oraz maska karoserii zasłaniającej koło (`body`),
+    chroniona przy zmianie rozmiaru."""
+
+    wheel: Image.Image
+    rim: RimGeometry
+    body: Image.Image
+
+
+@dataclass(frozen=True)
 class ResizePlan:
-    """Zmiana rozmiaru jednego koła (rozmiar zdjęcia): `geometry` nowej felgi i opony, `wheel`
-    nowe koło widoczne spod karoserii, `edit_mask` suma starego i nowego koła poszerzona
+    """Zmiana rozmiaru jednego koła (rozmiar zdjęcia): `old` pomiar koła przed zmianą,
+    `geometry` nowej felgi i opony, `edit_mask` suma starego i nowego koła poszerzona
     o `mask_grow` minus karoseria (obszar, który model może zmienić, i maska kompozycji),
     `model_input` zdjęcie RGB z kołem już w nowym rozmiarze (poza `edit_mask` bit w bit
     oryginał)."""
 
+    old: MeasuredWheel
     geometry: RimGeometry
-    wheel: Image.Image
     edit_mask: Image.Image
     model_input: Image.Image
 
 
 def plan_resize(
     photo: Image.Image,
-    wheel_mask: Image.Image,
-    old: RimGeometry,
-    body_mask: Image.Image,
+    measured: MeasuredWheel,
     *,
-    rim_size: float,
+    rim_size: int,
     inch: float,
     mask_grow: float,
 ) -> ResizePlan:
-    """Koło (`wheel_mask`: maska SAM bez poszerzenia, `old`: jego felga i opona) o `rim_size`
-    cali większe albo mniejsze (`inch`: px na cal), za karoserią (`body_mask`), która zostaje
-    nietknięta.
+    """Koło `measured` o `rim_size` cali większe albo mniejsze (`inch`: px na cal), za
+    karoserią, która zostaje nietknięta.
 
     Warp całego koła w układzie elipsy nowej opony (rho = 1 na jej krawędzi), rho_f = felga:
     felga [0, rho_f'] -> [0, rho_f], bok opony [rho_f', 1] -> [rho_f, 1], dalej (bieżnik
@@ -107,11 +115,13 @@ def plan_resize(
     odwzorowaniem, widoczna tylko poza karoserią. Przy zmniejszaniu odsłonięte nadkole zostaje
     w masce edycji, wstępnie wypełnione przyciemnionym kolorem okolicy nadkola (`_prefill`);
     model je domalowuje."""
+    old = measured.rim
     new = resized_geometry(old, rim_size=rim_size, inch=inch)
-    old_wheel = _bool(wheel_mask)
-    visible = ~_bool(body_mask)
-    window = _window(old_wheel, old, new, mask_grow)
-    local = (slice(window.top, window.bottom), slice(window.left, window.right))
+    old_wheel = mask_array(measured.wheel)
+    old_box = mask_box(measured.wheel)
+    visible = ~mask_array(measured.body)
+    window = _window(old_wheel.shape, old_box, old, new, mask_grow)
+    local = window.slices
     map_x, map_y = _wheel_maps(window, old, new)
     rgb = np.array(photo.convert("RGB"))
     warped = cv2.remap(rgb[local], map_x, map_y, cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REFLECT)
@@ -128,26 +138,37 @@ def plan_resize(
         > 0
     )
     new_wheel = moved & visible
-    edit = _bool(grow_wheel_mask(_image(old_wheel | moved), mask_grow)) & visible
+    edit = mask_array(grow_wheel_mask(mask_image(old_wheel | moved), mask_grow)) & visible
     exposed = old_wheel & ~moved & visible
     original = rgb.copy()
     region = rgb[local]
     region[new_wheel[local]] = warped[new_wheel[local]]
-    if exposed.any():
-        _prefill(rgb, original, exposed, old_wheel=old_wheel, visible=visible, center_y=old.tire.cy)
+    if old_box is not None and exposed.any():
+        _prefill(
+            rgb,
+            original,
+            exposed,
+            old_wheel=old_wheel,
+            old_box=old_box,
+            visible=visible,
+            center_y=old.tire.cy,
+        )
     return ResizePlan(
-        geometry=new,
-        wheel=_image(new_wheel),
-        edit_mask=_image(edit),
-        model_input=Image.fromarray(rgb),
+        old=measured, geometry=new, edit_mask=mask_image(edit), model_input=Image.fromarray(rgb)
     )
 
 
-def _window(old_wheel: BoolArray, old: RimGeometry, new: RimGeometry, mask_grow: float) -> Box:
-    """Fragment zdjęcia, w którym warp może cokolwiek zmienić: stare koło (maska i elipsa
-    opony) i jego obraz w jednokładności wokół punktu styku, z zapasem na `mask_grow`
-    i sąsiedztwo interpolacji (`LANCZOS_REACH`)."""
-    height, width = old_wheel.shape
+def _window(
+    shape: tuple[int, ...],
+    old_box: Box | None,
+    old: RimGeometry,
+    new: RimGeometry,
+    mask_grow: float,
+) -> Box:
+    """Fragment zdjęcia (`shape`: wysokość, szerokość), w którym warp może cokolwiek zmienić:
+    stare koło (maska `old_box` i elipsa opony) i jego obraz w jednokładności wokół punktu
+    styku, z zapasem na `mask_grow` i sąsiedztwo interpolacji (`LANCZOS_REACH`)."""
+    height, width = shape[:2]
     tire = old.tire
     angle = math.radians(tire.angle)
     half_width = math.hypot(tire.width / 2 * math.cos(angle), tire.height / 2 * math.sin(angle))
@@ -156,12 +177,11 @@ def _window(old_wheel: BoolArray, old: RimGeometry, new: RimGeometry, mask_grow:
     rights = [tire.cx + half_width]
     tops = [tire.cy - half_height]
     bottoms = [tire.cy + half_height]
-    box = mask_box(_image(old_wheel))
-    if box is not None:
-        lefts.append(box.left)
-        rights.append(box.right)
-        tops.append(box.top)
-        bottoms.append(box.bottom)
+    if old_box is not None:
+        lefts.append(old_box.left)
+        rights.append(old_box.right)
+        tops.append(old_box.top)
+        bottoms.append(old_box.bottom)
     scale = new.tire.height / tire.height
     ground_x, ground_y = lowest_point(tire)
     left, right, top, bottom = min(lefts), max(rights), min(tops), max(bottoms)
@@ -184,25 +204,30 @@ def _prefill(
     exposed: BoolArray,
     *,
     old_wheel: BoolArray,
+    old_box: Box,
     visible: BoolArray,
     center_y: float,
 ) -> None:
     """Wypełnia w miejscu `exposed` w `pixels` medianą koloru `original` w pasie wokół górnej
     połowy starego koła (nadkole, bez karoserii) x `PREFILL_DARKEN`, z krawędzią rozmytą
-    w sąsiedztwo; poza `exposed` nic się nie zmienia. Liczone w oknie wokół starego koła."""
-    box = mask_box(_image(old_wheel))
-    assert box is not None  # `exposed` jest częścią starego koła
-    side = max(box.right - box.left, box.bottom - box.top)
+    w sąsiedztwo; poza `exposed` nic się nie zmienia. Liczone w oknie wokół starego koła
+    (`old_box`: jego prostokąt)."""
+    side = max(old_box.width, old_box.height)
     band = max(1, round(side * PREFILL_BAND))
     sigma = max(1.0, side * PREFILL_BLUR)
     height, width = old_wheel.shape
     pad = band + math.ceil(4 * sigma) + 1
-    top, left = max(0, box.top - pad), max(0, box.left - pad)
-    local = (slice(top, min(height, box.bottom + pad)), slice(left, min(width, box.right + pad)))
+    window = Box(
+        max(0, old_box.left - pad),
+        max(0, old_box.top - pad),
+        min(width, old_box.right + pad),
+        min(height, old_box.bottom + pad),
+    )
+    local = window.slices
     wheel = old_wheel[local]
     disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * band + 1, 2 * band + 1))
     ring = (cv2.dilate(wheel.astype(np.uint8), disk) > 0) & ~wheel & visible[local]
-    ring[max(0, int(center_y) - top) :] = False
+    ring[max(0, int(center_y) - window.top) :] = False
     if not ring.any():  # cała góra pod karoserią: okolica koła
         ring = ~wheel & visible[local]
     color = np.median(original[local][ring], axis=0) * PREFILL_DARKEN
@@ -234,16 +259,8 @@ def _wheel_maps(
     return _remap_grid(map_x - window.left), _remap_grid(map_y - window.top)
 
 
-def _remap_grid(coords: npt.NDArray[np.float64]) -> npt.NDArray[np.float32]:
+def _remap_grid(coords: FloatArray) -> npt.NDArray[np.float32]:
     """Współrzędne źródła zaokrąglone do siatki `cv2.remap` (1/`cv2.INTER_TAB_SIZE` px; remap
     i tak je zaokrągla) jeszcze w float64: wartości na tej siatce float32 zapisuje dokładnie, więc
     wynik nie zależy od położenia okna."""
     return (np.rint(coords * cv2.INTER_TAB_SIZE) / cv2.INTER_TAB_SIZE).astype(np.float32)
-
-
-def _bool(mask: Image.Image) -> BoolArray:
-    return np.asarray(np.asarray(mask.convert("L")) > 0)
-
-
-def _image(mask: BoolArray) -> Image.Image:
-    return Image.fromarray(mask.astype(np.uint8) * 255)

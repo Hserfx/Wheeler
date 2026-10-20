@@ -20,7 +20,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from wheeler_worker.compositing import Box
+from wheeler_worker.compositing import Box, mask_array, mask_image
 from wheeler_worker.rim_geometry import BoolArray, Ellipse, RimGeometry, wheel_rays
 
 # Kryteria złej maski karoserii na wycinku koła (surowa maska SAM): maska obejmuje więcej niż
@@ -94,9 +94,8 @@ def body_mask_stats(
 ) -> BodyMaskStats:
     """Udziały maski karoserii w wycinku `crop` koła (`wheel_mask` bez poszerzenia, `tire`:
     zewnętrzna krawędź opony z pomiaru felgi)."""
-    window = (slice(crop.top, crop.bottom), slice(crop.left, crop.right))
-    body = _bool(body_mask)[window]
-    wheel = _bool(wheel_mask)[window]
+    body = mask_array(body_mask)[crop.slices]
+    wheel = mask_array(wheel_mask)[crop.slices]
     ys, xs = np.mgrid[crop.top : crop.bottom, crop.left : crop.right].astype(np.float64)
     us, vs = tire.to_unit(xs, ys)
     rho = np.hypot(us, vs)
@@ -144,10 +143,11 @@ ScoredMask = tuple[Image.Image, float]
 
 @dataclass(frozen=True)
 class BodySegments:
-    """Kandydaci SAM 2 dla jednego koła (`Segmenter.segment_body`): karoseria z promptem
-    `BodyPrompt` z ujemnymi w szczelinie nadkola (`with_gap`) i bez nich (`without_gap`)
-    oraz wnętrze nadkola (`liner`)."""
+    """Kandydaci SAM 2 dla jednego koła (`Segmenter.segment_body`): `prompt`, z którego
+    powstali, karoseria z ujemnymi w szczelinie nadkola (`with_gap`) i bez nich
+    (`without_gap`) oraz wnętrze nadkola (`liner`)."""
 
+    prompt: BodyPrompt
     with_gap: Sequence[ScoredMask]
     without_gap: Sequence[ScoredMask]
     liner: Sequence[ScoredMask]
@@ -175,11 +175,11 @@ def body_for_resize(
     choice = choose_body(candidates)
     if isinstance(choice, BodyMaskProblem):
         return choice
-    body = _bool(raw[choice][0])
-    liner = choose_liner(segments.liner, body_prompt(geometry, wheel_mask), wheel_mask, crop)
+    body = mask_array(raw[choice][0])
+    liner = choose_liner(segments.liner, segments.prompt, wheel_mask, crop)
     if liner is not None:
-        body &= ~_bool(liner)
-    cleaned = clean_body_mask(_image(body), wheel_mask)
+        body &= ~mask_array(liner)
+    cleaned = clean_body_mask(mask_image(body), wheel_mask)
     if foreign_occlusion(geometry.tire, wheel_mask, cleaned) > MAX_FOREIGN_OCCLUSION:
         return BodyMaskProblem.FOREIGN_OCCLUSION
     return cleaned
@@ -192,21 +192,15 @@ def choose_liner(
     nowe koło ma zakryć): kandydat o najwyższej ocenie SAM, który nie obejmuje punktu błotnika
     (`prompt.positives`), więcej niż `LINER_MAX_WHEEL_SHARE` koła ani `LINER_MAX_CROP_SHARE`
     wycinka. `None`: brak takiego kandydata."""
-    wheel = _bool(wheel_mask)
-    window = (slice(crop.top, crop.bottom), slice(crop.left, crop.right))
+    wheel = mask_array(wheel_mask)
     best: ScoredMask | None = None
     for mask, score in candidates:
-        liner = _bool(mask)
-        height, width = liner.shape
-        on_fender = any(
-            0 <= round(y) < height and 0 <= round(x) < width and liner[round(y), round(x)]
-            for x, y in prompt.positives
-        )
+        liner = mask_array(mask)
         ok = (
             liner.any()
-            and not on_fender
+            and not any(_in_mask(liner, point) for point in prompt.positives)
             and _share(liner & wheel, wheel) <= LINER_MAX_WHEEL_SHARE
-            and float(liner[window].mean()) <= LINER_MAX_CROP_SHARE
+            and float(liner[crop.slices].mean()) <= LINER_MAX_CROP_SHARE
         )
         if ok and (best is None or score > best[1]):
             best = (mask, score)
@@ -234,15 +228,11 @@ def body_prompt(geometry: RimGeometry, wheel_mask: Image.Image) -> BodyPrompt:
     angles = up + np.deg2rad(np.asarray(BODY_POINT_DEGREES, dtype=np.float64))
     xs, ys = tire.from_unit(BODY_POINT_RHO * np.cos(angles), BODY_POINT_RHO * np.sin(angles))
     positives = [(float(x), float(y)) for x, y in zip(xs, ys, strict=True)]
-    wheel = _bool(wheel_mask)
-    height, width = wheel.shape
+    wheel = mask_array(wheel_mask)
     around = np.deg2rad(np.arange(0, 360, 45))
     xs, ys = tire.from_unit(BODY_NEGATIVE_RHO * np.cos(around), BODY_NEGATIVE_RHO * np.sin(around))
-    negatives = [(geometry.rim.cx, geometry.rim.cy)]
-    for x, y in zip(xs, ys, strict=True):
-        col, row = round(x), round(y)
-        if 0 <= col < width and 0 <= row < height and wheel[row, col]:
-            negatives.append((float(x), float(y)))
+    on_tire = [(float(x), float(y)) for x, y in zip(xs, ys, strict=True)]
+    negatives = [(geometry.rim.cx, geometry.rim.cy), *(p for p in on_tire if _in_mask(wheel, p))]
     return BodyPrompt(
         positives=positives,
         negatives=negatives,
@@ -262,7 +252,7 @@ def arch_gap_points(
     punktu."""
     tire = geometry.tire
     angles = up_angle(tire) + np.deg2rad(np.asarray(degrees, dtype=np.float64))
-    rays = wheel_rays(tire, _bool(wheel_mask), angles=angles, steps=np.arange(0.5, 1.6, 0.002))
+    rays = wheel_rays(tire, mask_array(wheel_mask), angles=angles, steps=np.arange(0.5, 1.6, 0.002))
     points = []
     for angle, leaves, on_image in zip(angles, rays.leaves, rays.exit_on_image, strict=True):
         if not on_image:
@@ -278,8 +268,8 @@ def arch_gap_points(
 def foreign_occlusion(tire: Ellipse, wheel_mask: Image.Image, body_mask: Image.Image) -> float:
     """Część elipsy opony, której nie ma ani w masce koła, ani w karoserii: koło zasłania coś
     obcego (inne auto, słupek), na co powiększone koło weszłoby, bo nie jest chronione."""
-    wheel = _bool(wheel_mask)
-    body = _bool(body_mask)
+    wheel = mask_array(wheel_mask)
+    body = mask_array(body_mask)
     height, width = wheel.shape
     ys, xs = np.mgrid[0:height, 0:width].astype(np.float64)
     inside = tire.radius(xs, ys) <= 1
@@ -290,8 +280,8 @@ def clean_body_mask(body_mask: Image.Image, wheel_mask: Image.Image) -> Image.Im
     """Maska karoserii bez siatki dziur, którą SAM daje przy niepewnej masce: domknięcie
     małym dyskiem i wypełnienie dziur zamkniętych w masce; piksele koła zawsze odpadają
     (koło SAM wygrywa na wspólnym brzegu)."""
-    body = _bool(body_mask)
-    wheel = _bool(wheel_mask)
+    body = mask_array(body_mask)
+    wheel = mask_array(wheel_mask)
     ys, xs = np.nonzero(wheel)
     side = max(xs.max() - xs.min(), ys.max() - ys.min()) + 1 if xs.size else 0
     size = max(3, 2 * round(side * BODY_CLOSING / 2) + 1)
@@ -301,14 +291,14 @@ def clean_body_mask(body_mask: Image.Image, wheel_mask: Image.Image) -> Image.Im
     _count, labels = cv2.connectedComponents((~closed).astype(np.uint8), connectivity=4)
     border = np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))
     holes = (labels > 0) & ~np.isin(labels, border)
-    return _image((closed | holes) & ~wheel)
+    return mask_image((closed | holes) & ~wheel)
 
 
 def outline_body(image: Image.Image, body_mask: Image.Image) -> Image.Image:
     """Obraz diagnostyczny: karoseria (`body_mask` w rozmiarze `image`) jako czerwona
     poświata; wynik RGB."""
     rgb = np.asarray(image.convert("RGB")).astype(np.float32)
-    body = _bool(body_mask)
+    body = mask_array(body_mask)
     tint = np.asarray(BODY_TINT, dtype=np.float32)
     rgb[body] = (1 - BODY_TINT_ALPHA) * rgb[body] + BODY_TINT_ALPHA * tint
     return Image.fromarray(np.rint(rgb).astype(np.uint8))
@@ -325,9 +315,8 @@ def _share(part: BoolArray, whole: BoolArray) -> float:
     return float(part.sum()) / max(int(whole.sum()), 1)
 
 
-def _bool(mask: Image.Image) -> BoolArray:
-    return np.asarray(np.asarray(mask.convert("L")) > 0)
-
-
-def _image(mask: BoolArray) -> Image.Image:
-    return Image.fromarray(mask.astype(np.uint8) * 255)
+def _in_mask(mask: BoolArray, point: Point) -> bool:
+    """Czy punkt (piksele zdjęcia, zaokrąglony do piksela) leży w obrazie i w masce."""
+    col, row = round(point[0]), round(point[1])
+    height, width = mask.shape
+    return 0 <= col < width and 0 <= row < height and bool(mask[row, col])

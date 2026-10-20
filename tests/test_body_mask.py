@@ -221,6 +221,7 @@ def test_body_for_resize_is_the_good_raw_candidate_without_the_arch_liner() -> N
     fender_and_liner = _rows(0, TIRE_TOP - 3)
     liner = _rows(GAP_FENDER_Y, TIRE_TOP - 3, 140, 260)
     segments = BodySegments(
+        prompt=body_prompt(OLD, wheel),
         with_gap=[(_image(whole_car), 0.95), (_image(fender_and_liner), 0.8)],
         without_gap=[],
         # Wnętrze nadkola: kandydat obejmujący błotnik (punkt dodatni karoserii) odpada.
@@ -241,13 +242,20 @@ def test_body_for_resize_is_the_good_raw_candidate_without_the_arch_liner() -> N
 def test_body_for_resize_refuses_when_only_bad_candidates_or_a_foreign_occlusion() -> None:
     _, wheel, body = _car(SIZE, OLD, FENDER_Y)
     whole_car = _image(_mask(body) | _mask(wheel))
-    only_bad = BodySegments(with_gap=[(whole_car, 0.9)], without_gap=[(whole_car, 0.8)], liner=[])
+    only_bad = BodySegments(
+        prompt=body_prompt(OLD, wheel),
+        with_gap=[(whole_car, 0.9)],
+        without_gap=[(whole_car, 0.8)],
+        liner=[],
+    )
 
     assert body_for_resize(only_bad, wheel, OLD, _crop(wheel)) is BodyMaskProblem.COVERS_WHEEL
     # Przód opony (x > 290) zasłania zderzak innego auta, którego karoseria nie obejmuje.
     bumper = _mask(wheel).copy()
     bumper[:, 290:] = False
-    good = BodySegments(with_gap=[(body, 0.9)], without_gap=[], liner=[])
+    good = BodySegments(
+        prompt=body_prompt(OLD, wheel), with_gap=[(body, 0.9)], without_gap=[], liner=[]
+    )
 
     refused = body_for_resize(good, _image(bumper), OLD, _crop(wheel))
 

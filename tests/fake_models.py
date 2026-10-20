@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from PIL import Image
 
-from wheeler_worker.body_mask import BodySegments
+from wheeler_worker.body_mask import BodySegments, body_prompt
 from wheeler_worker.compositing import mask_box
 from wheeler_worker.rim_editor import StepCallback
 from wheeler_worker.rim_geometry import RimCandidate, RimGeometry, wheel_ellipse
@@ -86,7 +86,10 @@ class DiscSegmenter:
         self.body_photos.append(image.copy())
         self.log.append("body")
         return BodySegments(
-            with_gap=[(self.body(image, wheel_mask), 0.9)], without_gap=[], liner=[]
+            prompt=body_prompt(rim, wheel_mask),
+            with_gap=[(self.body(image, wheel_mask), 0.9)],
+            without_gap=[],
+            liner=[],
         )
 
     def release(self) -> None:
@@ -121,7 +124,9 @@ class NothingSegmenter:
     def segment_body(
         self, image: Image.Image, wheel_mask: Image.Image, rim: RimGeometry
     ) -> BodySegments:
-        return BodySegments(with_gap=[], without_gap=[], liner=[])
+        return BodySegments(
+            prompt=body_prompt(rim, wheel_mask), with_gap=[], without_gap=[], liner=[]
+        )
 
     def release(self) -> None:
         pass

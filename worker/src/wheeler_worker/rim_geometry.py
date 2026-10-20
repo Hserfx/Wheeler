@@ -42,6 +42,9 @@ TIRE_RATIO_PERCENTILE = 20
 # opona; brzegi ucięte zasłonięciem odpadają.
 TIRE_BAND = 0.02
 MIN_EDGE_POINTS = 20
+# Kolory diagnostyki (RGB): felga, krawędź opony.
+RIM_COLOR = (0, 255, 0)
+TIRE_COLOR = (255, 220, 0)
 
 FloatArray = npt.NDArray[np.floating[Any]]
 BoolArray = npt.NDArray[np.bool_]
@@ -262,11 +265,6 @@ def wheel_rays(
         exit_xs=xs[rows, exits],
         exit_ys=ys[rows, exits],
     )
-
-
-# Kolory diagnostyki (RGB): felga, krawędź opony.
-RIM_COLOR = (0, 255, 0)
-TIRE_COLOR = (255, 220, 0)
 
 
 def outline_rim(

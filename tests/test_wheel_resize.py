@@ -16,7 +16,13 @@ from PIL import Image
 from wheeler_worker import wheel_resize
 from wheeler_worker.compositing import Box, grow_wheel_mask
 from wheeler_worker.rim_geometry import Ellipse, RimGeometry
-from wheeler_worker.wheel_resize import inch_px, plan_resize, resized_geometry
+from wheeler_worker.wheel_resize import (
+    MeasuredWheel,
+    ResizePlan,
+    inch_px,
+    plan_resize,
+    resized_geometry,
+)
 
 BACKGROUND = 160
 TIRE = 10
@@ -114,10 +120,37 @@ def _mask(image: Image.Image) -> npt.NDArray[np.bool_]:
     return np.asarray(np.asarray(image.convert("L")) > 0)
 
 
+def _plan(
+    photo: Image.Image,
+    wheel: Image.Image,
+    body: Image.Image,
+    *,
+    rim_size: int,
+    old: RimGeometry = OLD,
+    mask_grow: float = MASK_GROW,
+) -> ResizePlan:
+    measured = MeasuredWheel(wheel=wheel, rim=old, body=body)
+    return plan_resize(photo, measured, rim_size=rim_size, inch=10.0, mask_grow=mask_grow)
+
+
+def _new_tire(plan: ResizePlan, size: tuple[int, int], scale: float = 1.0) -> npt.NDArray[np.bool_]:
+    """Piksele wewnątrz elipsy nowej opony (razy `scale`). Nowe koło to stara maska po warpie
+    (najbliższy sąsiad), więc jego brzeg może wyjść o piksel poza elipsę: `scale` = 1,01
+    (~1 px przy oponie ~250 px) obejmuje całe nowe koło."""
+    return ellipse_inside(size, plan.geometry.tire.scaled(scale))
+
+
+def _wheel_pixels(image: Image.Image) -> npt.NDArray[np.bool_]:
+    """Piksele w kolorze koła: ciemna opona albo jasna felga (tło 160, błotnik ~70, wypełnienie
+    nadkola ~80)."""
+    gray = np.asarray(image.convert("L"))
+    return np.asarray((gray <= TIRE + 20) | (gray >= RIM - 20))
+
+
 def test_larger_wheel_reaches_new_ellipses_behind_untouched_body() -> None:
     photo, wheel, body = _car()
 
-    plan = plan_resize(photo, wheel, OLD, body, rim_size=2, inch=10.0, mask_grow=MASK_GROW)
+    plan = _plan(photo, wheel, body, rim_size=2)
 
     # Felga 184 px -> 204 px, opona 242,9 px -> 262,9 px; styk z ziemią y = 351,4.
     new = plan.geometry
@@ -133,21 +166,24 @@ def test_larger_wheel_reaches_new_ellipses_behind_untouched_body() -> None:
     assert (pixels[sidewall & visible] <= TIRE + 5).mean() > 0.97
     # Nowe koło wychodzi poza stare (na boki i w górę, pod błotnik), błotnik zostaje.
     assert (sidewall & visible & ~_mask(wheel)).sum() > 500
-    assert not (_mask(plan.wheel) & ~visible).any()
+    assert np.array_equal(pixels[~visible], np.asarray(photo)[~visible])
 
 
 def test_edit_mask_is_old_and_new_wheel_grown_minus_body_and_nothing_else_changes() -> None:
     photo, wheel, body = _car()
 
     for rim_size in (-2, 2):
-        plan = plan_resize(
-            photo, wheel, OLD, body, rim_size=rim_size, inch=10.0, mask_grow=MASK_GROW
-        )
+        plan = _plan(photo, wheel, body, rim_size=rim_size)
 
-        both = _image(_mask(wheel) | _mask(plan.wheel))
-        expected = _mask(grow_wheel_mask(both, MASK_GROW)) & ~_mask(body)
+        # Nowe koło między elipsą nowej opony bez piksela brzegu a elipsą z pikselem zapasu.
+        inner, outer = (
+            _mask(grow_wheel_mask(_image(_mask(wheel) | _new_tire(plan, SIZE, scale)), MASK_GROW))
+            & ~_mask(body)
+            for scale in (0.99, 1.01)
+        )
         edit = _mask(plan.edit_mask)
-        assert np.array_equal(edit, expected)
+        assert (inner <= edit).all()
+        assert (edit <= outer).all()
         untouched = ~edit
         assert np.array_equal(np.asarray(plan.model_input)[untouched], np.asarray(photo)[untouched])
 
@@ -155,11 +191,11 @@ def test_edit_mask_is_old_and_new_wheel_grown_minus_body_and_nothing_else_change
 def test_smaller_wheel_drops_to_the_ground_and_the_old_wheel_stays_editable() -> None:
     photo, wheel, body = _car()
 
-    plan = plan_resize(photo, wheel, OLD, body, rim_size=-2, inch=10.0, mask_grow=MASK_GROW)
+    plan = _plan(photo, wheel, body, rim_size=-2)
 
-    new_wheel = _mask(plan.wheel)
+    new_wheel = _wheel_pixels(plan.model_input)
     old_wheel = _mask(wheel)
-    assert new_wheel.sum() < 0.9 * old_wheel.sum()
+    assert new_wheel.sum() < 0.9 * _wheel_pixels(photo).sum()
     # Koło opada do punktu styku: najniższy wiersz nowego koła = najniższy wiersz starego.
     assert np.nonzero(new_wheel)[0].max() == np.nonzero(old_wheel)[0].max()
     # Odsłonięte nadkole (stare koło minus nowe) model może domalować.
@@ -173,11 +209,9 @@ def test_rotated_three_quarter_wheel_keeps_its_ground_contact_row() -> None:
     photo, wheel, body = _car(wheel=wheel_3q)
 
     for rim_size in (-2, 2):
-        plan = plan_resize(
-            photo, wheel, wheel_3q, body, rim_size=rim_size, inch=10.0, mask_grow=MASK_GROW
-        )
+        plan = _plan(photo, wheel, body, rim_size=rim_size, old=wheel_3q)
 
-        rows = np.nonzero(_mask(plan.wheel))[0]
+        rows = np.nonzero(_wheel_pixels(plan.model_input))[0]
         assert abs(int(rows.max()) - int(np.nonzero(_mask(wheel))[0].max())) <= 1
 
 
@@ -187,10 +221,10 @@ def test_wheel_cut_by_the_photo_edge_grows_without_touching_anything_outside_the
     cut = (0, 0, 300, SIZE[1])
     photo, wheel, body = photo.crop(cut), wheel.crop(cut), body.crop(cut)
 
-    plan = plan_resize(photo, wheel, OLD, body, rim_size=2, inch=10.0, mask_grow=MASK_GROW)
+    plan = _plan(photo, wheel, body, rim_size=2)
 
     assert plan.model_input.size == photo.size
-    assert _mask(plan.wheel)[:, -1].sum() > _mask(wheel)[:, -1].sum()
+    assert _wheel_pixels(plan.model_input)[:, -1].sum() > _mask(wheel)[:, -1].sum()
     untouched = ~_mask(plan.edit_mask)
     assert np.array_equal(np.asarray(plan.model_input)[untouched], np.asarray(photo)[untouched])
 
@@ -198,10 +232,11 @@ def test_wheel_cut_by_the_photo_edge_grows_without_touching_anything_outside_the
 def test_smaller_wheel_prefills_the_exposed_arch_dark_instead_of_the_old_tire() -> None:
     photo, wheel, body = _car()
 
-    plan = plan_resize(photo, wheel, OLD, body, rim_size=-2, inch=10.0, mask_grow=MASK_GROW)
+    plan = _plan(photo, wheel, body, rim_size=-2)
 
-    # Odsłonięte nadkole: stare koło minus nowe, poza karoserią; model może je domalować.
-    exposed = _mask(wheel) & ~_mask(plan.wheel) & ~_mask(body)
+    # Odsłonięte nadkole: stare koło poza nową oponą (z pikselem zapasu na brzeg nowego koła,
+    # `_new_tire`), poza karoserią; model może je domalować.
+    exposed = _mask(wheel) & ~_new_tire(plan, SIZE, 1.01) & ~_mask(body)
     assert exposed.sum() > 1000
     assert (exposed <= _mask(plan.edit_mask)).all()
     # Wypełnienie: kolor pasa nad górną połową starego koła (tło 160) x 0,5, czyli ok. 80,
@@ -217,11 +252,11 @@ def test_smaller_wheel_prefills_the_exposed_arch_dark_instead_of_the_old_tire() 
 def test_larger_wheel_covers_the_whole_old_wheel_so_nothing_is_prefilled() -> None:
     photo, wheel, body = _car()
 
-    plan = plan_resize(photo, wheel, OLD, body, rim_size=2, inch=10.0, mask_grow=MASK_GROW)
+    plan = _plan(photo, wheel, body, rim_size=2)
 
     pixels = np.asarray(plan.model_input)
     # Poza nowym kołem obraz wejściowy to oryginał (bez przyciemnionej plamy).
-    outside = ~_mask(plan.wheel)
+    outside = ~_new_tire(plan, SIZE, 1.01)
     assert np.array_equal(pixels[outside], np.asarray(photo)[outside])
 
 
@@ -234,11 +269,11 @@ def test_plan_in_the_window_equals_the_plan_on_the_whole_photo(
     # potrzebuje własnego zapasu, inaczej przy brzegu okna czyta odbicie zamiast zdjęcia.
     # Tło z pełnym szumem: odbicie lekko zaszumionego tła różni się od niego za mało.
     photo, wheel, body = _car(noise=BACKGROUND)
-    windowed = plan_resize(photo, wheel, OLD, body, rim_size=rim_size, inch=10.0, mask_grow=0)
+    windowed = _plan(photo, wheel, body, rim_size=rim_size, mask_grow=0)
     whole = Box(0, 0, *SIZE)
     monkeypatch.setattr(wheel_resize, "_window", lambda *args: whole)
 
-    reference = plan_resize(photo, wheel, OLD, body, rim_size=rim_size, inch=10.0, mask_grow=0)
+    reference = _plan(photo, wheel, body, rim_size=rim_size, mask_grow=0)
 
     assert np.array_equal(_mask(windowed.edit_mask), _mask(reference.edit_mask))
     assert np.array_equal(np.asarray(windowed.model_input), np.asarray(reference.model_input))

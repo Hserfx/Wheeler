@@ -490,7 +490,7 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
 
 **Blocked by:** 12
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Każdy błąd generowania (`rim_size_unavailable`, `rim_not_found`, `empty_mask`, `no_rim`, `internal`, także `interrupted` po restarcie workera) przestawia zadanie na `draft` z ustawionym `Job.error`, bez `finished_at`; generowanie nie kończy się już statusem `failed`
 - [ ] W szkicu po nieudanym generowaniu działają wybór felgi, wybór rozmiaru i klikanie kół jak w zwykłym szkicu; komunikat błędu jest widoczny na stronie zadania do kolejnego „Generuj” (które go czyści)

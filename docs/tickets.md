@@ -615,12 +615,27 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
 
 **Blocked by:** 16
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Wypełnienie jak `_prefill` w prototypie: mediana koloru pasa nad górną połową starego koła × 0,5, krawędź rozmyta (σ = 2% boku koła)
-- [ ] Test: odsłonięty obszar leży w masce edycji i nie zawiera pikseli starej opony; poza maską edycji bit w bit
-- [ ] Bez korekty niedostrzału dla wartości ujemnych (decyzja z ticketu 13)
+- [x] Wypełnienie jak `_prefill` w prototypie: mediana koloru pasa nad górną połową starego koła × 0,5, krawędź rozmyta (σ = 2% boku koła)
+- [x] Test: odsłonięty obszar leży w masce edycji i nie zawiera pikseli starej opony; poza maską edycji bit w bit
+- [x] Bez korekty niedostrzału dla wartości ujemnych (decyzja z ticketu 13)
 
 **Comments:**
 
 - 2026-10-19: z rekomendacji w `VERDICT.md` (gałąź `prototype/whole-wheel-resize`, `worker/prototype_whole_wheel/` (`VERDICT.md`, `whole_wheel.py`, `test_whole_wheel.py`, `run.py`)). Wygląd wnętrza nadkola przy −1″/−2″ zatwierdzony przez użytkownika na arkuszach prototypu.
+- 2026-10-20 (agent, gałąź `ticket-17`): `wheel_resize.plan_resize` przy zmniejszaniu wypełnia
+  odsłonięte nadkole (stare koło minus nowe, poza karoserią) w `model_input` przez `_prefill`
+  z prototypu: mediana koloru oryginału w pasie 6% boku koła wokół górnej połowy starego koła (bez
+  karoserii; gdy pusty, cała okolica koła) × 0,5, gauss σ = 2% boku koła tylko na pikselach
+  odsłoniętych (stałe `PREFILL_BAND`, `PREFILL_DARKEN`, `PREFILL_BLUR`). Liczone w oknie wokół starego
+  koła, nie na całym zdjęciu. Maska edycji bez zmian (obejmowała już stare koło), poza nią bit w bit;
+  `warped.png` pokazuje wypełnienie. Bez korekty niedostrzału. Testy: `tests/test_wheel_resize.py`
+  (odsłonięty obszar w masce edycji, jasność ok. 0,5 tła, > 95% pikseli jaśniejszych od starej opony,
+  poza maską edycji bit w bit; przy +2″ nic nie jest wypełniane), `tests/test_rim_size.py`: szerokość
+  koła sprawdzana teraz także dla −1″/−2″ (także obecna felga 14″/22″ i ponowione zadanie z −2″);
+  pomiar `_measure` liczy brzeg koła jako ostatni piksel ciemny jak opona w szarym obszarze, bo
+  wypełnienie na zaszumionym tle atrapy też jest szare (~64). DESIGN (krok 5 „Rozmiaru koła”)
+  zaktualizowany. Odstępstwa: „pas nad górną połową” to jak w `_prefill` prototypu pierścień wokół starego
+  koła powyżej środka opony; kolor z oryginału zamiast z obrazu po wklejeniu nowego koła (to samo,
+  bo pierścień leży poza starym kołem); prawdziwy model nieuruchamiany (ticket tego nie wymaga).

@@ -1,11 +1,12 @@
-"""Rozmiar koła (tickety 12 i 16): stopień -2…+2″ wybierany przed „Generuj”.
+"""Rozmiar koła (tickety 12, 16 i 17): stopień -2…+2″ wybierany przed „Generuj”.
 
 Całe koło (felga i zewnętrzna krawędź opony) rośnie albo maleje o tyle cali według skali
-z „Obecnej felgi”, punkt styku z ziemią stoi, a karoseria zostaje bit w bit; steruje tym
-geometria: worker zmienia rozmiar koła w wycinku przed modelem (geometria:
-`test_wheel_resize.py`). Procesor testowany bezpośrednio z atrapami SAM 2 i mflux (atrapa
-mflux oddaje wycinek, więc wynik pokazuje koło, które dostał model), reszta przez HTTP
-i `run_once` workera na prawdziwym Postgresie.
+z „Obecnej felgi”, punkt styku z ziemią stoi, a karoseria zostaje bit w bit; odsłonięte przy
+zmniejszaniu nadkole jest wstępnie wypełnione (ticket 17). Steruje tym geometria: worker
+zmienia rozmiar koła w wycinku przed modelem (geometria: `test_wheel_resize.py`). Procesor
+testowany bezpośrednio z atrapami SAM 2 i mflux (atrapa mflux oddaje wycinek, więc wynik
+pokazuje koło, które dostał model), reszta przez HTTP i `run_once` workera na prawdziwym
+Postgresie.
 """
 
 from __future__ import annotations
@@ -104,8 +105,10 @@ class _Measured(NamedTuple):
 
 def _measure(image: Image.Image) -> _Measured:
     """Koło `_wheel_photo` na zdjęciu (np. wyniku, w którym „model” oddał wycinek): felga =
-    jasne piksele blisko środka koła (w oponie), koło = piksele szare (opona, felga i rozmyta
-    granica między nimi; zaszumione tło prawie nigdy nie jest szare)."""
+    jasne piksele blisko środka koła (w oponie), koło = szary obszar wokół felgi (opona,
+    felga i rozmyta granica między nimi; zaszumione tło prawie nigdy nie jest szare), a jego
+    brzeg = ostatni piksel ciemny jak opona. Wstępne wypełnienie odsłoniętego nadkola przy
+    zmniejszaniu też jest szare (mediana szumu x 0,5, ok. 64), ale jaśniejsze od opony (30)."""
     rgb = np.asarray(image.convert("RGB")).astype(int)
     near = np.asarray(disc_mask(image.size, WHEEL, 45)) > 0
     # Próg w połowie między felgą (220) a oponą (30): rozmyta krawędź liczy się po połowie.
@@ -113,16 +116,21 @@ def _measure(image: Image.Image) -> _Measured:
     ys, _ = np.nonzero(rim)
     cy = float(ys.mean())
     gray = rgb.max(axis=-1) - rgb.min(axis=-1) <= 12
+    # Próg w połowie między oponą (30) a wypełnieniem nadkola (ok. 64).
+    tire = gray & (rgb.mean(axis=-1) < 47)
     x, y = WHEEL[0], round(cy)
-    bottom = y
-    while gray[bottom + 1, x]:
-        bottom += 1
-    left = right = x
-    while gray[y, left - 1]:
-        left -= 1
-    while gray[y, right + 1]:
-        right += 1
-    return _Measured(float(np.sqrt(rim.sum() / np.pi)), cy, (right - left + 1) / 2, bottom)
+
+    def edge(step_y: int, step_x: int) -> int:
+        """Odległość od (x, y) do ostatniego piksela opony w szarym obszarze koła."""
+        last = distance = 0
+        while gray[y + (distance + 1) * step_y, x + (distance + 1) * step_x]:
+            distance += 1
+            if tire[y + distance * step_y, x + distance * step_x]:
+                last = distance
+        return last
+
+    half_width = (edge(0, -1) + edge(0, 1) + 1) / 2
+    return _Measured(float(np.sqrt(rim.sum() / np.pi)), cy, half_width, y + edge(1, 0))
 
 
 def test_measure_reads_the_wheel_of_the_test_photo(tmp_path: Path) -> None:
@@ -218,13 +226,10 @@ def _expected(unchanged: _Measured, rim_size: int, current_rim: int = 17) -> _Me
     )
 
 
-def _assert_wheel(found: _Measured, expected: _Measured, *, tire: bool = True) -> None:
-    """`tire`: także szerokość koła. Przy zmniejszaniu odsłonięte nadkole ma jeszcze piksele
-    starej opony (wstępne wypełnienie to ticket 17), więc szerokości nie widać."""
+def _assert_wheel(found: _Measured, expected: _Measured) -> None:
     assert found.rim_radius == pytest.approx(expected.rim_radius, abs=0.5)
     assert found.rim_cy == pytest.approx(expected.rim_cy, abs=1)
-    if tire:
-        assert found.half_width == pytest.approx(expected.half_width, abs=1)
+    assert found.half_width == pytest.approx(expected.half_width, abs=1)
     assert found.bottom == pytest.approx(expected.bottom, abs=1)
 
 
@@ -237,7 +242,7 @@ def test_whole_wheel_is_resized_with_ground_contact_kept_and_the_unchanged_promp
     result = wheel.generate(rim_size)
 
     # „Model” oddaje wycinek, więc wynik pokazuje koło, które model dostał.
-    _assert_wheel(_measure(Image.open(result)), _expected(unchanged, rim_size), tire=rim_size > 0)
+    _assert_wheel(_measure(Image.open(result)), _expected(unchanged, rim_size))
     [call] = wheel.editor.calls
     assert call.prompt == CURRENT_TEMPLATE
     # Felgę mierzy SAM 2 na oryginale, przed mflux.
@@ -257,9 +262,7 @@ def test_inch_scale_comes_from_the_current_rim(tmp_path: Path, unchanged: _Measu
 
         result = wheel.generate(-2, current_rim=current_rim)
 
-        _assert_wheel(
-            _measure(Image.open(result)), _expected(unchanged, -2, current_rim), tire=False
-        )
+        _assert_wheel(_measure(Image.open(result)), _expected(unchanged, -2, current_rim))
 
 
 def _changed(before: Image.Image, after: Image.Image) -> npt.NDArray[np.bool_]:
@@ -545,7 +548,7 @@ def test_retried_job_edits_with_the_same_rim_size(
 
     assert len(editor.calls) == 1
     retried_id = int(response.headers["location"].rsplit("/", 1)[1])
-    _assert_wheel(_result_wheel(client, retried_id), _expected(unchanged, -2), tire=False)
+    _assert_wheel(_result_wheel(client, retried_id), _expected(unchanged, -2))
     assert _shown_rim_size(client, retried_id) == f"{MINUS}2″"
 
 

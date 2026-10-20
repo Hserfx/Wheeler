@@ -59,20 +59,23 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
 - **Referencje `[wycinek, felga]`** z `mask_image` (maska koła w rozmiarze roboczym) i jawnymi `width`/`height`.
   Maska mflux działa na pierwszej referencji, a proporcje wyjścia bierze z ostatniej.
 - **Wycinek:** kwadrat wokół koła z marginesem 25% boku koła z każdej strony, przycięty do zdjęcia.
-- **Maska kompozycji:** maska SAM poszerzona o 3% boku koła. Krawędź wygładzana do wewnątrz na pasie ~1,5% boku koła,
+- **Maska kompozycji:** maska SAM poszerzona o 3% boku koła (przy zmianie rozmiaru koła: maska edycji, niżej). Krawędź wygładzana do wewnątrz na pasie ~1,5% boku koła,
   więc piksele poza maską pozostają bit w bit.
 - **Szablon promptu** (obraz 1 = wycinek, obraz 2 = felga):
   „Replace the rim of the car wheel in image 1 with the alloy rim design shown in image 2. Keep the tire, the car
   body, the wheel arch, the brake caliper position, the lighting, the shadows and the camera angle of image 1
   unchanged. The new rim must follow the perspective of the wheel in image 1 and fill the tire opening exactly.
   Photorealistic.” Dopisek użytkownika doklejamy na końcu.
-- **Rozmiar felgi (plus-sizing, ticket 12):** stopień `rim_size` od −2 do +2 cali względem obecnej felgi
-  (`0` = „bez zmian”). Zmienia się tylko średnica felgi, zewnętrzna średnica koła zostaje: większa felga
-  to cieńszy bok opony, mniejsza grubszy. **Rozmiarem steruje geometria, nie prompt.** Prompt jest
-  powyższym szablonem dla każdego stopnia: osobny szablon plus-sizingu (pierwsza wersja ticketu 12)
-  model ignorował i trzymał geometrię wycinka (test na Clio, +2″ bez zmiany średnicy). Prototyp
-  (gałąź `prototype/plus-sizing-warp`) pokazał, że model zachowuje felgę przeskalowaną już w wycinku
-  i podmienia tylko jej wzór. Dlatego przy stopniu ≠ 0:
+- **Rozmiar koła (tickety 12–16):** stopień `rim_size` od −2 do +2 cali względem obecnej felgi
+  (`0` = „bez zmian”). Rośnie (albo maleje) **całe koło**: felga +N″ i zewnętrzna średnica koła +N″,
+  bok opony zostaje tej samej grubości („ta sama opona na większej feldze”), a najniższy punkt opony
+  (styk z ziemią) stoi w miejscu. Powiększone koło wchodzi w nadkole i chowa się za karoserią, która
+  zostaje bit w bit. Ten warp zastąpił warp samej felgi ze stałą średnicą koła z pierwszej wersji
+  ticketu 12 (efekt oceniony jako nienaturalny; prototyp `prototype/whole-wheel-resize`, `VERDICT.md`).
+  **Rozmiarem steruje geometria, nie prompt.** Prompt jest powyższym szablonem dla każdego stopnia:
+  polecenie rozmiaru model ignorował i trzymał geometrię wycinka (test na Clio, +2″ bez zmiany
+  średnicy), a koło przeskalowane już w wycinku zachowuje i podmienia tylko wzór felgi. Dlatego przy
+  stopniu ≠ 0:
   1. **Elipsa felgi** (przed załadowaniem mflux, dla każdego koła zadania, na oryginale): SAM 2 daje
      kandydatów na maskę samej felgi (multimask: punkt w centroidzie maski koła + 8 punktów
      negatywnych na oponie oraz box 0,8 bboxa koła + ten punkt). Maska koła to zapisana maska bez
@@ -80,47 +83,55 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
      największej składowej) ma średnicę pionową poza 45–92% wysokości koła (reguła z rozpoznania)
      albo maska wystaje z maski koła o więcej niż 5%; wygrywa maksimum IoU(maska, elipsa) × ocena
      SAM. Ostateczna elipsa jest dopasowana tylko do tej części konturu felgi, za którą leży opona
-     (odporność na zasłonięcie), i musi mieć średnicę w 40–95% wysokości koła. Potem SAM 2 jest
-     zwalniany jak dotąd przed mflux.
+     (odporność na zasłonięcie), i musi mieć średnicę w 40–95% wysokości koła.
   2. **Krawędź opony** = elipsa felgi × k (ten sam środek i obrót: felga i ściana opony są
      koncentryczne także w 3/4). k = 20. percentyl profilu promieniowego maski koła w jednostkach
      elipsy felgi (strona lica); poza 1,15–1,6 (np. zasłonięcie) typowe k = 1,32.
-  3. **Radialny warp** wycinka w układzie tej (obróconej) elipsy, ρ = promień znormalizowany do
-     krawędzi opony, ρ_f = 1/k (obecna felga), ρ_c = ρ_f + stopień × 0,04 (1″ ≈ 4% średnicy koła):
-     `[0, ρ_f] → [0, ρ_c]` liniowo (felga), `[ρ_f, 1] → [ρ_c, 1]` liniowo (bok opony), ρ ≥ 1 bez
-     zmian. Warp działa tylko w masce koła, którą zmienia model: poza nią wycinek jest oryginałem
-     (krawędź opony = felga × k potrafi z maski wyjść, a kompozycja i tak by ją odcięła — szew).
-     Docelowy rozmiar nie jest przycinany ani korygowany. Znane zachowanie: przy zmniejszaniu
-     model częściowo wraca do oryginału (prototyp: −2″ dało ≈ −1,3″); tego nie korygujemy.
-  4. **Maska karoserii** (ticket 15, reguły z prototypu `prototype/whole-wheel-resize`,
-     `VERDICT.md`), zaraz po elipsie felgi, na oryginale, przed zwolnieniem SAM 2: karoseria
-     zasłaniająca koło (błotnik, nakładka nadkola), którą od ticketu 16 zmiana rozmiaru całego koła
-     zostawi bit w bit. SAM 2 (`Segmenter.segment_body`, multimask) dostaje punkty dodatnie nad
-     oponą (ρ = 1,45 elipsy opony, 0° i ±30° od pionu), ujemne w środku felgi i na oponie
-     (ρ = 0,88) i — w jednym z dwóch wariantów — ujemne w szczelinie nadkola (tuż za brzegiem maski
-     koła, 0°, ±25°, ±50°); bez nich SAM wciąga wnętrze nadkola do karoserii. Osobno maska wnętrza
-     nadkola (dodatnie w szczelinie, 0° i ±20°, ujemne na błotniku i kole). Kolejność
-     (`body_mask.body_for_resize`): (a) kryteria na **surowych** kandydatach, w wycinku koła: maska
-     pusta, obejmuje > 5% maski koła, > 85% wycinka poza kołem albo < 25% strefy błotnika (ρ
-     1,15–1,6, ±40° od pionu); wygrywa dobry kandydat z najwyższą oceną SAM, najpierw z wariantu
-     z ujemnymi w szczelinie; bez dobrego kandydata najlepszego ze złych nie bierzemy; (b) odjęcie
-     wnętrza nadkola (kandydat bez punktu błotnika, ≤ 5% koła, ≤ 40% wycinka), domknięcie (2% boku
-     koła) i wypełnienie dziur, minus piksele koła; (c) obce zasłonięcie (część elipsy opony poza
-     maską koła i karoserią, np. zderzak innego auta) > 5%. Każdy z tych przypadków kończy zadanie
-     błędem `rim_size_unavailable` (powód tylko w logu workera). Warp jeszcze z maski nie korzysta.
-  5. Model dostaje warpowany wycinek, maskę i prompt jak zwykle. Diagnostyka w katalogu koła:
-     `rim_ellipse.png` (elipsa felgi, krawędź opony i karoseria jako czerwona poświata na
-     wycinku), `body.png` (maska karoserii w wycinku) i `warped.png` (wycinek dla modelu); bez
-     zmian w bazie i w UI.
+  3. **Maska karoserii** (ticket 15, reguły z prototypu), zaraz po elipsie felgi, na oryginale, przed
+     zwolnieniem SAM 2: karoseria zasłaniająca koło (błotnik, nakładka nadkola). SAM 2
+     (`Segmenter.segment_body`, multimask) dostaje punkty dodatnie nad oponą (ρ = 1,45 elipsy opony,
+     0° i ±30° od pionu), ujemne w środku felgi i na oponie (ρ = 0,88) i — w jednym z dwóch wariantów
+     — ujemne w szczelinie nadkola (tuż za brzegiem maski koła, 0°, ±25°, ±50°); bez nich SAM wciąga
+     wnętrze nadkola do karoserii. Osobno maska wnętrza nadkola (dodatnie w szczelinie, 0° i ±20°,
+     ujemne na błotniku i kole). Kolejność (`body_mask.body_for_resize`): (a) kryteria na
+     **surowych** kandydatach, w wycinku koła: maska pusta, obejmuje > 5% maski koła, > 85% wycinka
+     poza kołem albo < 25% strefy błotnika (ρ 1,15–1,6, ±40° od pionu); wygrywa dobry kandydat
+     z najwyższą oceną SAM, najpierw z wariantu z ujemnymi w szczelinie; bez dobrego kandydata
+     najlepszego ze złych nie bierzemy; (b) odjęcie wnętrza nadkola (kandydat bez punktu błotnika,
+     ≤ 5% koła, ≤ 40% wycinka), domknięcie (2% boku koła) i wypełnienie dziur, minus piksele koła;
+     (c) obce zasłonięcie (część elipsy opony poza maską koła i karoserią, np. zderzak innego auta)
+     > 5%. Potem SAM 2 jest zwalniany jak dotąd przed mflux.
+  4. **Nowe koło** (`wheel_resize.resized_geometry`): skala cala z „Obecnej felgi” (`current_rim`,
+     domyślnie 17″): 1″ = dłuższa oś elipsy felgi / (obecna felga + 1,4″) (`inch_px`; 1,4″ to
+     widoczny rant felgi, kołnierz ~17–18 mm z każdej strony; dłuższa oś, bo perspektywa 3/4 skraca
+     tylko jedną). Felga i zewnętrzna krawędź opony rosną o N × cal (dłuższa oś), ten sam obrót
+     i proporcje osi, jednokładność wokół najniższego punktu elipsy opony (`lowest_point`), więc punkt
+     styku stoi także w obróconej elipsie 3/4.
+  5. **Warp całego koła** (`wheel_resize.plan_resize`, na oryginale): odwzorowanie w układzie elipsy
+     nowej opony, ρ = 1 na jej krawędzi, ρ_f = felga: `[0, ρ_f'] → [0, ρ_f]` (felga),
+     `[ρ_f', 1] → [ρ_f, 1]` (bok opony), dalej (bieżnik w 3/4) jednokładność z oponą. Nowa maska koła
+     = stara maska tym samym odwzorowaniem, widoczna tylko poza karoserią; tam wycinek dostaje
+     przeskalowane koło. **Maska edycji** = (stare ∪ nowe koło) poszerzone o `mask_grow`, minus
+     karoseria: to maska modelu i maska kompozycji (zamiast zapisanej maski koła). Wycinek dla modelu
+     jest kwadratem wokół maski edycji (margines 25% jak zwykle), poza maską modelu dokładnie
+     wycinkiem oryginału. Przy zmniejszaniu odsłonięte nadkole (stare koło minus nowe) zostaje
+     w masce edycji z pikselami starej opony, a model je domalowuje (wstępne wypełnienie: ticket 17).
+     Docelowy rozmiar nie jest przycinany ani korygowany; prototyp: przy −2″ sylwetka −1,75″.
+  6. Model dostaje wycinek z kołem w nowym rozmiarze, maskę edycji i prompt jak zwykle. Diagnostyka
+     w katalogu koła: `crop.png` (wycinek oryginału wokół maski edycji), `crop_mask.png` (maska
+     edycji), `rim_ellipse.png` (stara felga i opona na biało, nowa felga na zielono, nowa krawędź
+     opony na żółto, karoseria jako czerwona poświata), `body.png` (maska karoserii w wycinku)
+     i `warped.png` (wycinek dla modelu); bez zmian w bazie i w UI.
 
-  Przy „bez zmian” nie ma pomiaru ani warpu (czas jak dotąd). Felga, której nie da się wyznaczyć
-  (brak kandydata w 45–92% albo ostateczna średnica poza 40–95%), albo zła maska karoserii (wyżej)
-  kończy zadanie błędem `rim_size_unavailable` z podpowiedzią,
-  żeby wygenerować bez zmiany rozmiaru. Cale są przybliżone: z samego zdjęcia nie znamy obecnego
-  rozmiaru felgi, sterujemy proporcją średnicy felgi do średnicy koła. Warp mieści się w elipsie
-  opony i w masce koła, a kompozycja i tak bierze spoza maski koła oryginał, więc gwarancja „bit
-  w bit” poza maską zostaje. Zmiana średnicy całego koła (wejście w nadkole) jest poza zakresem, bo wymaga maski
-  obejmującej karoserię.
+  Przy „bez zmian” nie ma pomiaru, karoserii ani warpu: maska koła z `mask_grow` jak dotąd (czas jak
+  dotąd). Felga, której nie da się wyznaczyć (brak kandydata w 45–92% albo ostateczna średnica poza
+  40–95%), albo zła maska karoserii (wyżej) kończy zadanie błędem `rim_size_unavailable`
+  z podpowiedzią, żeby wygenerować bez zmiany rozmiaru (powód tylko w logu workera). Cale są
+  przybliżone: skala opiera się na podanym rozmiarze obecnej felgi i stałej rantu, niesprawdzonej na
+  zdjęciach ze znanym rozmiarem. Kompozycja bierze spoza maski edycji (w tym całą karoserię) piksele
+  bazy, więc gwarancja „bit w bit” zostaje. Znane zachowanie modelu: w ujęciu 3/4 felga wychodzi
+  mniejsza niż otwór opony już przy „bez zmian” i zmianę rozmiaru felgi oddaje tylko częściowo
+  (sylwetka koła trzyma cel); poza zakresem.
 - **Detektor: Florence-2-large** (`florence-community/Florence-2-large`, fp16 na MPS), zadanie
   `<CAPTION_TO_PHRASE_GROUNDING>` z frazą `wheel`. **Maski: SAM 2.1 hiera-large** (`facebook/sam2.1-hiera-large`
   przez transformers) z promptem box.
@@ -143,7 +154,7 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
    obraz 1-bitowy do L. Wejścia, których PNG wyniku nie odda wiernie (16 bitów na kanał, CMYK itp.),
    są odrzucane przy wgraniu z komunikatem.
 2. **Detekcja kół** (kilka sekund) i maski SAM 2. Użytkownik akceptuje lub koryguje je w UI.
-3. **Maska kompozycji = całe koło** (opona + felga), lekko poszerzona. Prompt każe zachować oponę i zmienić tylko felgę. Opona jest generowana na nowo, ale ma wyglądać prawie identycznie. Dzięki temu nowa felga może mieć inną średnicę wizualną.
+3. **Maska kompozycji = całe koło** (opona + felga), lekko poszerzona. Prompt każe zachować oponę i zmienić tylko felgę. Opona jest generowana na nowo, ale ma wyglądać prawie identycznie. Dzięki temu nowa felga może mieć inną średnicę wizualną. Przy zmianie rozmiaru koła maską jest suma starego i nowego koła (poszerzona) minus karoseria (wyżej, „Rozmiar koła”).
 4. **Każde koło edytujemy osobno:** wycinek oryginału wokół koła (także przy „ponów to koło”) przeskalowany do rozdzielczości roboczej (1024 px, Turbo traci detal poniżej). Wywołanie z `image_paths=[wycinek, felga]` i maską koła, bo maska mflux działa na pierwszej referencji. Rozmiar wyjścia podajemy jawnie (`width`/`height`), bo domyślnie wyznacza go ostatni obraz. Ten sam seed i prompt dla wszystkich kół jednego zdjęcia.
 5. **Kompozycja:** wynik skalujemy z powrotem do rozmiaru wycinka i wklejamy w oryginał (przy „ponów to koło” w bieżący wynik) z wygładzoną krawędzią maski. Piksele poza maską pozostają bit w bit identyczne.
 6. **Wyjście:** zawsze PNG (bezstratny, żeby zachować gwarancję z punktu 5), z profilem ICC (np. Display P3 z iPhone'a) i EXIF bez danych GPS.
@@ -184,11 +195,11 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
   1. Wgranie zdjęcia auta (drag & drop, wklejenie ze schowka).
   2. Automatyczna detekcja kół z nakładką masek. Klik w maskę usuwa ją, a klik w puste miejsce dodaje koło.
   3. Wybór felgi z biblioteki albo wgranie nowej, z podglądem wyciętej felgi do akceptacji. Obok wybór rozmiaru
-     nowej felgi względem obecnej: `−2″ · −1″ · bez zmian · +1″ · +2″` (domyślnie „bez zmian”), wysyłany z „Generuj”
+     nowego koła względem obecnego (felga i opona o tyle samo cali): `−2″ · −1″ · bez zmian · +1″ · +2″` (domyślnie „bez zmian”), wysyłany z „Generuj”
      i walidowany na serwerze. Jedno ustawienie na całe zadanie: wszystkie koła, „ponów” i „ponów to koło”.
      Pod nim pole „Obecna felga” (rozmiar felgi auta na zdjęciu, 14″–22″ co 1″, domyślnie 17″, ticket 14),
-     wysyłane i walidowane tak samo; od ticketu 16 wyznacza skalę cala przy zmianie rozmiaru
-     (1″ = średnica felgi w px / (obecna felga + 1,4″)), a do tego czasu jest tylko zapisywane.
+     wysyłane i walidowane tak samo; wyznacza skalę cala przy zmianie rozmiaru (ticket 16,
+     1″ = średnica felgi w px / (obecna felga + 1,4″)).
   4. „Generuj”: postęp per koło i per krok (polling HTMX co ~1 s), z możliwością anulowania.
   5. Wynik z suwakiem przed/po, przyciskiem „ponów to koło” (inny seed) i pobieraniem PNG. Rozmiar felgi inny
      niż „bez zmian” jest pokazany obok seedów razem z obecną felgą (np. „Felga: +2″ obecna 17″”).

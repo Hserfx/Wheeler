@@ -33,12 +33,12 @@ RESOLUTION_MAX = 1152
 MASK_GROW_MIN = 0.0
 MASK_GROW_MAX = 0.10
 PROMPT_SUFFIX_MAX_LENGTH = 300
-# Rozmiar felgi względem obecnej w calach (plus-sizing, ticket 12), wybierany przed „Generuj”.
+# Rozmiar felgi (i całego koła, ticket 16) względem obecnej w calach, wybierany przed „Generuj”.
 RIM_SIZE_MIN = -2
 RIM_SIZE_MAX = 2
 RIM_SIZES = range(RIM_SIZE_MIN, RIM_SIZE_MAX + 1)
-# Obecny rozmiar felgi auta w calach (pole „Obecna felga”, ticket 14), co 1″; od ticketu 16
-# skala cala przy zmianie rozmiaru: 1″ = średnica felgi w px / (obecna felga + rant 1,4″).
+# Obecny rozmiar felgi auta w calach (pole „Obecna felga”, ticket 14), co 1″; skala cala przy
+# zmianie rozmiaru (ticket 16): 1″ = średnica felgi w px / (obecna felga + rant 1,4″).
 CURRENT_RIM_MIN = 14
 CURRENT_RIM_MAX = 22
 CURRENT_RIMS = range(CURRENT_RIM_MIN, CURRENT_RIM_MAX + 1)
@@ -55,7 +55,7 @@ class EditParams:
     # Dopisek użytkownika doklejany na końcu szablonu promptu.
     prompt_suffix: str = ""
     # Średnica nowej felgi względem obecnej w calach (0 = bez zmian); zewnętrzna średnica koła
-    # zostaje, więc zmienia się profil opony.
+    # zmienia się o tyle samo (ta sama opona, ticket 16).
     rim_size: int = 0
     # Obecny rozmiar felgi auta w calach (brak klucza = 17″).
     current_rim: int = DEFAULT_CURRENT_RIM

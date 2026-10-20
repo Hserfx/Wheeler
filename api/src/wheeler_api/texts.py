@@ -132,16 +132,16 @@ TEXTS: Final[dict[str, str]] = {
         "Wybierz felgę z biblioteki albo dodaj nową (sprawdzisz ją przed dodaniem). "
         "Felgę trzeba wybrać przed „Generuj”; możesz to zrobić już w trakcie wykrywania kół."
     ),
-    # Rozmiar felgi (plus-sizing, ticket 12)
+    # Rozmiar felgi (tickety 12 i 16): rośnie całe koło
     "rim_size_heading": "Rozmiar felgi",
     "rim_size_hint": (
-        "Średnica nowej felgi względem obecnej. Zewnętrzna średnica koła zostaje: większa "
-        "felga oznacza niższy profil opony, mniejsza wyższy. Cale są przybliżone."
+        "Nowa felga względem obecnej, z tą samą oponą: całe koło rośnie albo maleje o tyle "
+        "cali i chowa się za błotnikiem, a styk z ziemią zostaje. Cale są przybliżone."
     ),
     "rim_size_unchanged": "bez zmian",
     "rim_size_inches": "{sign}{inches}″",
     "result_rim_size": "Felga: {size}",
-    # Obecna felga (ticket 14): skala cala przy zmianie rozmiaru (od ticketu 16)
+    # Obecna felga (ticket 14): skala cala przy zmianie rozmiaru (ticket 16)
     "current_rim_label": "Obecna felga",
     "current_rim_hint": (
         "Rozmiar felgi auta na zdjęciu (np. R17 z boku opony). Gdy go nie znasz, zostaw 17″."

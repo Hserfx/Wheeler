@@ -1,7 +1,8 @@
-"""Rozmiar felgi sterowany geometrią (plus-sizing, ticket 12): elipsa felgi i radialny warp.
+"""Elipsa felgi i krawędź opony koła (ticket 12): pomiar przed zmianą rozmiaru koła.
 
 Sam prompt rozmiaru model ignoruje (trzyma geometrię wycinka), więc przy stopniu ≠ 0 worker
-przeskalowuje felgę w wycinku, zanim ten trafi do modelu (prototyp `prototype/plus-sizing-warp`).
+mierzy felgę i oponę (SAM 2 + ten moduł), a `wheel_resize` zmienia rozmiar koła w wycinku,
+zanim ten trafi do modelu (ticket 16).
 
 Czysty numpy + OpenCV, bez modeli. Układ: piksele obrazu, elipsy jak w `cv2.fitEllipse`.
 """
@@ -19,10 +20,6 @@ import numpy.typing as npt
 from PIL import Image
 
 from wheeler_worker.compositing import mask_box
-
-# Zmiana średnicy felgi na cal stopnia jako ułamek średnicy koła (zewnętrznej krawędzi opony).
-# Cale są przybliżone: obecnego rozmiaru felgi nie znamy, sterujemy proporcją felga/koło.
-RIM_FRACTION_PER_INCH = 0.04
 
 # Średnica felgi (pionowa, jak w ujęciu 3/4 nie zawyża jej bieżnik) jako ułamek wysokości maski
 # koła. Kandydata SAM wybieramy tylko z tego zakresu (reguła z rozpoznania, `rim_ellipse/NOTES.md`):
@@ -122,37 +119,6 @@ def wheel_ellipse(wheel_mask: Image.Image) -> Ellipse | None:
         return None
     center_x, center_y = (box.left + box.right - 1) / 2, (box.top + box.bottom - 1) / 2
     return Ellipse(center_x, center_y, box.width, box.height, 0.0)
-
-
-def warp_rim(image: Image.Image, geometry: RimGeometry, *, rim_size: int) -> Image.Image:
-    """Felga większa albo mniejsza o `rim_size` cali, zewnętrzna krawędź opony bez zmian.
-
-    Radialnie w układzie elipsy opony (rho = 1 na zewnętrznej krawędzi opony), rho_f = felga,
-    rho_c = rho_f + `rim_size` * 4%: [0, rho_f] -> [0, rho_c] liniowo (felga),
-    [rho_f, 1] -> [rho_c, 1] liniowo (bok opony), rho ≥ 1 bez zmian (piksele bit w bit).
-    Docelowego rozmiaru nie przycinamy ani nie korygujemy. `geometry` w pikselach `image`;
-    wynik RGB.
-    """
-    rgb = np.asarray(image.convert("RGB"))
-    height, width = rgb.shape[:2]
-    tire = geometry.tire
-    ys, xs = np.mgrid[0:height, 0:width].astype(np.float32)
-    rho = tire.radius(xs, ys)
-    rho_rim = 1 / geometry.tire_ratio
-    rho_new = rho_rim + rim_size * RIM_FRACTION_PER_INCH
-    # Odwzorowanie odwrotne (cel -> źródło), jak wymaga `cv2.remap`.
-    source = np.where(
-        rho < rho_new,
-        rho * rho_rim / rho_new,
-        rho_rim + (rho - rho_new) * (1 - rho_rim) / (1 - rho_new),
-    )
-    # Promień skaluje wektor od środka liniowo, więc obrót elipsy nie wymaga osobnego układu.
-    scale = np.divide(source, rho, out=np.ones_like(rho), where=rho > 1e-6)
-    map_x = (tire.cx + (xs - tire.cx) * scale).astype(np.float32)
-    map_y = (tire.cy + (ys - tire.cy) * scale).astype(np.float32)
-    warped = cv2.remap(rgb, map_x, map_y, cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REFLECT)
-    inside = rho < 1
-    return Image.fromarray(np.where(inside[..., None], warped, rgb))
 
 
 def measure_rim(wheel_mask: Image.Image, candidates: Sequence[RimCandidate]) -> RimGeometry | None:
@@ -298,10 +264,22 @@ def wheel_rays(
     )
 
 
-def outline_rim(image: Image.Image, geometry: RimGeometry) -> Image.Image:
-    """Obraz diagnostyczny: elipsa felgi (zielona) i zewnętrzna krawędź opony (żółta)."""
+# Kolory diagnostyki (RGB): felga, krawędź opony.
+RIM_COLOR = (0, 255, 0)
+TIRE_COLOR = (255, 220, 0)
+
+
+def outline_rim(
+    image: Image.Image,
+    geometry: RimGeometry,
+    *,
+    rim_color: tuple[int, int, int] = RIM_COLOR,
+    tire_color: tuple[int, int, int] = TIRE_COLOR,
+) -> Image.Image:
+    """Obraz diagnostyczny: elipsa felgi (domyślnie zielona) i zewnętrzna krawędź opony
+    (domyślnie żółta)."""
     rgb = np.array(image.convert("RGB"))  # kopia zapisywalna dla cv2
     thickness = max(1, image.width // 300)
-    cv2.ellipse(rgb, geometry.rim.as_cv2(), (0, 255, 0), thickness)
-    cv2.ellipse(rgb, geometry.tire.as_cv2(), (255, 220, 0), thickness)
+    cv2.ellipse(rgb, geometry.rim.as_cv2(), rim_color, thickness)
+    cv2.ellipse(rgb, geometry.tire.as_cv2(), tire_color, thickness)
     return Image.fromarray(rgb)

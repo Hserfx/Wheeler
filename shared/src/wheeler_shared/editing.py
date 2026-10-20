@@ -59,7 +59,8 @@ def click_photo(
     miejscu dodaje nowe koło i zleca workerowi wyznaczenie jego maski (SAM 2).
 
     Przy nakładających się maskach usuwane jest koło dodane najpóźniej (rysowane na wierzchu).
-    Pliki usuniętych masek zostają w katalogu zadania do jego usunięcia.
+    Dodanie koła (praca workera) czyści komunikat błędu, usunięcie czyści tylko błąd maski
+    albo detekcji. Pliki usuniętych masek zostają w katalogu zadania do jego usunięcia.
     """
     job = _lock_draft(session, job_id)
     hit = next(
@@ -72,7 +73,9 @@ def click_photo(
     )
     if hit is not None:
         job.wheels.remove(hit)
-        job.error = None
+        if job.task != TaskKind.GENERATE:
+            # Błąd maski/detekcji znika; błąd generowania wisi do kolejnego „Generuj”.
+            job.error = None
         return
     wheel = Wheel(source=WheelSource.CLICK)
     wheel.click = point

@@ -138,7 +138,7 @@ def test_failed_segmentation_lets_user_click_again(
     click_wheel(client, job_id)
 
 
-def test_failure_in_generation_marks_job_failed_with_error_on_page(
+def test_failure_in_generation_returns_to_draft_with_error_on_page(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
     class BrokenEditor(SolidEditor):
@@ -156,7 +156,7 @@ def test_failure_in_generation_marks_job_failed_with_error_on_page(
     assert run_once(session_factory, storage, processor)
 
     status = client.get(f"/jobs/{job_id}/status").text
-    assert TEXTS["status_failed"] in status
+    assert TEXTS["status_draft"] in status  # ticket 14: szkic z błędem, nie `failed`
     # Wyjątek biblioteki trafia do logu workera, a UI pokazuje polski komunikat.
     assert TEXTS["failure_internal"] in status
     assert "model się wyłożył" not in status and "RuntimeError" not in status

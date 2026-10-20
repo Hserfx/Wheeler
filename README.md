@@ -52,7 +52,8 @@ Zadanie (`Job`) przechodzi przez kroki użytkownika (status `draft`) i pracę wo
 wgranie auta -> detect (Florence-2 + SAM 2) -> draft z maskami wykrytych kół (nakładki)
 draft --klik w maskę---------> draft (koło usunięte od razu, bez workera)
 draft --klik obok masek------> segment (SAM 2) -> draft z dodanym kołem
-draft --felga + „Generuj”----> generate (mflux, każde koło osobno, ten sam seed i prompt) -> done | failed | cancelled
+draft --felga + „Generuj”----> generate (mflux, każde koło osobno, ten sam seed i prompt) -> done | cancelled
+                               | draft z błędem (nieudane: zdjęcie, koła, felga i seed zostają)
 done --„Ponów to koło”-------> regenerate_wheel (jedno koło, nowy seed) -> done (błąd/anulowanie: poprzedni wynik)
 ```
 
@@ -110,10 +111,16 @@ done --„Ponów to koło”-------> regenerate_wheel (jedno koło, nowy seed) -
   `RimEditor.edit(on_step=...)`). Runner zapisuje go w `Job.progress` i przy okazji czyta
   `Job.cancel_requested`; ustawiona flaga przerywa pracę wyjątkiem `JobCancelled` (najpóźniej po
   bieżącym kroku), a zadanie dostaje status `cancelled`. Zadanie w kolejce jest anulowane od razu.
-- Awaria lub restart workera: przy starcie worker oznacza zadania `running` jako `failed`
-  (`recover_interrupted_jobs`; detekcja i segmentacja wracają do szkicu, wycinane felgi dostają `failed`), bez automatycznych ponowień. Zakłada
-  jeden proces workera. „Ponów” (`wheeler_shared/retry.py`) tworzy nowe zadanie z kopiami plików,
-  tymi samymi kołami i parametrami (z seedem) i od razu wstawia je do kolejki.
+- Nieudane generowanie (`queue.fail_job`, ticket 14) wraca do szkicu z `Job.error`: zdjęcie,
+  koła, felga i parametry (z seedem) zostają, ponowne „Generuj” czyści błąd. Przy
+  `rim_size_unavailable` klucz `rim_size` znika z `Job.params` („bez zmian”). Status `failed`
+  mają już tylko zadania sprzed tej zmiany (bez migracji).
+- Awaria lub restart workera: przy starcie worker kończy zadania `running` jak po błędzie
+  `interrupted` (`recover_interrupted_jobs`: generowanie, detekcja i segmentacja wracają do
+  szkicu, wycinane felgi dostają `failed`), bez automatycznych ponowień. Zakłada jeden proces
+  workera. „Ponów” (`wheeler_shared/retry.py`, dla zadań `cancelled` i dawnych `failed`) tworzy
+  nowe zadanie z kopiami plików, tymi samymi kołami i parametrami (z seedem) i od razu wstawia je
+  do kolejki.
 - Biblioteka felg (`wheeler_shared/rim_library.py`, UI: fragment `_rim_picker.html` na stronie
   zadania (przed „Generuj”) i na `/rims`, trasy w `wheeler_api/rim_routes.py`). Felga (`Rim`) ma
   własną kolejkę w tabeli `rims`, obsługiwaną przez worker przed zadaniami (`runner._cut_next_rim`,

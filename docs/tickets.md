@@ -490,14 +490,32 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
 
 **Blocked by:** 12
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Każdy błąd generowania (`rim_size_unavailable`, `rim_not_found`, `empty_mask`, `no_rim`, `internal`, także `interrupted` po restarcie workera) przestawia zadanie na `draft` z ustawionym `Job.error`, bez `finished_at`; generowanie nie kończy się już statusem `failed`
-- [ ] W szkicu po nieudanym generowaniu działają wybór felgi, wybór rozmiaru i klikanie kół jak w zwykłym szkicu; komunikat błędu jest widoczny na stronie zadania do kolejnego „Generuj” (które go czyści)
-- [ ] Ponowne „Generuj” używa seeda zapisanego przy pierwszej próbie
-- [ ] Przy `rim_size_unavailable` rozmiar felgi zostaje usunięty z parametrów zadania (brak klucza = „bez zmian”), więc formularz zaznacza „bez zmian”, a szczegóły zadania nie pokazują rozmiaru, który nie zadziałał
-- [ ] Nowy tekst `rim_size_unavailable`: „Nie udało się wyznaczyć felgi na jednym z kół, więc nie da się zmienić jej rozmiaru. Rozmiar ustawiono na „bez zmian” — kliknij „Generuj” albo wybierz inną felgę.”
-- [ ] Bez zmian: anulowane generowanie zostaje `cancelled` z „Ponów”; nieudane „Ponów to koło” wraca do poprzedniego wyniku; nieudana detekcja/maska wraca do szkicu jak dotąd; w Historii zadanie po nieudanym generowaniu ma status „Szkic” (bez osobnej etykiety)
-- [ ] Istniejące zadania `failed` (w tym `legacy_job`) zostają bez migracji, z „Ponów” jak dotąd
-- [ ] Testy: błąd generowania → szkic z błędem i zachowanymi danymi; `rim_size_unavailable` → „bez zmian” w formularzu i parametrach; przerwane generowanie przy starcie workera → szkic; anulowanie nadal `cancelled`; ponowne „Generuj” z tego szkicu trafia do kolejki z tym samym seedem
-- [ ] DESIGN.md opisuje nowe zachowanie po nieudanym generowaniu
+- [x] Każdy błąd generowania (`rim_size_unavailable`, `rim_not_found`, `empty_mask`, `no_rim`, `internal`, także `interrupted` po restarcie workera) przestawia zadanie na `draft` z ustawionym `Job.error`, bez `finished_at`; generowanie nie kończy się już statusem `failed`
+- [x] W szkicu po nieudanym generowaniu działają wybór felgi, wybór rozmiaru i klikanie kół jak w zwykłym szkicu; komunikat błędu jest widoczny na stronie zadania do kolejnego „Generuj” (które go czyści)
+- [x] Ponowne „Generuj” używa seeda zapisanego przy pierwszej próbie
+- [x] Przy `rim_size_unavailable` rozmiar felgi zostaje usunięty z parametrów zadania (brak klucza = „bez zmian”), więc formularz zaznacza „bez zmian”, a szczegóły zadania nie pokazują rozmiaru, który nie zadziałał
+- [x] Nowy tekst `rim_size_unavailable`: „Nie udało się wyznaczyć felgi na jednym z kół, więc nie da się zmienić jej rozmiaru. Rozmiar ustawiono na „bez zmian” — kliknij „Generuj” albo wybierz inną felgę.”
+- [x] Bez zmian: anulowane generowanie zostaje `cancelled` z „Ponów”; nieudane „Ponów to koło” wraca do poprzedniego wyniku; nieudana detekcja/maska wraca do szkicu jak dotąd; w Historii zadanie po nieudanym generowaniu ma status „Szkic” (bez osobnej etykiety)
+- [x] Istniejące zadania `failed` (w tym `legacy_job`) zostają bez migracji, z „Ponów” jak dotąd
+- [x] Testy: błąd generowania → szkic z błędem i zachowanymi danymi; `rim_size_unavailable` → „bez zmian” w formularzu i parametrach; przerwane generowanie przy starcie workera → szkic; anulowanie nadal `cancelled`; ponowne „Generuj” z tego szkicu trafia do kolejki z tym samym seedem
+- [x] DESIGN.md opisuje nowe zachowanie po nieudanym generowaniu
+
+**Comments:**
+
+- 2026-10-20 (agent): zrobione na gałęzi `ticket-14-draft`. Jedno miejsce decyzji: `queue.fail_job`
+  (`wheeler_shared/queue.py`) — wszystko poza `regenerate_wheel` wraca do `draft` z `Job.error`, bez
+  `finished_at`; przy `Failure.RIM_SIZE_UNAVAILABLE` usuwa klucz `rim_size` z `Job.params`. Przerwane generowanie
+  przechodzi tą samą ścieżką (`fail_interrupted_jobs` → `fail_job(interrupted)`, `runner.recover_interrupted_jobs`).
+  Seed z pierwszej próby zostaje bez nowego kodu (`editing.start_generation` nie nadpisuje zapisanego seeda),
+  a `enqueue` przy „Generuj” czyści błąd. Strona zadania nie wymagała zmian w szablonach: szkic z `task=generate`
+  pokazuje komunikat gałęzią `job_error`, wybór felgi i rozmiaru (`can_choose_rim`), edycję kół i formularz.
+  Tekst `failure_rim_size_unavailable` w `wheeler_api/texts.py`. `JobStatus.FAILED` i „Ponów” (`retry.py`) bez
+  zmian, dla zadań `cancelled` i dawnych `failed`. Testy: `tests/test_failed_generation.py`; poprawione
+  `test_progress_cancel.py` (przerwane generowanie → szkic; test „Ponów” z kopiowaniem danych działa teraz na
+  zadaniu anulowanym w trakcie generowania), `test_rim_size.py`, `test_upload_flow.py`. Odstępstwo/doprecyzowanie
+  „komunikat do kolejnego Generuj”: usunięcie koła kliknięciem nie czyści już błędu generowania
+  (`editing.click_photo` czyści tylko błąd maski/detekcji), ale dodanie koła zleca workerowi maskę (`enqueue`
+  segmentacji), więc komunikat znika i zastępuje go stan tej pracy — trzymanie go dalej wymagałoby osobnego pola
+  na pochodzenie błędu (szablon wybiera prefiks komunikatu po `Job.task`).

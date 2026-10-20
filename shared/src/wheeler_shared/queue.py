@@ -18,6 +18,7 @@ from typing import Any
 from sqlalchemy import ColumnElement, and_, case, func, literal, or_, select, tuple_, update
 from sqlalchemy.orm import Session
 
+from wheeler_shared import edit_params
 from wheeler_shared.db import utcnow
 from wheeler_shared.failures import Failure
 from wheeler_shared.models import (
@@ -250,29 +251,29 @@ def _back_to_result(job: Job) -> None:
 def fail_job(session: Session, job_id: int, *, error: Failure) -> None:
     """Błąd pracy workera (`error`: kod przyczyny, tekst w UI z `texts.failure_text`).
 
-    Nieudana detekcja albo segmentacja wraca do szkicu (można kliknąć koło), nieudane
-    ponowienie koła wraca do poprzedniego wyniku (`done` z błędem), nieudane generowanie
-    kończy zadanie statusem `failed`."""
+    Nieudane ponowienie koła wraca do poprzedniego wyniku (`done` z błędem). Każda inna
+    nieudana praca wraca do szkicu z błędem: po detekcji albo segmentacji można kliknąć koło,
+    po generowaniu (ticket 14) zdjęcie, koła, felga i parametry (w tym seed) zostają do
+    ponownego „Generuj”. Rozmiaru felgi, którego nie dało się zastosować
+    (`rim_size_unavailable`), nie zostawiamy: brak klucza = „bez zmian”."""
     job = session.get_one(Job, job_id)
     job.error = error
     if job.task == TaskKind.REGENERATE_WHEEL:
         _back_to_result(job)
         return
-    if job.task in (TaskKind.SEGMENT, TaskKind.DETECT):
-        job.status = JobStatus.DRAFT
-        for wheel in [w for w in job.wheels if w.mask_path is None]:
-            job.wheels.remove(wheel)
-        return
-    job.status = JobStatus.FAILED
-    job.finished_at = utcnow()
+    if error == Failure.RIM_SIZE_UNAVAILABLE:
+        job.params = {k: v for k, v in job.params.items() if k != edit_params.RIM_SIZE}
+    job.status = JobStatus.DRAFT
+    for wheel in [w for w in job.wheels if w.mask_path is None]:
+        job.wheels.remove(wheel)
 
 
 def fail_interrupted_jobs(session: Session) -> list[int]:
     """Przy starcie workera: zadania `running` zostały przerwane przez awarię albo restart.
 
-    Nie wracają do kolejki (bez automatycznych ponowień): generowanie dostaje `failed`
-    (albo `cancelled`, jeśli użytkownik zdążył je anulować), detekcja i wyznaczanie maski
-    wracają do szkicu jak po błędzie (`fail_job`). Zakłada jeden proces workera (jedno GPU).
+    Nie wracają do kolejki (bez automatycznych ponowień): kończą się jak po błędzie
+    `interrupted` (`fail_job`: szkic, a ponowienie koła wraca do poprzedniego wyniku) albo
+    `cancelled`, jeśli użytkownik zdążył je anulować. Zakłada jeden proces workera (jedno GPU).
     """
     jobs = session.scalars(
         select(Job).where(Job.status == JobStatus.RUNNING).order_by(Job.id).with_for_update()

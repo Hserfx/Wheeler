@@ -18,7 +18,8 @@ class Failure(enum.StrEnum):
     EMPTY_MASK = "empty_mask"  # maska koła do generowania jest pusta
     RIM_NOT_FOUND = "rim_not_found"  # na zdjęciu felgi nie znaleziono felgi
     NO_RIM = "no_rim"  # generowanie bez wybranej felgi
-    # Zmiana rozmiaru felgi (ticket 12): SAM 2 nie wyznaczył felgi na którymś kole.
+    # Zmiana rozmiaru felgi (tickety 12, 15): SAM 2 nie wyznaczył felgi na którymś kole, maska
+    # karoserii przy nim jest zła albo koło zasłania coś obcego (`body_mask`).
     RIM_SIZE_UNAVAILABLE = "rim_size_unavailable"
     # Tryb pikseli, którego wynik nie odda bit w bit (`photo_modes`; wgranie go odrzuca).
     UNSUPPORTED_PHOTO = "unsupported_photo"

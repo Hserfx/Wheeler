@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import re
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
 import numpy as np
 import pytest
-from fake_models import BoxDetector, DiscSegmenter, SolidEditor, disc_mask
+from fake_models import BodyFake, BoxDetector, DiscSegmenter, SolidEditor, disc_mask, fender_mask
 from fastapi.testclient import TestClient
 from helpers import click_wheel, drain, jpeg, upload, upload_photo, wheel_photo
 from PIL import Image
@@ -25,6 +26,7 @@ from wheeler_api.texts import PARAM_LABELS, TEXTS
 from wheeler_shared import edit_params
 from wheeler_shared.failures import Failure, ProcessingFailed
 from wheeler_shared.storage import Storage
+from wheeler_worker.body_mask import BodyMaskProblem
 from wheeler_worker.processing import GenerateItem, RegenerateWheelItem, SegmentItem
 from wheeler_worker.rim_geometry import Ellipse
 from wheeler_worker.wheel_swap import WheelSwapProcessor, build_prompt
@@ -69,8 +71,10 @@ class _Fakes(NamedTuple):
     processor: WheelSwapProcessor
 
 
-def _fakes(rim_radius: int | None = RIM_RADIUS) -> _Fakes:
+def _fakes(rim_radius: int | None = RIM_RADIUS, body: BodyFake | None = None) -> _Fakes:
     segmenter = DiscSegmenter(radius=TIRE_RADIUS, rim_radius=rim_radius)
+    if body is not None:
+        segmenter.body = body
     editor = SolidEditor(echo=True)
     processor = WheelSwapProcessor(detector=BoxDetector(), segmenter=segmenter, editor=editor)
     return _Fakes(segmenter, editor, processor)
@@ -90,12 +94,18 @@ def _model_rim_radius(crop: Image.Image) -> float:
 class _Wheel:
     """Zdjęcie z jednym kołem i jego maską, procesor z atrapami (`_fakes`)."""
 
-    def __init__(self, tmp_path: Path, *, rim_radius: int | None = RIM_RADIUS) -> None:
+    def __init__(
+        self,
+        tmp_path: Path,
+        *,
+        rim_radius: int | None = RIM_RADIUS,
+        body: BodyFake | None = None,
+    ) -> None:
         self.out = tmp_path
         self.photo = _wheel_photo(tmp_path / "input.png")
         self.rim = tmp_path / "rim.png"
         Image.new("RGB", (60, 60), (200, 20, 20)).save(self.rim)
-        self.segmenter, self.editor, self.processor = _fakes(rim_radius)
+        self.segmenter, self.editor, self.processor = _fakes(rim_radius, body)
         self.mask = (
             self.processor.segment(
                 SegmentItem(
@@ -165,7 +175,8 @@ def test_rim_is_resized_only_inside_the_wheel_mask_the_model_edits(tmp_path: Pat
     # „SAM 2” widzi felgę 45 px w kole 50 px: profil opony (1,11) poza zakresem, więc typowe
     # k = 1,32 i krawędź opony (59 px) wychodzi poza maskę koła (50 px + 3%). Poza maską model
     # nie może zobaczyć przeskalowanego boku opony, bo kompozycja i tak go odetnie (szew).
-    wheel = _Wheel(tmp_path, rim_radius=45)
+    # Nakładka nadkola (karoseria) otacza koło do 62 px, więc opona nie jest obco zasłonięta.
+    wheel = _Wheel(tmp_path, rim_radius=45, body=_with_arch_trim)
 
     wheel.generate(2)
 
@@ -178,7 +189,9 @@ def test_rim_is_resized_only_inside_the_wheel_mask_the_model_edits(tmp_path: Pat
     assert np.array_equal(model_crop[outside], plain[outside])
 
 
-def test_sam_measures_the_rim_and_is_released_before_mflux_runs(tmp_path: Path) -> None:
+def test_sam_measures_the_rim_and_the_body_and_is_released_before_mflux_runs(
+    tmp_path: Path,
+) -> None:
     # SAM 2 (~3 GB) i mflux (szczyt ~27 GB) nie mieszczą się razem w 32 GB: pomiar felgi musi
     # się skończyć, a SAM zostać zwolniony, zanim ruszy model edycji.
     wheel = _Wheel(tmp_path)
@@ -187,7 +200,7 @@ def test_sam_measures_the_rim_and_is_released_before_mflux_runs(tmp_path: Path) 
 
     wheel.generate(1)
 
-    assert sam_at_mflux_steps == [["rim", "release"]]
+    assert sam_at_mflux_steps == [["rim", "body", "release"]]
 
 
 def test_unchanged_rim_size_sends_the_plain_crop_without_measuring_the_rim(
@@ -199,8 +212,9 @@ def test_unchanged_rim_size_sends_the_plain_crop_without_measuring_the_rim(
 
     [call] = wheel.editor.calls
     assert _model_rim_radius(call.images[0]) == pytest.approx(RIM_RADIUS, abs=1)
-    assert wheel.segmenter.rim_photos == []
+    assert wheel.segmenter.rim_photos == wheel.segmenter.body_photos == []
     assert not (tmp_path / "wheels/7/rim_ellipse.png").exists()
+    assert not (tmp_path / "wheels/7/body.png").exists()
     assert not (tmp_path / "wheels/7/warped.png").exists()
 
 
@@ -216,7 +230,9 @@ def test_regenerated_wheel_is_cropped_and_measured_from_the_original_not_resized
     assert _model_rim_radius(regenerated.images[0]) == pytest.approx(39, abs=1)
     assert np.array_equal(np.asarray(regenerated.images[0]), np.asarray(generated.images[0]))
     original = np.asarray(Image.open(wheel.photo))
-    assert all(np.array_equal(np.asarray(photo), original) for photo in wheel.segmenter.rim_photos)
+    measured = [*wheel.segmenter.rim_photos, *wheel.segmenter.body_photos]
+    assert len(measured) == 4  # felga i karoseria przy generowaniu i przy „Ponów to koło”
+    assert all(np.array_equal(np.asarray(photo), original) for photo in measured)
     # Składanie na bieżącym wyniku: poza maską koła wynik zostaje jak był.
     outside = np.asarray(Image.open(wheel.mask)) == 0
     assert np.array_equal(
@@ -237,6 +253,90 @@ def test_unmeasurable_rim_fails_the_job_before_the_model_runs(
         wheel.generate(1)
 
     assert failed.value.failure == Failure.RIM_SIZE_UNAVAILABLE
+    assert wheel.editor.calls == []
+
+
+def _with_arch_trim(photo: Image.Image, wheel: Image.Image) -> Image.Image:
+    """Karoseria: błotnik nad kołem i nakładka nadkola otaczająca koło (51-62 px od środka)."""
+    trim = (np.asarray(disc_mask(photo.size, WHEEL, 62)) > 0) & ~(
+        np.asarray(disc_mask(photo.size, WHEEL, 51)) > 0
+    )
+    fender = np.asarray(fender_mask(wheel)) > 0
+    return Image.fromarray((trim | fender).astype(np.uint8) * 255)
+
+
+def test_good_body_mask_lets_the_resize_through_and_lands_in_the_wheel_diagnostics(
+    tmp_path: Path,
+) -> None:
+    wheel = _Wheel(tmp_path)
+
+    wheel.generate(2)
+
+    assert len(wheel.editor.calls) == 1
+    [measured] = wheel.segmenter.body_photos  # na oryginale, przed mflux
+    assert np.array_equal(np.asarray(measured), np.asarray(Image.open(wheel.photo)))
+    # Maska karoserii w wycinku koła (rozmiar wycinka sprzed skalowania, jak `rim_ellipse.png`):
+    # błotnik nad kołem, bez pikseli koła.
+    with Image.open(tmp_path / "wheels/7/body.png") as body_file:
+        body = np.asarray(body_file.convert("L")) > 0
+    with Image.open(tmp_path / "wheels/7/rim_ellipse.png") as outline:
+        assert body.shape == (outline.height, outline.width)
+    assert body[:10].all() and not body[-40:].any()
+
+
+def _empty(photo: Image.Image, wheel: Image.Image) -> Image.Image:
+    return Image.new("L", photo.size, 0)
+
+
+def _car_with_wheels(photo: Image.Image, wheel: Image.Image) -> Image.Image:
+    both = (np.asarray(fender_mask(wheel)) > 0) | (np.asarray(wheel) > 0)
+    return Image.fromarray(both.astype(np.uint8) * 255)
+
+
+def _everything_but_wheel(photo: Image.Image, wheel: Image.Image) -> Image.Image:
+    return Image.fromarray(((np.asarray(wheel) == 0) * 255).astype(np.uint8))
+
+
+def _sill(photo: Image.Image, wheel: Image.Image) -> Image.Image:
+    sill = Image.new("L", photo.size, 0)
+    sill.paste(255, (80, 175, 120, 195))  # w wycinku obok koła, nie błotnik nad nadkolem
+    return sill
+
+
+@pytest.mark.parametrize(
+    ("body", "problem"),
+    [
+        (_empty, BodyMaskProblem.EMPTY),
+        (_car_with_wheels, BodyMaskProblem.COVERS_WHEEL),
+        (_everything_but_wheel, BodyMaskProblem.COVERS_CROP),
+        (_sill, BodyMaskProblem.MISSES_ARCH),
+    ],
+)
+def test_bad_body_mask_fails_the_job_before_the_model_runs(
+    tmp_path: Path,
+    body: Callable[[Image.Image, Image.Image], Image.Image],
+    problem: BodyMaskProblem,
+) -> None:
+    wheel = _Wheel(tmp_path, body=body)
+
+    with pytest.raises(ProcessingFailed) as failed:
+        wheel.generate(1)
+
+    assert failed.value.failure == Failure.RIM_SIZE_UNAVAILABLE
+    assert problem.value in str(failed.value)  # powód w logu workera
+    assert wheel.editor.calls == []
+
+
+def test_tire_hidden_by_something_other_than_the_body_fails_the_job(tmp_path: Path) -> None:
+    # „SAM 2” widzi felgę 45 px w kole 50 px: typowe k = 1,32 daje oponę 59 px, a pierścień
+    # 50-59 px nie należy ani do koła, ani do karoserii (np. zderzak innego auta przed kołem).
+    wheel = _Wheel(tmp_path, rim_radius=45)
+
+    with pytest.raises(ProcessingFailed) as failed:
+        wheel.generate(-1)
+
+    assert failed.value.failure == Failure.RIM_SIZE_UNAVAILABLE
+    assert BodyMaskProblem.FOREIGN_OCCLUSION.value in str(failed.value)
     assert wheel.editor.calls == []
 
 

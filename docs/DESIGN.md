@@ -92,12 +92,30 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
      (krawędź opony = felga × k potrafi z maski wyjść, a kompozycja i tak by ją odcięła — szew).
      Docelowy rozmiar nie jest przycinany ani korygowany. Znane zachowanie: przy zmniejszaniu
      model częściowo wraca do oryginału (prototyp: −2″ dało ≈ −1,3″); tego nie korygujemy.
-  4. Model dostaje warpowany wycinek, maskę i prompt jak zwykle. Diagnostyka w katalogu koła:
-     `rim_ellipse.png` (elipsa felgi i krawędź opony na wycinku) i `warped.png` (wycinek dla modelu);
-     bez zmian w bazie i w UI.
+  4. **Maska karoserii** (ticket 15, reguły z prototypu `prototype/whole-wheel-resize`,
+     `VERDICT.md`), zaraz po elipsie felgi, na oryginale, przed zwolnieniem SAM 2: karoseria
+     zasłaniająca koło (błotnik, nakładka nadkola), którą od ticketu 16 zmiana rozmiaru całego koła
+     zostawi bit w bit. SAM 2 (`Segmenter.segment_body`, multimask) dostaje punkty dodatnie nad
+     oponą (ρ = 1,45 elipsy opony, 0° i ±30° od pionu), ujemne w środku felgi i na oponie
+     (ρ = 0,88) i — w jednym z dwóch wariantów — ujemne w szczelinie nadkola (tuż za brzegiem maski
+     koła, 0°, ±25°, ±50°); bez nich SAM wciąga wnętrze nadkola do karoserii. Osobno maska wnętrza
+     nadkola (dodatnie w szczelinie, 0° i ±20°, ujemne na błotniku i kole). Kolejność
+     (`body_mask.body_for_resize`): (a) kryteria na **surowych** kandydatach, w wycinku koła: maska
+     pusta, obejmuje > 5% maski koła, > 85% wycinka poza kołem albo < 25% strefy błotnika (ρ
+     1,15–1,6, ±40° od pionu); wygrywa dobry kandydat z najwyższą oceną SAM, najpierw z wariantu
+     z ujemnymi w szczelinie; bez dobrego kandydata najlepszego ze złych nie bierzemy; (b) odjęcie
+     wnętrza nadkola (kandydat bez punktu błotnika, ≤ 5% koła, ≤ 40% wycinka), domknięcie (2% boku
+     koła) i wypełnienie dziur, minus piksele koła; (c) obce zasłonięcie (część elipsy opony poza
+     maską koła i karoserią, np. zderzak innego auta) > 5%. Każdy z tych przypadków kończy zadanie
+     błędem `rim_size_unavailable` (powód tylko w logu workera). Warp jeszcze z maski nie korzysta.
+  5. Model dostaje warpowany wycinek, maskę i prompt jak zwykle. Diagnostyka w katalogu koła:
+     `rim_ellipse.png` (elipsa felgi, krawędź opony i karoseria jako czerwona poświata na
+     wycinku), `body.png` (maska karoserii w wycinku) i `warped.png` (wycinek dla modelu); bez
+     zmian w bazie i w UI.
 
   Przy „bez zmian” nie ma pomiaru ani warpu (czas jak dotąd). Felga, której nie da się wyznaczyć
-  (brak kandydata w 45–92% albo ostateczna średnica poza 40–95%), kończy zadanie błędem `rim_size_unavailable` z podpowiedzią,
+  (brak kandydata w 45–92% albo ostateczna średnica poza 40–95%), albo zła maska karoserii (wyżej)
+  kończy zadanie błędem `rim_size_unavailable` z podpowiedzią,
   żeby wygenerować bez zmiany rozmiaru. Cale są przybliżone: z samego zdjęcia nie znamy obecnego
   rozmiaru felgi, sterujemy proporcją średnicy felgi do średnicy koła. Warp mieści się w elipsie
   opony i w masce koła, a kompozycja i tak bierze spoza maski koła oryginał, więc gwarancja „bit

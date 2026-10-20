@@ -18,8 +18,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from wheeler_api.texts import TEXTS
 from wheeler_shared.storage import Storage
 from wheeler_shared.worker_state import ModelState
+from wheeler_worker.body_mask import BodySegments
 from wheeler_worker.model_lifecycle import LoadObserver, ModelLifecycle, db_reporter
-from wheeler_worker.rim_geometry import RimCandidate
+from wheeler_worker.rim_geometry import RimCandidate, RimGeometry
 from wheeler_worker.runner import run_forever, run_once
 from wheeler_worker.wheel_swap import WheelSwapProcessor
 
@@ -87,6 +88,11 @@ class LazyDiscSegmenter:
 
     def segment_rim(self, image: Image.Image, wheel_mask: Image.Image) -> list[RimCandidate]:
         return []  # testy stanu modelu generują „bez zmian”: felgi się nie mierzy
+
+    def segment_body(
+        self, image: Image.Image, wheel_mask: Image.Image, rim: RimGeometry
+    ) -> BodySegments:
+        return BodySegments(with_gap=[], without_gap=[], liner=[])  # jak felga: nieużywane
 
     def release(self) -> None:
         if self.loaded:

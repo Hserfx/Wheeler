@@ -7,8 +7,8 @@ Tickety to pionowe przekroje (tracer bullets) wynikające z [DESIGN.md](DESIGN.m
     ├─► 03 ─┬─► 04 ─► 07
 02 ─┘       ├─► 05, 06, 09, 10, 11
 02 ─────────┴─► 08
-06, 07, 09 ─► 12 ─► 13 ─┬─► 14 ─┐
-                        └─► 15 ─┴─► 16 ─► 17
+06, 07, 09 ─► 12 ─┬─► 13
+                  └─► 14
 ```
 
 ---
@@ -484,185 +484,20 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
 
 ---
 
-# 14: Pole „Obecna felga”
+# 14: Nieudane generowanie wraca do szkicu
 
-**What to build:** W sekcji rozmiaru felgi na stronie zadania, obok wyboru stopnia `−2″ … +2″`, wybieram obecny rozmiar felgi auta (14″–22″ co 1″, domyślnie 17″). Wartość jest zapisywana w zadaniu i od ticketu 16 wyznacza skalę cala przy zmianie rozmiaru (1″ = średnica felgi w px / (obecna felga + 1,4″), zob. ticket 13). Ten ticket dodaje samo pole, a zachowanie generowania się nie zmienia.
+**What to build:** Gdy generowanie się nie uda, nie muszę zakładać nowego zadania. To samo zadanie wraca do szkicu z komunikatem błędu: zdjęcie, koła z maskami, wybrana felga i parametry (w tym seed) zostają, a strona zadania znów pokazuje wybór felgi, wybór rozmiaru felgi i edycję kół. Poprawiam, co trzeba, i klikam „Generuj” ponownie. Przy błędzie „nie da się zmienić rozmiaru felgi” (`rim_size_unavailable`) rozmiar sam wraca na „bez zmian”, a komunikat mówi, co zrobić dalej. Teraz zadanie dostaje `failed`, a „Ponów” tworzy kopię z tymi samymi parametrami i od razu wysyła ją do kolejki, więc przy `rim_size_unavailable` zawodzi drugi raz tak samo.
 
-**Blocked by:** 13
+**Blocked by:** 12
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
-- [x] Pole „Obecna felga” w sekcji felgi, w formularzu „Generuj” (`#job-form`), jak wybór `rim_size`; domyślnie 17″. `POST /jobs` przy wgraniu go nie przyjmuje
-- [x] Nowy klucz w `Job.params` (`wheeler_shared/edit_params.py`, pole w `EditParams`), walidacja 14–22 po stronie serwera jak `rim_size` (`advanced.parse_…` → `InvalidParam` → czytelny komunikat); brak klucza oznacza 17″
-- [x] Jedno ustawienie na całe zadanie: „Ponów” i „Ponów to koło” dostają tę samą wartość
-- [x] Ekran wyniku pokazuje obecną felgę obok „Felga: +2″”, tylko gdy stopień ≠ „bez zmian”; szczegóły zadania w historii przez `PARAM_LABELS`
-- [x] Teksty po polsku w `texts.py`; testy jak w `tests/test_rim_size.py` (walidacja, zapis, retry)
-
-**Comments:**
-
-- 2026-10-19: z rekomendacji w `VERDICT.md` (gałąź `prototype/whole-wheel-resize`, `worker/prototype_whole_wheel/` (`VERDICT.md`, `whole_wheel.py`, `test_whole_wheel.py`, `run.py`)), zatwierdzonej przez użytkownika (ticket 13). Stała `DEFAULT_CURRENT_RIM` = 17 jest dziś w prototypie (`whole_wheel.py`); jej miejsce to `edit_params.py`.
-- 2026-10-20 (agent, gałąź `ticket-14`): klucz `current_rim` w `wheeler_shared/edit_params.py`
-  (`CURRENT_RIM`, `CURRENT_RIMS` 14…22, `DEFAULT_CURRENT_RIM` = 17, `EditParams.current_rim`).
-  Pole to `<select name="current_rim" form="job-form">` pod stopniem rozmiaru w `fieldset`
-  `data-role="rim-size"` (`job.html`); walidacja `advanced.parse_current_rim` -> `InvalidParam`
-  -> „Obecna felga musi być pełnym rozmiarem od 14″ do 22″.”, 400 ze stroną zadania. Zapis jak
-  `rim_size` w `start_generation(..., current_rim=)`: zapisywane przy każdym „Generuj” z polem (także
-  przy „bez zmian”), brak pola (albo puste pole, które FastAPI traktuje jak brak) zostawia zapisaną
-  wartość; wybór zostaje zaznaczony po odrzuconym „Generuj” (409). „Ponów” i „Ponów to koło” biorą
-  wartość z `Job.params` bez dodatkowego kodu. Ekran wyniku: `data-role="result-current-rim"`
-  („obecna 17″”) za „Felga: +2″”, tylko przy stopniu ≠ 0; etykieta w `PARAM_LABELS`. Worker
-  i generowanie bez zmian (`EditParams.current_rim` czeka na ticket 16). Testy:
-  `tests/test_current_rim.py`. DESIGN i README: wzmianka o polu. Odstępstwa: stała rantu 1,4″
-  zostaje w prototypie (przeniesie ją ticket 16 razem z `inch_px`); podpowiedź pod stopniem
-  rozmiaru („zewnętrzna średnica koła zostaje”) bez zmian, bo zmienia się ona w tickecie 16.
-- 2026-10-20 (użytkownik): zmiany cofnięte na `integration` — poprzednia wersja (plus-sizing z ticketu 12, stan `1b9e595`) oceniona jako lepsza. Kod ticketów 14–17 został na gałęziach `ticket-14`…`ticket-17` i `review-fixes-14-17` (merge `c3a4917`). Dalszy kierunek do ustalenia.
-
----
-
-# 15: Maska karoserii przed zmianą rozmiaru
-
-**What to build:** Przy stopniu ≠ „bez zmian” worker, zaraz po pomiarze felgi i przed załadowaniem mflux, wyznacza dla każdego koła maskę karoserii, która zasłania koło (błotnik, nakładka nadkola). Zła maska albo obce zasłonięcie koła kończy zadanie błędem `rim_size_unavailable`, tym samym co brak felgi. Maska trafia do diagnostyki koła; warp się jeszcze nie zmienia (ticket 16 jej użyje).
-
-**Blocked by:** 13
-
-**Status:** needs-triage
-
-- [x] `Segmenter.segment_body` (publiczna metoda protokołu; adapter SAM 2.1 i atrapy `placeholder`/testowe), prompt jak w prototypie: punkty dodatnie nad oponą (`body_prompt`, `up_angle`), ujemne w środku felgi i na oponie oraz ujemne w szczelinie nadkola (`arch_gap_points`), multimask w dwóch wariantach; maska wnętrza nadkola z SAM
-- [x] Kolejność z `VERDICT.md`: (a) kryteria `BodyMaskStats.problem` na **surowych** kandydatach SAM (pusta, > 5% koła, > 85% wycinka poza kołem, < 25% strefy błotnika) i wybór `choose_body`; brak dobrego kandydata → `rim_size_unavailable`, bez brania najlepszego ze złych; (b) potem odjęcie wnętrza nadkola i `clean_body_mask`; (c) `foreign_occlusion` > 5% na masce po czyszczeniu → `rim_size_unavailable`
-- [x] Wspólny marsz promieni `rim_geometry.wheel_rays` (refaktor `_tire_ratio` z gałęzi prototypu, commit `2eeffbd`, bez zmiany zachowania): promienie wychodzące poza zdjęcie są odrzucane, nie przycinane
-- [x] Liczone razem z felgą w `_measure_rims` (wycinek z oryginału, także przy „Ponów to koło”); SAM zwalniany przed mflux jak dziś; przy „bez zmian” brak pomiaru (czas jak dotąd)
-- [x] Diagnostyka w katalogu koła (np. `body.png` i nakładka na `rim_ellipse.png`); bez zmian w bazie i w UI
-- [x] Testy na syntetycznych kołach (przeniesione z `test_whole_wheel.py`) i na atrapach przez workera: dobra maska przechodzi, każde kryterium złej maski i obce zasłonięcie dają `rim_size_unavailable`, SAM zwalniany przed pierwszym krokiem mflux
-
-**Comments:**
-
-- 2026-10-19: z rekomendacji w `VERDICT.md` (gałąź `prototype/whole-wheel-resize`, `worker/prototype_whole_wheel/` (`VERDICT.md`, `whole_wheel.py`, `test_whole_wheel.py`, `run.py`)). Na zestawie z prototypu kryteria przepuszczają wszystkie wybrane maski (surowe: strefa błotnika 56–98%, koło ≤ 1,9%, wycinek 3–50%), a obce zasłonięcie zatrzymuje Vios koło 1 (zderzak drugiego auta, 30%). Pierwsze podejście bez punktów w szczelinie nadkola (`out/v1/`) wciągało nadkole do karoserii.
-- 2026-10-20 (agent, gałąź `ticket-15`): nowy `wheeler_worker/body_mask.py` (kryteria `BodyMaskStats.problem`,
-  `choose_body`, `body_prompt`/`BodyPrompt`, `arch_gap_points`, `choose_liner`, `clean_body_mask`,
-  `foreign_occlusion`, `outline_body`; całość w kolejności z `VERDICT.md` w `body_for_resize`, wynik: maska albo
-  `BodyMaskProblem`, w tym nowe `FOREIGN_OCCLUSION`). `Segmenter.segment_body(image, wheel_mask, rim)` ->
-  `BodySegments(with_gap, without_gap, liner)`: adapter SAM 2.1 liczy prompt z `body_prompt` (jak `segment_rim`
-  swój), jeden embedding na trzy prompty; atrapy `placeholder` (pas nad kołem) i testowe (`DiscSegmenter.body`,
-  domyślnie `fender_mask`). `rim_geometry.wheel_rays(ellipse, wheel, angles=, steps=)` (refaktor `_tire_ratio`
-  bez zmiany zachowania; `arch_gap_points` z niego korzysta i odrzuca promienie wychodzące poza zdjęcie).
-  `_measure_rims` zwraca `_MeasuredWheel(rim, body)`; kryteria w wycinku `_wheel_crop` (ten sam co dla modelu).
-  Diagnostyka: `body.png` (maska w wycinku) i czerwona poświata karoserii na `rim_ellipse.png`. Powód odrzucenia
-  tylko w `ProcessingFailed.detail` (log). Tekst `failure_rim_size_unavailable` obejmuje teraz też karoserię;
-  DESIGN (krok 4) i README zaktualizowane. Testy: `tests/test_body_mask.py` (karoseria przeniesiona z `test_whole_wheel.py`; geometria
-  nowego koła zostaje dla ticketu 16; + `body_prompt`, `body_for_resize`), `tests/test_rim_size.py` (dobra maska i diagnostyka, każde kryterium
-  i obce zasłonięcie -> `rim_size_unavailable` z właściwym powodem, kolejność `rim`, `body`, `release` przed
-  mflux, „bez zmian” bez pomiaru, „Ponów to koło” mierzy karoserię na oryginale). Odstępstwa: dwa warianty
-  karoserii to „z ujemnymi w szczelinie” i „bez nich” (prototyp miał jeszcze trzeci, same dodatnie — pominięty,
-  zgodnie z „dwoma wariantami” w tickecie); test ticketu 12 „warp tylko w masce koła” (felga 45 px, opona
-  z typowego k wystaje z maski) dostał atrapę nakładki nadkola wokół koła, bo bez niej teraz słusznie kończy
-  się obcym zasłonięciem. Adapter SAM 2 nie uruchomiony na prawdziwym modelu (ticket tego nie wymaga).
-- 2026-10-20 (agent, poprawki po code review (gałąź `review-fixes-14-17`)): prompt karoserii liczony raz
-  (`Segmenter.segment_body` zwraca go w `BodySegments.prompt`, `body_for_resize` go nie przelicza);
-  `_bool`/`_image` i ręczne wycinki `Box` zastąpione wspólnymi `compositing.mask_array`/`mask_image`
-  i `Box.slices`, sprawdzenie „punkt w obrazie i w masce” w `_in_mask`; `_measure_rims` →
-  `_measure_wheels` (mierzy felgę i karoserię). Bez zmiany zachowania.
-- 2026-10-20 (użytkownik): zmiany cofnięte na `integration` — poprzednia wersja (plus-sizing z ticketu 12, stan `1b9e595`) oceniona jako lepsza. Kod ticketów 14–17 został na gałęziach `ticket-14`…`ticket-17` i `review-fixes-14-17` (merge `c3a4917`). Dalszy kierunek do ustalenia.
-
----
-
-# 16: Zmiana rozmiaru całego koła
-
-**What to build:** Stopień `−2″ … +2″` zmienia całe koło, nie tylko felgę: felga i zewnętrzna średnica koła rosną (albo maleją) o N cali według skali z „Obecnej felgi”, bok opony zostaje tej samej grubości, a najniższy punkt opony (styk z ziemią) stoi w miejscu. Powiększone koło wchodzi w nadkole i chowa się za karoserią, która zostaje bit w bit. Ten warp zastępuje warp felgi z ticketu 12.
-
-**Blocked by:** 14, 15
-
-**Status:** needs-triage
-
-- [x] `resized_geometry` + `plan_resize` z prototypu w workerze zamiast `warp_rim`: skala cala z obecnej felgi (`inch_px`, dłuższa oś elipsy felgi / (obecna + 1,4″)), jednokładność wokół `lowest_point`, odwzorowanie felga/bok opony jak w `VERDICT.md`
-- [x] Maska edycji = (stare koło ∪ nowe koło) poszerzone o `mask_grow`, minus karoseria z ticketu 15; wycinek dla modelu wokół maski edycji; kompozycja przez maskę edycji zamiast zapisanej maski koła
-- [x] Piksele karoserii i wszystko poza maską edycji bit w bit z oryginałem (test na atrapach); przy „Ponów to koło” wycinek i pomiar z oryginału, składanie na bieżącym wyniku
-- [x] Przy „bez zmian” ścieżka bez zmian (maska koła + `mask_grow`, bez pomiaru, bez karoserii)
-- [x] Prompt ten sam dla każdego stopnia (`build_prompt`)
-- [x] Diagnostyka jak dziś: `rim_ellipse.png` (elipsa felgi, nowa elipsa opony, karoseria) i `warped.png`
-- [x] Usunięty warp felgi z ticketu 12 (`warp_rim` i jego testy) tam, gdzie go zastępuje nowy kod
-- [x] `docs/DESIGN.md` opisuje rozmiar całego koła zamiast plus-sizingu ze stałą średnicą koła; README zaktualizowane
-- [x] Testy na atrapach (geometria, punkt styku, bit w bit, przekazanie wycinka do edytora przez workera, także „Ponów to koło”) oraz jedno uruchomienie na prawdziwym modelu (Golf, +2″, obecna felga 17″) porównane z liczbami z `VERDICT.md` (felga ~19″, sylwetka koła ~+1,75–2″, styk ≤ 1 px)
-
-**Comments:**
-
-- 2026-10-19: z rekomendacji w `VERDICT.md` (gałąź `prototype/whole-wheel-resize`, `worker/prototype_whole_wheel/` (`VERDICT.md`, `whole_wheel.py`, `test_whole_wheel.py`, `run.py`)). Przy wartościach ujemnych ten ticket robi samą geometrię; wstępne wypełnienie odsłoniętego nadkola dochodzi w tickecie 17. Felga w ujęciu 3/4 wychodzi mniejsza już w kontroli „bez zmian” (zachowanie modelu, nie warpu) — poza zakresem.
-- 2026-10-20 (agent, gałąź `ticket-16`): nowy `wheeler_worker/wheel_resize.py` (`RIM_FLANGE_INCHES`, `inch_px`,
-  `lowest_point`, `resized_geometry`, `plan_resize` -> `ResizePlan(geometry, wheel, edit_mask, model_input)`;
-  odwzorowanie z prototypu, liczone w oknie wokół starego koła i jego obrazu w jednokładności, nie na całym
-  zdjęciu). `_WheelEdit.apply`: przy stopniu ≠ 0 plan na oryginale (skala z `EditParams.current_rim`), wycinek
-  `_wheel_crop` wokół maski edycji, maska modelu i kompozycja = maska edycji; poza maską modelu wycinek to
-  dokładnie oryginał (`Image.composite`, jak w tickecie 12). `_MeasuredWheel` niesie maskę koła bez
-  poszerzenia. `warp_rim`, `RIM_FRACTION_PER_INCH` i testy warpu usunięte; `outline_rim` dostał kolory
-  (stara felga i opona białe, nowe zielona i żółta). `crop.png`/`crop_mask.png` przy zmianie rozmiaru to
-  wycinek oryginału i maska edycji wokół maski edycji. Testy: `tests/test_wheel_resize.py` (skala cala,
-  geometria, styk także w 3/4, plan: nowe elipsy za karoserią, maska edycji, bit w bit, koło przy brzegu
-  zdjęcia), `tests/test_rim_size.py` (procesor i HTTP z atrapami: wynik mierzony względem „bez zmian” —
-  felga, środek, szerokość, styk; skala z obecnej felgi 14″/22″; karoseria i wszystko poza starym ∪ nowym
-  kołem bit w bit; „Ponów to koło” z oryginału, ten sam wycinek, składanie na bieżącym wyniku), smoke test
-  atrapy `placeholder` przy +2″. DESIGN (sekcja „Rozmiar koła”), README, podpowiedź pod stopniem rozmiaru
-  i komentarze w `edit_params.py` zaktualizowane.
-  Prawdziwy model (SAM 2.1 large + mflux q8, 1024 px, `car_side_golf.jpg`, 2 koła, +2″, obecna 17″, seed
-  863048696, felga z zadania 6; produkcyjny `WheelSwapProcessor.detect` + `generate`, pomiar jak `run.py
-  measure`/`silhouette` prototypu): felga 19,19″ i 19,03″ (prototyp 19,01″ / 18,85″, cel 19″), sylwetka koła
-  +1,75″ na obu kołach (prototyp +1,75″), styk −1 px na obu (prototyp 0 / −1 px); oryginał tą metodą 17,00″,
-  sylwetka 0. Bit w bit: 0 zmienionych pikseli poza sumą masek edycji i 0 w karoserii każdego koła w jego
-  wycinku (41 i 20 tys. px). Czas: detekcja 17 s, generowanie 234 s dla 2 kół (pierwszy krok koła 1 po 52 s
-  z ładowaniem), szczyt `peak memory footprint` 28,9 GB (MLX 25,1 GB), pomiar SAM 3,6 GB. Wygląd jak
-  w prototypie (opona chowa się za błotnikiem, styk stoi). Odstępstwa: skrypt `gpu-run.sh` z poprzednich
-  ticketów nie istniał (zaginął ze scratchpadu), więc odtworzony jako prosta blokada GPU +
-  `/usr/bin/time -l`; uruchomienie przez procesor, nie przez HTTP i kolejkę; przy wartościach ujemnych
-  odsłonięte nadkole ma w wycinku piksele starej opony (wypełnienie: ticket 17), więc testy szerokości koła
-  tylko dla wartości dodatnich.
-- 2026-10-20 (agent, poprawki po code review (gałąź `review-fixes-14-17`)): okno warpu ma zapas
-  `LANCZOS_REACH` + 1 px (Lanczos czyta 4 px sąsiedztwa; przy `mask_grow` = 0 zapas 2 px dawał przy
-  brzegu okna odbicie zamiast zdjęcia), a współrzędne źródła są zaokrąglane do siatki `cv2.remap`
-  (1/32 px) jeszcze w float64, bo float32 w układzie okna i całego zdjęcia zaokrąglał je inaczej
-  (pojedyncze piksele różniły się o kilka poziomów). Test: plan w oknie = plan na całym zdjęciu przy
-  `mask_grow` = 0 (tło z pełnym szumem; przy lekkim szumie odbicie nie różni się od zdjęcia). Refaktory
-  bez zmiany zachowania: `MeasuredWheel` przeniesiony do `wheel_resize` i podawany `plan_resize` jednym
-  argumentem (`ResizePlan.old` niesie go do diagnostyki, więc `_WheelEdit.apply` sprawdza tylko
-  `plan`), zapis diagnostyki w `_save_resize_diagnostics`, `mask_box` liczony raz (`_wheel_crop` bierze
-  `Box`), bez `ResizePlan.wheel` (testy biorą nowe koło z elipsy nowej opony z pikselem zapasu albo
-  z pikseli koła w `model_input`), `rim_size: int` w `plan_resize` i `resized_geometry` (ułamek 0,25″
-  był tylko w prototypie, do siatki sylwetki w `run.py`; testy workera go nie używają), stałe kolorów
-  na górze `rim_geometry`.
-- 2026-10-20 (użytkownik): zmiany cofnięte na `integration` — poprzednia wersja (plus-sizing z ticketu 12, stan `1b9e595`) oceniona jako lepsza. Kod ticketów 14–17 został na gałęziach `ticket-14`…`ticket-17` i `review-fixes-14-17` (merge `c3a4917`). Dalszy kierunek do ustalenia.
-
----
-
-# 17: Zmniejszanie koła — wypełnienie odsłoniętego nadkola
-
-**What to build:** Przy „−1″” i „−2″” odsłonięty obszar (stare koło minus nowe) jest w wycinku dla modelu wstępnie wypełniony przyciemnionym kolorem z okolicy nadkola z rozmytą krawędzią, a model domalowuje wnętrze nadkola w obrębie maski edycji. Wartości ujemne zostają bez korekty niedostrzału (prototyp: −2″ → −1,75″).
-
-**Blocked by:** 16
-
-**Status:** needs-triage
-
-- [x] Wypełnienie jak `_prefill` w prototypie: mediana koloru pasa nad górną połową starego koła × 0,5, krawędź rozmyta (σ = 2% boku koła)
-- [x] Test: odsłonięty obszar leży w masce edycji i nie zawiera pikseli starej opony; poza maską edycji bit w bit
-- [x] Bez korekty niedostrzału dla wartości ujemnych (decyzja z ticketu 13)
-
-**Comments:**
-
-- 2026-10-19: z rekomendacji w `VERDICT.md` (gałąź `prototype/whole-wheel-resize`, `worker/prototype_whole_wheel/` (`VERDICT.md`, `whole_wheel.py`, `test_whole_wheel.py`, `run.py`)). Wygląd wnętrza nadkola przy −1″/−2″ zatwierdzony przez użytkownika na arkuszach prototypu.
-- 2026-10-20 (agent, gałąź `ticket-17`): `wheel_resize.plan_resize` przy zmniejszaniu wypełnia
-  odsłonięte nadkole (stare koło minus nowe, poza karoserią) w `model_input` przez `_prefill`
-  z prototypu: mediana koloru oryginału w pasie 6% boku koła wokół górnej połowy starego koła (bez
-  karoserii; gdy pusty, cała okolica koła) × 0,5, gauss σ = 2% boku koła tylko na pikselach
-  odsłoniętych (stałe `PREFILL_BAND`, `PREFILL_DARKEN`, `PREFILL_BLUR`). Liczone w oknie wokół starego
-  koła, nie na całym zdjęciu. Maska edycji bez zmian (obejmowała już stare koło), poza nią bit w bit;
-  `warped.png` pokazuje wypełnienie. Bez korekty niedostrzału. Testy: `tests/test_wheel_resize.py`
-  (odsłonięty obszar w masce edycji, jasność ok. 0,5 tła, > 95% pikseli jaśniejszych od starej opony,
-  poza maską edycji bit w bit; przy +2″ nic nie jest wypełniane), `tests/test_rim_size.py`: szerokość
-  koła sprawdzana teraz także dla −1″/−2″ (także obecna felga 14″/22″ i ponowione zadanie z −2″);
-  pomiar `_measure` liczy brzeg koła jako ostatni piksel ciemny jak opona w szarym obszarze, bo
-  wypełnienie na zaszumionym tle atrapy też jest szare (~64). DESIGN (krok 5 „Rozmiaru koła”)
-  zaktualizowany. Odstępstwa: „pas nad górną połową” to jak w `_prefill` prototypu pierścień wokół starego
-  koła powyżej środka opony; kolor z oryginału zamiast z obrazu po wklejeniu nowego koła (to samo,
-  bo pierścień leży poza starym kołem); prawdziwy model nieuruchamiany (ticket tego nie wymaga).
-- 2026-10-20 (agent, poprawki po code review (gałąź `review-fixes-14-17`)): test wypełnienia wymaga
-  zera pikseli starej opony w odsłoniętym obszarze (było: ≤ 5% ciemnych). Bez wyłączania rozmytego
-  brzegu: najciemniejszy piksel wypełnienia ~46 (rozmycie przy nowej oponie), opona 10. Odsłonięty
-  obszar w teście to stare koło poza elipsą nowej opony powiększoną o 1% (~1 px), bo nowe koło to
-  stara maska po warpie (najbliższy sąsiad) i jego brzeg może wyjść o piksel poza elipsę.
-- 2026-10-20 (użytkownik): zmiany cofnięte na `integration` — poprzednia wersja (plus-sizing z ticketu 12, stan `1b9e595`) oceniona jako lepsza. Kod ticketów 14–17 został na gałęziach `ticket-14`…`ticket-17` i `review-fixes-14-17` (merge `c3a4917`). Dalszy kierunek do ustalenia.
+- [ ] Każdy błąd generowania (`rim_size_unavailable`, `rim_not_found`, `empty_mask`, `no_rim`, `internal`, także `interrupted` po restarcie workera) przestawia zadanie na `draft` z ustawionym `Job.error`, bez `finished_at`; generowanie nie kończy się już statusem `failed`
+- [ ] W szkicu po nieudanym generowaniu działają wybór felgi, wybór rozmiaru i klikanie kół jak w zwykłym szkicu; komunikat błędu jest widoczny na stronie zadania do kolejnego „Generuj” (które go czyści)
+- [ ] Ponowne „Generuj” używa seeda zapisanego przy pierwszej próbie
+- [ ] Przy `rim_size_unavailable` rozmiar felgi zostaje usunięty z parametrów zadania (brak klucza = „bez zmian”), więc formularz zaznacza „bez zmian”, a szczegóły zadania nie pokazują rozmiaru, który nie zadziałał
+- [ ] Nowy tekst `rim_size_unavailable`: „Nie udało się wyznaczyć felgi na jednym z kół, więc nie da się zmienić jej rozmiaru. Rozmiar ustawiono na „bez zmian” — kliknij „Generuj” albo wybierz inną felgę.”
+- [ ] Bez zmian: anulowane generowanie zostaje `cancelled` z „Ponów”; nieudane „Ponów to koło” wraca do poprzedniego wyniku; nieudana detekcja/maska wraca do szkicu jak dotąd; w Historii zadanie po nieudanym generowaniu ma status „Szkic” (bez osobnej etykiety)
+- [ ] Istniejące zadania `failed` (w tym `legacy_job`) zostają bez migracji, z „Ponów” jak dotąd
+- [ ] Testy: błąd generowania → szkic z błędem i zachowanymi danymi; `rim_size_unavailable` → „bez zmian” w formularzu i parametrach; przerwane generowanie przy starcie workera → szkic; anulowanie nadal `cancelled`; ponowne „Generuj” z tego szkicu trafia do kolejki z tym samym seedem
+- [ ] DESIGN.md opisuje nowe zachowanie po nieudanym generowaniu

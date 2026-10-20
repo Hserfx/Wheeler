@@ -564,21 +564,48 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
 
 **Blocked by:** 14, 15
 
-**Status:** claimed
+**Status:** done
 
-- [ ] `resized_geometry` + `plan_resize` z prototypu w workerze zamiast `warp_rim`: skala cala z obecnej felgi (`inch_px`, dłuższa oś elipsy felgi / (obecna + 1,4″)), jednokładność wokół `lowest_point`, odwzorowanie felga/bok opony jak w `VERDICT.md`
-- [ ] Maska edycji = (stare koło ∪ nowe koło) poszerzone o `mask_grow`, minus karoseria z ticketu 15; wycinek dla modelu wokół maski edycji; kompozycja przez maskę edycji zamiast zapisanej maski koła
-- [ ] Piksele karoserii i wszystko poza maską edycji bit w bit z oryginałem (test na atrapach); przy „Ponów to koło” wycinek i pomiar z oryginału, składanie na bieżącym wyniku
-- [ ] Przy „bez zmian” ścieżka bez zmian (maska koła + `mask_grow`, bez pomiaru, bez karoserii)
-- [ ] Prompt ten sam dla każdego stopnia (`build_prompt`)
-- [ ] Diagnostyka jak dziś: `rim_ellipse.png` (elipsa felgi, nowa elipsa opony, karoseria) i `warped.png`
-- [ ] Usunięty warp felgi z ticketu 12 (`warp_rim` i jego testy) tam, gdzie go zastępuje nowy kod
-- [ ] `docs/DESIGN.md` opisuje rozmiar całego koła zamiast plus-sizingu ze stałą średnicą koła; README zaktualizowane
-- [ ] Testy na atrapach (geometria, punkt styku, bit w bit, przekazanie wycinka do edytora przez workera, także „Ponów to koło”) oraz jedno uruchomienie na prawdziwym modelu (Golf, +2″, obecna felga 17″) porównane z liczbami z `VERDICT.md` (felga ~19″, sylwetka koła ~+1,75–2″, styk ≤ 1 px)
+- [x] `resized_geometry` + `plan_resize` z prototypu w workerze zamiast `warp_rim`: skala cala z obecnej felgi (`inch_px`, dłuższa oś elipsy felgi / (obecna + 1,4″)), jednokładność wokół `lowest_point`, odwzorowanie felga/bok opony jak w `VERDICT.md`
+- [x] Maska edycji = (stare koło ∪ nowe koło) poszerzone o `mask_grow`, minus karoseria z ticketu 15; wycinek dla modelu wokół maski edycji; kompozycja przez maskę edycji zamiast zapisanej maski koła
+- [x] Piksele karoserii i wszystko poza maską edycji bit w bit z oryginałem (test na atrapach); przy „Ponów to koło” wycinek i pomiar z oryginału, składanie na bieżącym wyniku
+- [x] Przy „bez zmian” ścieżka bez zmian (maska koła + `mask_grow`, bez pomiaru, bez karoserii)
+- [x] Prompt ten sam dla każdego stopnia (`build_prompt`)
+- [x] Diagnostyka jak dziś: `rim_ellipse.png` (elipsa felgi, nowa elipsa opony, karoseria) i `warped.png`
+- [x] Usunięty warp felgi z ticketu 12 (`warp_rim` i jego testy) tam, gdzie go zastępuje nowy kod
+- [x] `docs/DESIGN.md` opisuje rozmiar całego koła zamiast plus-sizingu ze stałą średnicą koła; README zaktualizowane
+- [x] Testy na atrapach (geometria, punkt styku, bit w bit, przekazanie wycinka do edytora przez workera, także „Ponów to koło”) oraz jedno uruchomienie na prawdziwym modelu (Golf, +2″, obecna felga 17″) porównane z liczbami z `VERDICT.md` (felga ~19″, sylwetka koła ~+1,75–2″, styk ≤ 1 px)
 
 **Comments:**
 
 - 2026-10-19: z rekomendacji w `VERDICT.md` (gałąź `prototype/whole-wheel-resize`, `worker/prototype_whole_wheel/` (`VERDICT.md`, `whole_wheel.py`, `test_whole_wheel.py`, `run.py`)). Przy wartościach ujemnych ten ticket robi samą geometrię; wstępne wypełnienie odsłoniętego nadkola dochodzi w tickecie 17. Felga w ujęciu 3/4 wychodzi mniejsza już w kontroli „bez zmian” (zachowanie modelu, nie warpu) — poza zakresem.
+- 2026-10-20 (agent, gałąź `ticket-16`): nowy `wheeler_worker/wheel_resize.py` (`RIM_FLANGE_INCHES`, `inch_px`,
+  `lowest_point`, `resized_geometry`, `plan_resize` -> `ResizePlan(geometry, wheel, edit_mask, model_input)`;
+  odwzorowanie z prototypu, liczone w oknie wokół starego koła i jego obrazu w jednokładności, nie na całym
+  zdjęciu). `_WheelEdit.apply`: przy stopniu ≠ 0 plan na oryginale (skala z `EditParams.current_rim`), wycinek
+  `_wheel_crop` wokół maski edycji, maska modelu i kompozycja = maska edycji; poza maską modelu wycinek to
+  dokładnie oryginał (`Image.composite`, jak w tickecie 12). `_MeasuredWheel` niesie maskę koła bez
+  poszerzenia. `warp_rim`, `RIM_FRACTION_PER_INCH` i testy warpu usunięte; `outline_rim` dostał kolory
+  (stara felga i opona białe, nowe zielona i żółta). `crop.png`/`crop_mask.png` przy zmianie rozmiaru to
+  wycinek oryginału i maska edycji wokół maski edycji. Testy: `tests/test_wheel_resize.py` (skala cala,
+  geometria, styk także w 3/4, plan: nowe elipsy za karoserią, maska edycji, bit w bit, koło przy brzegu
+  zdjęcia), `tests/test_rim_size.py` (procesor i HTTP z atrapami: wynik mierzony względem „bez zmian” —
+  felga, środek, szerokość, styk; skala z obecnej felgi 14″/22″; karoseria i wszystko poza starym ∪ nowym
+  kołem bit w bit; „Ponów to koło” z oryginału, ten sam wycinek, składanie na bieżącym wyniku), smoke test
+  atrapy `placeholder` przy +2″. DESIGN (sekcja „Rozmiar koła”), README, podpowiedź pod stopniem rozmiaru
+  i komentarze w `edit_params.py` zaktualizowane.
+  Prawdziwy model (SAM 2.1 large + mflux q8, 1024 px, `car_side_golf.jpg`, 2 koła, +2″, obecna 17″, seed
+  863048696, felga z zadania 6; produkcyjny `WheelSwapProcessor.detect` + `generate`, pomiar jak `run.py
+  measure`/`silhouette` prototypu): felga 19,19″ i 19,03″ (prototyp 19,01″ / 18,85″, cel 19″), sylwetka koła
+  +1,75″ na obu kołach (prototyp +1,75″), styk −1 px na obu (prototyp 0 / −1 px); oryginał tą metodą 17,00″,
+  sylwetka 0. Bit w bit: 0 zmienionych pikseli poza sumą masek edycji i 0 w karoserii każdego koła w jego
+  wycinku (41 i 20 tys. px). Czas: detekcja 17 s, generowanie 234 s dla 2 kół (pierwszy krok koła 1 po 52 s
+  z ładowaniem), szczyt `peak memory footprint` 28,9 GB (MLX 25,1 GB), pomiar SAM 3,6 GB. Wygląd jak
+  w prototypie (opona chowa się za błotnikiem, styk stoi). Odstępstwa: skrypt `gpu-run.sh` z poprzednich
+  ticketów nie istniał (zaginął ze scratchpadu), więc odtworzony jako prosta blokada GPU +
+  `/usr/bin/time -l`; uruchomienie przez procesor, nie przez HTTP i kolejkę; przy wartościach ujemnych
+  odsłonięte nadkole ma w wycinku piksele starej opony (wypełnienie: ticket 17), więc testy szerokości koła
+  tylko dla wartości dodatnich.
 
 ---
 

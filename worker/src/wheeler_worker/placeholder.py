@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image, ImageOps
 
-from wheeler_worker.body_mask import BodySegments
+from wheeler_worker.body_mask import BodySegments, body_prompt
 from wheeler_worker.compositing import mask_box
 from wheeler_worker.model_lifecycle import NO_OBSERVER, LoadObserver
 from wheeler_worker.rim_editor import StepCallback
@@ -100,7 +100,9 @@ class CircleSegmenter:
             top = box.top - max(1, round(0.02 * max(box.width, box.height)))
             if top > 0:
                 body.paste(255, (0, 0, image.width, top))
-        return BodySegments(with_gap=[(body, 0.9)], without_gap=[], liner=[])
+        return BodySegments(
+            prompt=body_prompt(rim, wheel_mask), with_gap=[(body, 0.9)], without_gap=[], liner=[]
+        )
 
     def release(self) -> None:
         self._weights.release()

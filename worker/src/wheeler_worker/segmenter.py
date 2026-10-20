@@ -39,7 +39,8 @@ class Segmenter(Protocol):
     ) -> BodySegments:
         """Kandydaci na maskę karoserii zasłaniającej koło `wheel_mask` (L, maska SAM bez
         poszerzenia, felga i opona `rim`) i na maskę wnętrza nadkola, maski L (0/255)
-        w rozmiarze `image` z oceną modelu; wybiera z nich `body_mask.body_for_resize`."""
+        w rozmiarze `image` z oceną modelu, razem z promptem (`body_mask.body_prompt`), z którego
+        powstali; wybiera z nich `body_mask.body_for_resize`."""
         ...
 
     def release(self) -> None:
@@ -204,7 +205,7 @@ class Sam2Segmenter:
                 if prompt.liner
                 else []
             )
-        return BodySegments(with_gap=with_gap, without_gap=without_gap, liner=liner)
+        return BodySegments(prompt=prompt, with_gap=with_gap, without_gap=without_gap, liner=liner)
 
     def _points(
         self,

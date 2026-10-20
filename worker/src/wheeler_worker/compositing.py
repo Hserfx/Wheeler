@@ -30,6 +30,21 @@ class Box(NamedTuple):
     def height(self) -> int:
         return self.bottom - self.top
 
+    @property
+    def slices(self) -> tuple[slice, slice]:
+        """Wycinki (wiersze, kolumny) tablicy obrazu numpy dla tego prostokąta."""
+        return slice(self.top, self.bottom), slice(self.left, self.right)
+
+
+def mask_array(mask: Image.Image) -> npt.NDArray[np.bool_]:
+    """Maska L (>0 = w masce) jako tablica bool."""
+    return np.asarray(np.asarray(mask.convert("L")) > 0)
+
+
+def mask_image(mask: npt.NDArray[np.bool_]) -> Image.Image:
+    """Tablica bool jako maska L 0/255."""
+    return Image.fromarray(mask.astype(np.uint8) * 255)
+
 
 def mask_box(mask: Image.Image) -> Box | None:
     """Najmniejszy prostokąt obejmujący maskę (>0) albo None dla pustej maski."""

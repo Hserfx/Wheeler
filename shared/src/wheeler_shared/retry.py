@@ -1,4 +1,5 @@
-"""„Ponów”: nowe zadanie z tymi samymi danymi wejściowymi i parametrami co nieudane.
+"""„Ponów”: nowe zadanie z tymi samymi danymi wejściowymi i parametrami co anulowane albo
+nieudane sprzed ticketu 14 (`failed`; dziś nieudane generowanie wraca do szkicu, `queue.fail_job`).
 
 Nowe zadanie dostaje własne kopie plików (zdjęcie, felga z katalogu zadania, maski kół,
 pliki pomocnicze obok nich, np. podgląd HEIC),

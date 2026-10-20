@@ -300,7 +300,7 @@ def test_retried_job_edits_with_the_same_rim_size(
     assert _shown_rim_size(client, retried_id) == f"{MINUS}2″"
 
 
-def test_unmeasurable_rim_fails_the_job_with_a_hint_to_generate_without_resizing(
+def test_unmeasurable_rim_returns_the_job_to_a_draft_without_the_rim_size(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
     _, editor, processor = _fakes(rim_radius=None)  # SAM 2 nie widzi felgi
@@ -310,9 +310,9 @@ def test_unmeasurable_rim_fails_the_job_with_a_hint_to_generate_without_resizing
     assert drain(session_factory, storage, processor)
 
     status = client.get(f"/jobs/{job_id}/status").text
-    assert TEXTS["status_failed"] in status
+    assert TEXTS["status_draft"] in status  # ticket 14 (test_failed_generation.py)
     assert TEXTS["failure_rim_size_unavailable"] in status
-    assert "bez zmiany rozmiaru" in TEXTS["failure_rim_size_unavailable"]
+    assert _shown_rim_size(client, job_id) is None
     assert editor.calls == []
 
 

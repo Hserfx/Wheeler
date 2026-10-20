@@ -7,13 +7,11 @@ Przez HTTP i `run_once` (prawdziwy Postgres, atrapy SAM 2 i mflux). Atrapa mflux
 from __future__ import annotations
 
 import re
-from typing import Any
 
 from fake_models import BoxDetector, DiscSegmenter, SolidEditor
 from fastapi.testclient import TestClient
 from helpers import click_wheel, drain, encode, fake_processor, generate, noise_photo, upload
 from photo_files import phone_heic, quadrants
-from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -133,7 +131,7 @@ def _worker_dies_during_job(session_factory: sessionmaker[Session]) -> None:
         assert claim_next_job(session) is not None
 
 
-def test_generation_interrupted_by_worker_crash_fails_on_restart_and_is_not_retried(
+def test_generation_interrupted_by_worker_crash_returns_to_draft_on_restart_and_is_not_retried(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
     editor = SolidEditor()
@@ -148,9 +146,10 @@ def test_generation_interrupted_by_worker_crash_fails_on_restart_and_is_not_retr
     recover_interrupted_jobs(session_factory)  # start nowego procesu workera
 
     status = _status(client, job_id)
-    assert TEXTS["status_failed"] in status and TEXTS["failure_interrupted"] in status
+    assert TEXTS["status_draft"] in status and TEXTS["failure_interrupted"] in status
     assert "hx-trigger" not in status
-    assert f'action="/jobs/{job_id}/retry"' in status
+    assert 'data-role="mask-overlay"' in status and 'id="job-form"' in status  # ticket 14
+    assert f'action="/jobs/{job_id}/retry"' not in status
     assert run_once(session_factory, storage, processor) is False
     assert editor.calls == []
 
@@ -199,18 +198,14 @@ def test_job_cancelled_just_before_worker_crash_ends_cancelled(
     assert TEXTS["status_cancelled"] in _status(client, job_id)
 
 
-class BrokenEditor(SolidEditor):
-    """„mflux”, który zapamiętuje wywołanie i się wykłada."""
-
-    def edit(self, *args: Any, **kwargs: Any) -> Image.Image:
-        super().edit(*args, **kwargs)
-        raise RuntimeError("model się wyłożył")
-
-
 def _params_block(client: TestClient, job_id: int) -> str:
     match = re.search(r"<dl[^>]*data-params.*?</dl>", client.get(f"/jobs/{job_id}").text, re.S)
     assert match
     return match.group(0)
+
+
+def _cancel(client: TestClient, job_id: int) -> None:
+    assert client.post(f"/jobs/{job_id}/cancel").status_code == 200
 
 
 def _retry(client: TestClient, job_id: int) -> int:
@@ -224,11 +219,13 @@ def _retry(client: TestClient, job_id: int) -> int:
 def test_retry_creates_new_job_with_same_inputs_and_parameters(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
-    broken = BrokenEditor()
+    # Generowanie anulowane w trakcie (nieudane wraca do szkicu, ticket 14).
+    broken = SolidEditor(steps=2)
     job_id = upload(client, encode(noise_photo(64, 48)), filename="auto.png")
     drain(session_factory, storage)
     click_wheel(client, job_id)
     assert run_once(session_factory, storage, fake_processor())
+    broken.after_step = lambda step: _cancel(client, job_id)
     generate(client, job_id)
     assert run_once(
         session_factory,
@@ -237,13 +234,13 @@ def test_retry_creates_new_job_with_same_inputs_and_parameters(
             detector=BoxDetector(), segmenter=DiscSegmenter(radius=10), editor=broken
         ),
     )
-    assert TEXTS["status_failed"] in _status(client, job_id)
+    assert TEXTS["status_cancelled"] in _status(client, job_id)
 
     new_id = _retry(client, job_id)
 
     assert new_id != job_id
     assert TEXTS["status_queued"] in _status(client, new_id)  # maska jest, od razu do kolejki
-    assert TEXTS["status_failed"] in _status(client, job_id)  # oryginał zostaje w historii
+    assert TEXTS["status_cancelled"] in _status(client, job_id)  # oryginał zostaje w historii
     assert _params_block(client, new_id) == _params_block(client, job_id)
     editor = SolidEditor()
     assert run_once(

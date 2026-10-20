@@ -236,7 +236,7 @@ TEXTS: Final[dict[str, str]] = {
     "failure_no_rim": "Zadanie nie ma wybranej felgi.",
     "failure_rim_size_unavailable": (
         "Nie udało się wyznaczyć felgi na jednym z kół, więc nie da się zmienić jej rozmiaru. "
-        "Wygeneruj bez zmiany rozmiaru."
+        "Rozmiar ustawiono na „bez zmian” — kliknij „Generuj” albo wybierz inną felgę."
     ),
     "failure_unsupported_photo": (
         "Zdjęcie ma format pikseli, którego nie da się zachować bez zmian (np. 16 bitów "

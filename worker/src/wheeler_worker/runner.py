@@ -245,8 +245,9 @@ def _reporter(session_factory: sessionmaker[Session], job_id: int) -> ProgressCa
 
 
 def recover_interrupted_jobs(session_factory: sessionmaker[Session]) -> list[int]:
-    """Wołane przy starcie workera: zadania i wycinane felgi przerwane przez awarię/restart
-    -> `failed`. Zwraca id zadań."""
+    """Wołane przy starcie workera: zadania przerwane przez awarię/restart wracają do szkicu
+    z błędem `interrupted` (`queue.fail_interrupted_jobs`), wycinane felgi -> `failed`.
+    Zwraca id zadań."""
     with session_factory.begin() as session:
         job_ids = fail_interrupted_jobs(session)
         rim_ids = fail_interrupted_rims(session)

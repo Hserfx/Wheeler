@@ -6,7 +6,8 @@ z których część wykonuje worker (`TaskKind`), a część użytkownik (status
     wgranie zdjęcia auta --> queued/running (detect) --> draft (maski wykrytych kół jako nakładki)
     draft --klik obok masek--> queued/running (segment) --> draft (nowe koło dodane)
     draft --klik w maskę--> draft (koło usunięte, bez workera)
-    draft --felga + „Generuj”--> queued/running (generate) --> done | failed | cancelled
+    draft --felga + „Generuj”--> queued/running (generate) --> done | cancelled
+        | draft z `Job.error` (nieudane: zdjęcie, koła, felga i seed zostają, ticket 14)
     done --„Ponów to koło”--> queued/running (regenerate_wheel) --> done (błąd/anulowanie
         też wracają do done z poprzednim wynikiem)
 
@@ -42,7 +43,7 @@ class JobStatus(enum.StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
     DONE = "done"
-    FAILED = "failed"
+    FAILED = "failed"  # tylko zadania sprzed ticketu 14 (nieudane generowanie wraca do szkicu)
     CANCELLED = "cancelled"  # anulowane przez użytkownika (w kolejce albo w trakcie generowania)
 
     @property

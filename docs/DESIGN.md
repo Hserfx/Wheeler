@@ -97,8 +97,9 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
      bez zmian w bazie i w UI.
 
   Przy „bez zmian” nie ma pomiaru ani warpu (czas jak dotąd). Felga, której nie da się wyznaczyć
-  (brak kandydata w 45–92% albo ostateczna średnica poza 40–95%), kończy zadanie błędem `rim_size_unavailable` z podpowiedzią,
-  żeby wygenerować bez zmiany rozmiaru. Cale są przybliżone: z samego zdjęcia nie znamy obecnego
+  (brak kandydata w 45–92% albo ostateczna średnica poza 40–95%), kończy generowanie błędem `rim_size_unavailable`:
+  zadanie wraca do szkicu z rozmiarem ustawionym na „bez zmian” i podpowiedzią, żeby kliknąć „Generuj” albo wybrać
+  inną felgę (zob. „Kolejka zadań”). Cale są przybliżone: z samego zdjęcia nie znamy obecnego
   rozmiaru felgi, sterujemy proporcją średnicy felgi do średnicy koła. Warp mieści się w elipsie
   opony i w masce koła, a kompozycja i tak bierze spoza maski koła oryginał, więc gwarancja „bit
   w bit” poza maską zostaje. Zmiana średnicy całego koła (wejście w nadkole) jest poza zakresem, bo wymaga maski
@@ -143,10 +144,18 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
   pracę, felgi w kolejce i zadania przed nim w powyższej kolejności (praca interaktywna zlecona
   później może je jeszcze wyprzedzić).
 - Zadanie można anulować, a przerwanie następuje między krokami lub kołami.
-- Zadanie przerwane przez awarię lub restart workera dostaje status `failed`, a UI pokazuje przycisk „ponów”. Bez automatycznych ponowień.
-  To samo dotyczy felgi wycinanej w chwili awarii (`failed`, można ją wyciąć ponownie albo odrzucić).
-- Ustalenie po review: „ponów” jest dostępne także dla zadania anulowanego, nie tylko nieudanego
-  (nowe zadanie z tymi samymi plikami, kołami i parametrami).
+- **Nieudane generowanie wraca do szkicu** (ticket 14): każdy błąd generowania (także przerwanie przez
+  awarię lub restart workera, błąd `interrupted`) przestawia to samo zadanie z powrotem na szkic z komunikatem
+  błędu, bez czasu zakończenia. Zdjęcie, koła z maskami, wybrana felga i parametry (w tym seed z pierwszej
+  próby) zostają, a strona zadania znów pokazuje wybór felgi, rozmiaru i edycję kół. Komunikat wisi do
+  kolejnego „Generuj”, które go czyści; usunięcie koła go nie rusza, dodanie koła (praca workera nad maską)
+  zastępuje go stanem tej pracy. Przy `rim_size_unavailable` rozmiar felgi znika z parametrów („bez zmian”),
+  żeby ponowne „Generuj” nie zawiodło tak samo. W Historii takie zadanie ma status „Szkic”.
+  Bez automatycznych ponowień. Nieudane „ponów to koło” wraca do poprzedniego wyniku, nieudana detekcja
+  albo maska do szkicu, anulowane generowanie kończy się statusem `cancelled`.
+- Felga wycinana w chwili awarii workera dostaje `failed` (można ją wyciąć ponownie albo odrzucić).
+- „Ponów” (nowe zadanie z tymi samymi plikami, kołami i parametrami) jest dostępne dla zadania anulowanego
+  i dla zadań `failed` sprzed ticketu 14, które zostają bez migracji.
 - Postęp raportowany per koło i per krok denoisingu.
 
 ## Baza danych (PostgreSQL)

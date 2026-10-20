@@ -152,7 +152,8 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
 ## Baza danych (PostgreSQL)
 
 - **Zadania:** status, parametry (seed, rozdzielczość, poszerzenie maski, dopisek do promptu, rozmiar felgi),
-  czasy, błąd. Brak klucza rozmiaru felgi (`rim_size`) oznacza „bez zmian”.
+  czasy, błąd. Brak klucza rozmiaru felgi (`rim_size`) oznacza „bez zmian”, brak klucza obecnej felgi
+  (`current_rim`) oznacza 17″.
 - **Obrazy:** metadane i ścieżki do plików (oryginał, maski, wycinki, wynik).
 - **Biblioteka felg:** wycięta felga, oryginał, opcjonalna nazwa, data dodania, licznik użyć i data ostatniego użycia. Sortowanie po ostatnim użyciu, bez filtrów.
 - **Retencja:** historia i pliki są trzymane bezterminowo. Ręczne usuwanie (pojedyncze i zbiorcze) kasuje także pliki z dysku.
@@ -167,9 +168,12 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
   3. Wybór felgi z biblioteki albo wgranie nowej, z podglądem wyciętej felgi do akceptacji. Obok wybór rozmiaru
      nowej felgi względem obecnej: `−2″ · −1″ · bez zmian · +1″ · +2″` (domyślnie „bez zmian”), wysyłany z „Generuj”
      i walidowany na serwerze. Jedno ustawienie na całe zadanie: wszystkie koła, „ponów” i „ponów to koło”.
+     Pod nim pole „Obecna felga” (rozmiar felgi auta na zdjęciu, 14″–22″ co 1″, domyślnie 17″, ticket 14),
+     wysyłane i walidowane tak samo; od ticketu 16 wyznacza skalę cala przy zmianie rozmiaru
+     (1″ = średnica felgi w px / (obecna felga + 1,4″)), a do tego czasu jest tylko zapisywane.
   4. „Generuj”: postęp per koło i per krok (polling HTMX co ~1 s), z możliwością anulowania.
   5. Wynik z suwakiem przed/po, przyciskiem „ponów to koło” (inny seed) i pobieraniem PNG. Rozmiar felgi inny
-     niż „bez zmian” jest pokazany obok seedów (np. „Felga: +2″”).
+     niż „bez zmian” jest pokazany obok seedów razem z obecną felgą (np. „Felga: +2″ obecna 17″”).
 - **Sekcja „Zaawansowane”** jest domyślnie zwinięta i zawiera seed, rozdzielczość roboczą, poszerzenie maski i dopisek do promptu. Użyte wartości zapisujemy w historii zadania.
   Ustalenie po review: rozdzielczość robocza 992–1152 px co 32 px. Dolna granica wynika z utraty detalu
   przez Turbo poniżej ~1024 px (spike sprawdził 992 i 1056 bez różnic), górna z zapasu pamięci przy q8.

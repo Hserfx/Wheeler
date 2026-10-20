@@ -74,7 +74,8 @@ done --„Ponów to koło”-------> regenerate_wheel (jedno koło, nowy seed) -
   `wheeler_shared/edit_params.py`. Sekcja „Zaawansowane” na stronie głównej
   (`wheeler_api/advanced.py`) zapisuje w `Job.params` użyte wartości już przy wgraniu zdjęcia;
   pusty seed jest losowany i zapisywany przy „Generuj”. Rozmiar felgi (`rim_size`, −2…+2″) nie należy
-  do „Zaawansowane”: wybiera się go obok felgi na stronie zadania i zapisuje dopiero przy „Generuj”.
+  do „Zaawansowane”: wybiera się go obok felgi na stronie zadania i zapisuje dopiero przy „Generuj”,
+  tak samo jak obecną felgę (`current_rim`, 14…22″, brak klucza = 17″; od ticketu 16 skala cala).
   Steruje nim geometria, nie prompt: przy stopniu ≠ 0 worker przed mflux wyznacza elipsę felgi
   (SAM 2, `Segmenter.segment_rim`) i przeskalowuje felgę w wycinku radialnym warpem
   (`wheeler_worker/rim_geometry.py`); felga nie do wyznaczenia kończy zadanie kodem `rim_size_unavailable`.

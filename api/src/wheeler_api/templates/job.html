@@ -39,6 +39,16 @@
       </label>
       {% endfor %}
     </div>
+    {#- Obecna felga (ticket 14): skala cala przy zmianie rozmiaru, też w `#job-form`. -#}
+    <label class="mt-2 flex flex-wrap items-center gap-2 text-sm" data-role="current-rim">
+      <span class="font-medium">{{ t.current_rim_label }}</span>
+      <select name="current_rim" form="job-form" class="rounded-md border border-slate-300 px-2 py-1.5">
+        {%- for inches in current_rims %}
+        <option value="{{ inches }}"{% if inches == chosen_current_rim %} selected{% endif %}>{{ inches | current_rim_text }}</option>
+        {%- endfor %}
+      </select>
+    </label>
+    <p class="text-xs text-slate-500">{{ t.current_rim_hint }}</p>
   </fieldset>
 </section>
 {% endif %}

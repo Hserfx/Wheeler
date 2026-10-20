@@ -182,11 +182,14 @@ def generate(
     templates: TemplatesDep,
     rim_id: Annotated[int | None, Form()] = None,
     rim_size: Annotated[str | None, Form()] = None,
+    current_rim: Annotated[str | None, Form()] = None,
 ) -> Response:
-    """„Generuj” z felgą wybraną na stronie zadania (`rim_id`) albo już przypisaną i rozmiarem
-    felgi (`rim_size`, stopień -2…+2; bez pola zostaje zapisany albo „bez zmian”)."""
+    """„Generuj” z felgą wybraną na stronie zadania (`rim_id`) albo już przypisaną, rozmiarem
+    felgi (`rim_size`, stopień -2…+2; bez pola zostaje zapisany albo „bez zmian”) i obecną
+    felgą (`current_rim`, 14…22″; bez pola zostaje zapisana albo 17″)."""
     try:
         size = None if rim_size is None else advanced.parse_rim_size(rim_size)
+        current = None if current_rim is None else advanced.parse_current_rim(current_rim)
     except advanced.InvalidParam as exc:
         job = _load_job(session, job_id)
         return _job_page(request, session, templates, job, advanced.error_message(exc), 400)
@@ -194,14 +197,23 @@ def generate(
         with session.begin():
             if rim_id is not None:
                 choose_rim(session, storage, job_id, rim_id)
-            start_generation(session, job_id, seed=_random_seed(), rim_size=size)
+            start_generation(
+                session, job_id, seed=_random_seed(), rim_size=size, current_rim=current
+            )
     except LookupError:
         raise HTTPException(status_code=404) from None
     except (NoRimSelected, RimNotReady):
         # Strona zadania z komunikatem: wybór felgi i kół zostaje na miejscu.
         job = _load_job(session, job_id)
         return _job_page(
-            request, session, templates, job, TEXTS["error_no_rim"], 409, chosen_rim_size=size
+            request,
+            session,
+            templates,
+            job,
+            TEXTS["error_no_rim"],
+            409,
+            chosen_rim_size=size,
+            chosen_current_rim=current,
         )
     except EditingError as exc:
         message = TEXTS["error_no_wheel" if isinstance(exc, NoWheelSelected) else "error_job_busy"]
@@ -286,6 +298,7 @@ def _load_job(session: Session, job_id: int) -> Job:
 
 def _job_context(job: Job) -> dict[str, object]:
     session = object_session(job)
+    params = EditParams.from_params(job.params)
     return {
         "job": job,
         "queue_position": queue_position(session, job) if session is not None else None,
@@ -293,8 +306,9 @@ def _job_context(job: Job) -> dict[str, object]:
         "input_image": job.image(ImageRole.INPUT),
         "result_image": job.image(ImageRole.RESULT),
         "wheel_seed": wheel_seed,
-        # Rozmiar felgi zapisany w zadaniu (jeden dla wszystkich kół i ponowień).
-        "saved_rim_size": EditParams.from_params(job.params).rim_size,
+        # Rozmiar felgi i obecna felga zapisane w zadaniu (jedne dla wszystkich kół i ponowień).
+        "saved_rim_size": params.rim_size,
+        "saved_current_rim": params.current_rim,
     }
 
 
@@ -314,16 +328,21 @@ def _job_page(
     status_code: int = 200,
     *,
     chosen_rim_size: int | None = None,
+    chosen_current_rim: int | None = None,
 ) -> Response:
     """Strona zadania; przed „Generuj” z wyborem felgi i jej rozmiaru (krok 3,
-    `editing.can_choose_rim`). `chosen_rim_size`: wybór z odrzuconego „Generuj”; bez niego
-    zaznaczony jest rozmiar zapisany w zadaniu."""
+    `editing.can_choose_rim`). `chosen_rim_size`, `chosen_current_rim`: wybór z odrzuconego
+    „Generuj”; bez nich zaznaczone są wartości zapisane w zadaniu."""
     context = _job_context(job)
     if can_choose_rim(job):
         context.update(picker_context(session, mode="select"))
         context["rim_sizes"] = edit_params.RIM_SIZES
         context["chosen_rim_size"] = (
             context["saved_rim_size"] if chosen_rim_size is None else chosen_rim_size
+        )
+        context["current_rims"] = edit_params.CURRENT_RIMS
+        context["chosen_current_rim"] = (
+            context["saved_current_rim"] if chosen_current_rim is None else chosen_current_rim
         )
     context["page_error"] = error
     return templates.TemplateResponse(request, "job.html", context, status_code=status_code)

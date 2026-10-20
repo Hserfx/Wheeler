@@ -205,10 +205,11 @@ def test_smaller_wheel_prefills_the_exposed_arch_dark_instead_of_the_old_tire() 
     assert exposed.sum() > 1000
     assert (exposed <= _mask(plan.edit_mask)).all()
     # Wypełnienie: kolor pasa nad górną połową starego koła (tło 160) x 0,5, czyli ok. 80,
-    # z rozmytą krawędzią; ani śladu starej opony (10).
+    # z rozmytą krawędzią; ani jednego piksela starej opony (10). Rozmycie przy nowej oponie
+    # przyciemnia brzeg wypełnienia (do ~46), ale nie do koloru opony.
     filled = np.asarray(plan.model_input.convert("L"))[exposed].astype(float)
     assert 60 <= filled.mean() <= 100
-    assert (filled > TIRE + 20).mean() > 0.95
+    assert (filled > TIRE + 20).all()
     untouched = ~_mask(plan.edit_mask)
     assert np.array_equal(np.asarray(plan.model_input)[untouched], np.asarray(photo)[untouched])
 

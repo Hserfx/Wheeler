@@ -75,13 +75,15 @@ done --„Ponów to koło”-------> regenerate_wheel (jedno koło, nowy seed) -
   (`wheeler_api/advanced.py`) zapisuje w `Job.params` użyte wartości już przy wgraniu zdjęcia;
   pusty seed jest losowany i zapisywany przy „Generuj”. Rozmiar felgi (`rim_size`, −2…+2″) nie należy
   do „Zaawansowane”: wybiera się go obok felgi na stronie zadania i zapisuje dopiero przy „Generuj”,
-  tak samo jak obecną felgę (`current_rim`, 14…22″, brak klucza = 17″; od ticketu 16 skala cala).
-  Steruje nim geometria, nie prompt: przy stopniu ≠ 0 worker przed mflux wyznacza elipsę felgi
-  (SAM 2, `Segmenter.segment_rim`) i przeskalowuje felgę w wycinku radialnym warpem
-  (`wheeler_worker/rim_geometry.py`). Razem z felgą wyznacza maskę karoserii zasłaniającej koło
-  (`Segmenter.segment_body`, wybór i kryteria w `wheeler_worker/body_mask.py`; od ticketu 16 chroniona
-  przy zmianie rozmiaru całego koła). Felga nie do wyznaczenia, zła maska karoserii albo obce
-  zasłonięcie koła kończą zadanie kodem `rim_size_unavailable`.
+  tak samo jak obecną felgę (`current_rim`, 14…22″, brak klucza = 17″; skala cala).
+  Stopień zmienia całe koło: felga i zewnętrzna średnica koła rosną albo maleją o N cali, punkt styku
+  z ziemią stoi, a karoseria zostaje bit w bit. Steruje tym geometria, nie prompt: przy stopniu ≠ 0
+  worker przed mflux wyznacza elipsę felgi (SAM 2, `Segmenter.segment_rim`,
+  `wheeler_worker/rim_geometry.py`) i maskę karoserii zasłaniającej koło (`Segmenter.segment_body`,
+  wybór i kryteria w `wheeler_worker/body_mask.py`), a potem zmienia rozmiar koła w wycinku
+  (`wheeler_worker/wheel_resize.py`: skala cala, nowe koło, maska edycji = stare ∪ nowe koło minus
+  karoseria, przez którą idzie też kompozycja). Felga nie do wyznaczenia, zła maska karoserii albo
+  obce zasłonięcie koła kończą zadanie kodem `rim_size_unavailable`.
 - `wheeler_worker/processing.py` definiuje `Processor` z metodą na każdy rodzaj pracy
   (`detect`, `segment`, `generate`, `regenerate_wheel`; tylko pliki, bez bazy). Runner (`runner.py`, `HANDLERS`) pobiera zadanie
   (`FOR UPDATE SKIP LOCKED`), woła procesor i zapisuje wynik albo błąd.

@@ -1,7 +1,7 @@
 """Pole „Obecna felga” (ticket 14): obecny rozmiar felgi auta 14…22″, domyślnie 17″.
 
-Wybierane obok stopnia rozmiaru felgi przed „Generuj” i zapisywane w `Job.params`; od ticketu 16
-wyznacza skalę cala przy zmianie rozmiaru. Generowanie się na razie nie zmienia. Testy przez
+Wybierane obok stopnia rozmiaru felgi przed „Generuj” i zapisywane w `Job.params`; wyznacza
+skalę cala przy zmianie rozmiaru (ticket 16, sprawdzane w `test_rim_size.py`). Testy przez
 HTTP i `run_once` workera na prawdziwym Postgresie (atrapy modeli), jak `test_rim_size.py`.
 """
 

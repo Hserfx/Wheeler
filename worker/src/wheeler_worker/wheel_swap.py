@@ -8,17 +8,21 @@ Pipeline (docs/DESIGN.md, „Pipeline edycji”):
    do rozdzielczości roboczej; model dostaje `[wycinek, felga]` i maskę wycinka; wynik wraca
    do rozmiaru wycinka i jest wklejany w zdjęcie (przy „ponów to koło”: w bieżący wynik)
    z krawędzią wygładzaną do wewnątrz maski.
-   Rozmiar felgi ≠ „bez zmian” (ticket 12): przed mflux SAM 2 wyznacza elipsę felgi każdego
-   koła (`rim_geometry.measure_rim`), a wycinek dostaje radialny warp felgi do docelowego
-   rozmiaru (`rim_geometry.warp_rim`); prompt jest ten sam. Razem z felgą SAM 2 wyznacza
-   maskę karoserii zasłaniającej koło (`body_mask.body_for_resize`, ticket 15); zła maska
-   albo obce zasłonięcie koła kończy zadanie jak brak felgi (`rim_size_unavailable`).
+   Rozmiar koła ≠ „bez zmian” (tickety 12, 15, 16): przed mflux SAM 2 wyznacza elipsę felgi
+   każdego koła (`rim_geometry.measure_rim`) i maskę karoserii zasłaniającej koło
+   (`body_mask.body_for_resize`); felga nie do wyznaczenia, zła maska albo obce zasłonięcie
+   koła kończy zadanie (`rim_size_unavailable`). Całe koło rośnie albo maleje o stopień
+   w calach (skala z „Obecnej felgi”), punkt styku z ziemią stoi (`wheel_resize.plan_resize`):
+   model dostaje wycinek wokół maski edycji (suma starego i nowego koła poszerzone o `mask_grow`,
+   minus karoseria) z kołem już w nowym rozmiarze, a kompozycja idzie przez maskę edycji,
+   więc karoseria zostaje bit w bit. Prompt jest ten sam.
 
 Pliki w katalogu zadania: `wheels/<id>/mask.png`, `overlay.png` (segment; dla kół z detekcji
 `wheels/detected-<n>/`, bo id koła powstaje dopiero przy zapisie) oraz `crop.png`,
-`crop_mask.png`, `generated.png` (generate; przy zmianie rozmiaru felgi także diagnostyczne
-`rim_ellipse.png` z karoserią, `body.png` i `warped.png`, czyli wycinek, który dostał model),
-wynik `result.png`.
+`crop_mask.png`, `generated.png` (generate; przy zmianie rozmiaru koła `crop.png` to wycinek
+oryginału wokół maski edycji, a `crop_mask.png` maska edycji, oraz diagnostyczne
+`rim_ellipse.png` ze starą i nową felgą i oponą i karoserią, `body.png` i `warped.png`, czyli
+wycinek, który dostał model), wynik `result.png`.
 """
 
 from __future__ import annotations
@@ -60,13 +64,9 @@ from wheeler_worker.processing import (
 )
 from wheeler_worker.rim_cut import cut_out, load_reference, pick_rim_box, rim_region
 from wheeler_worker.rim_editor import RimEditor, StepCallback
-from wheeler_worker.rim_geometry import (
-    RimGeometry,
-    measure_rim,
-    outline_rim,
-    warp_rim,
-)
+from wheeler_worker.rim_geometry import RimGeometry, measure_rim, outline_rim
 from wheeler_worker.segmenter import Segmenter
+from wheeler_worker.wheel_resize import inch_px, plan_resize
 
 # Obraz 1 = wycinek koła (do niego odnosi się maska mflux), obraz 2 = felga. Kolejność
 # `[felga, wycinek]` w 2 z 3 przypadków spike'a zwracała samo zdjęcie felgi.
@@ -79,6 +79,7 @@ PROMPT_TEMPLATE = (
 CROP_MARGIN = 0.25  # margines wycinka: ułamek boku koła z każdej strony
 FEATHER = 0.015  # pas wygładzania krawędzi (do wewnątrz maski): ułamek boku koła
 OVERLAY_RGBA = (37, 99, 235, 110)  # półprzezroczysty niebieski
+OLD_WHEEL_COLOR = (255, 255, 255)  # diagnostyka: felga i opona sprzed zmiany rozmiaru
 
 
 def wheel_dir(output_dir: Path, wheel: int | str) -> Path:
@@ -253,7 +254,7 @@ class WheelSwapProcessor:
                 raise ProcessingFailed(
                     Failure.RIM_SIZE_UNAVAILABLE, f"koło {wheel_id}: maska karoserii: {body.value}"
                 )
-            measured[wheel_id] = _MeasuredWheel(rim=geometry, body=body)
+            measured[wheel_id] = _MeasuredWheel(wheel=wheel, rim=geometry, body=body)
         return measured
 
     def _prepare_edit(self, params: EditParams, rim_path: Path, *, seed: int) -> _WheelEdit:
@@ -270,6 +271,8 @@ class WheelSwapProcessor:
             seed=seed,
             resolution=params.resolution,
             rim_size=params.rim_size,
+            current_rim=params.current_rim,
+            mask_grow=params.mask_grow,
         )
 
     def release(self) -> None:
@@ -282,9 +285,11 @@ class WheelSwapProcessor:
 
 @dataclass(frozen=True)
 class _MeasuredWheel:
-    """Pomiar koła przed zmianą rozmiaru: felga i opona (`rim`) oraz maska karoserii
-    zasłaniającej koło (`body`, L w rozmiarze zdjęcia; od ticketu 16 chroniona przy warpie)."""
+    """Pomiar koła przed zmianą rozmiaru (rozmiar zdjęcia): maska koła bez poszerzenia
+    (`wheel`), felga i opona (`rim`) oraz maska karoserii zasłaniającej koło (`body`),
+    chroniona przy zmianie rozmiaru."""
 
+    wheel: Image.Image
     rim: RimGeometry
     body: Image.Image
 
@@ -297,6 +302,8 @@ class _WheelEdit:
     seed: int
     resolution: int
     rim_size: int
+    current_rim: int
+    mask_grow: float
 
     def apply(
         self,
@@ -308,11 +315,26 @@ class _WheelEdit:
         measured: _MeasuredWheel | None = None,
         on_step: StepCallback | None = None,
     ) -> Image.Image:
-        """Podmienia felgę w jednym kole: model dostaje wycinek `original` (z `measured`:
-        felga przeskalowana o `rim_size`, tylko w `mask`), wynik jest składany na `base`;
-        piksele poza `mask` zostają z `base` bit w bit."""
-        wheel = mask_box(mask)
-        crop = _wheel_crop(mask, original.size)
+        """Podmienia felgę w jednym kole: model dostaje wycinek `original`, wynik jest składany
+        na `base`. Bez `measured` maską edycji jest zapisana maska koła `mask`; z `measured`
+        koło zmienia rozmiar o `rim_size` cali, a maską edycji jest suma starego i nowego koła
+        poszerzone o `mask_grow`, minus karoseria. Piksele poza maską edycji zostają z `base`
+        bit w bit."""
+        plan = None
+        edit_mask = mask
+        if measured is not None:
+            plan = plan_resize(
+                original,
+                measured.wheel,
+                measured.rim,
+                measured.body,
+                rim_size=self.rim_size,
+                inch=inch_px(measured.rim.rim, current_rim=self.current_rim),
+                mask_grow=self.mask_grow,
+            )
+            edit_mask = plan.edit_mask
+        wheel = mask_box(edit_mask)
+        crop = _wheel_crop(edit_mask, original.size)
         if wheel is None or crop is None:
             raise ProcessingFailed(Failure.EMPTY_MASK)
         side = max(wheel.width, wheel.height)
@@ -320,20 +342,24 @@ class _WheelEdit:
         # Model dostaje RGB; `original` jest w trybie wyniku (`photos.load_original`).
         source = original.crop(crop).convert("RGB")
         crop_image = source.resize(size, Image.Resampling.LANCZOS)
-        crop_mask = mask.crop(crop).resize(size, Image.Resampling.BILINEAR)
+        crop_mask = edit_mask.crop(crop).resize(size, Image.Resampling.BILINEAR)
         save_png(crop_image, out / "crop.png")
         save_png(crop_mask, out / "crop_mask.png")
-        if measured is not None:
-            local = measured.rim.shifted(-crop.left, -crop.top)
+        if measured is not None and plan is not None:
             body = measured.body.crop(crop)
             save_png(body, out / "body.png")
-            save_png(outline_body(outline_rim(source, local), body), out / "rim_ellipse.png")
-            warped = warp_rim(source, local, rim_size=self.rim_size)
-            # Tylko w masce, którą model zmienia: bok opony (felga * k) potrafi z niej wyjść,
-            # a poza maską kompozycja i tak zostawia oryginał (model widziałby szew).
-            crop_image = Image.composite(
-                warped.resize(size, Image.Resampling.LANCZOS), crop_image, crop_mask
+            old = outline_rim(
+                source,
+                measured.rim.shifted(-crop.left, -crop.top),
+                rim_color=OLD_WHEEL_COLOR,
+                tire_color=OLD_WHEEL_COLOR,
             )
+            outline = outline_rim(old, plan.geometry.shifted(-crop.left, -crop.top))
+            save_png(outline_body(outline, body), out / "rim_ellipse.png")
+            warped = plan.model_input.crop(crop).resize(size, Image.Resampling.LANCZOS)
+            # Poza maską modelu dokładnie wycinek oryginału: skalowanie rozmywa nowe koło
+            # o kilka pikseli za maskę, a kompozycja i tak bierze tam oryginał (szew).
+            crop_image = Image.composite(warped, crop_image, crop_mask)
             save_png(crop_image, out / "warped.png")
         generated = self.editor.edit(
             [crop_image, self.rim],
@@ -346,12 +372,13 @@ class _WheelEdit:
         ).convert("RGB")
         save_png(generated, out / "generated.png")
         feather = max(2, round(side * FEATHER))
-        return composite(base, generated, crop, mask, feather=feather)
+        return composite(base, generated, crop, edit_mask, feather=feather)
 
 
 def _wheel_crop(mask: Image.Image, image_size: tuple[int, int]) -> Box | None:
-    """Wycinek koła dla modelu (i dla kryteriów maski karoserii): kwadrat wokół zapisanej
-    maski z marginesem `CROP_MARGIN`; `None` dla pustej maski."""
+    """Wycinek koła dla modelu (wokół maski edycji) i dla kryteriów maski karoserii (wokół
+    zapisanej maski koła): kwadrat wokół maski z marginesem `CROP_MARGIN`; `None` dla pustej
+    maski."""
     wheel = mask_box(mask)
     return None if wheel is None else crop_box_for(wheel, image_size, margin=CROP_MARGIN)
 
@@ -385,8 +412,8 @@ def _next_result_path(output_dir: Path) -> Path:
 
 
 def build_prompt(suffix: str = "") -> str:
-    """Prompt edycji: szablon i dopisek. Ten sam dla każdego rozmiaru felgi: polecenie
-    rozmiaru model ignoruje, więc rozmiarem steruje warp wycinka (ticket 12)."""
+    """Prompt edycji: szablon i dopisek. Ten sam dla każdego rozmiaru koła: polecenie
+    rozmiaru model ignoruje, więc rozmiarem steruje geometria wycinka (tickety 12 i 16)."""
     suffix = suffix.strip()
     return f"{PROMPT_TEMPLATE} {suffix}" if suffix else PROMPT_TEMPLATE
 

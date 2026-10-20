@@ -13,7 +13,7 @@ Pipeline (docs/DESIGN.md, „Pipeline edycji”):
    (`body_mask.body_for_resize`); felga nie do wyznaczenia, zła maska albo obce zasłonięcie
    koła kończy zadanie (`rim_size_unavailable`). Całe koło rośnie albo maleje o stopień
    w calach (skala z „Obecnej felgi”), punkt styku z ziemią stoi (`wheel_resize.plan_resize`):
-   model dostaje wycinek wokół maski edycji (suma starego i nowego koła poszerzone o `mask_grow`,
+   model dostaje wycinek wokół maski edycji (suma starego i nowego koła poszerzona o `mask_grow`,
    minus karoseria) z kołem już w nowym rozmiarze, a kompozycja idzie przez maskę edycji,
    więc karoseria zostaje bit w bit. Prompt jest ten sam.
 
@@ -318,7 +318,7 @@ class _WheelEdit:
         """Podmienia felgę w jednym kole: model dostaje wycinek `original`, wynik jest składany
         na `base`. Bez `measured` maską edycji jest zapisana maska koła `mask`; z `measured`
         koło zmienia rozmiar o `rim_size` cali, a maską edycji jest suma starego i nowego koła
-        poszerzone o `mask_grow`, minus karoseria. Piksele poza maską edycji zostają z `base`
+        poszerzona o `mask_grow`, minus karoseria. Piksele poza maską edycji zostają z `base`
         bit w bit."""
         plan = None
         edit_mask = mask

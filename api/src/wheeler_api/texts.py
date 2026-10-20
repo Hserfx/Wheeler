@@ -102,6 +102,7 @@ TEXTS: Final[dict[str, str]] = {
     "job_param_mask_grow": "Poszerzenie maski",
     "job_param_prompt_suffix": "Dopisek do promptu",
     "job_param_rim_size": "Rozmiar felgi",
+    "job_param_current_rim": "Obecna felga",
     "error_param_seed": "Seed musi być liczbą całkowitą od 0 do {seed_max} albo pustym polem.",
     "error_param_resolution": (
         "Rozdzielczość robocza musi być wielokrotnością {step} px, "
@@ -110,6 +111,9 @@ TEXTS: Final[dict[str, str]] = {
     "error_param_mask_grow": "Poszerzenie maski musi być liczbą od {grow_min} do {grow_max}%.",
     "error_param_prompt_suffix": "Dopisek do promptu może mieć najwyżej {length} znaków.",
     "error_param_rim_size": "Rozmiar felgi musi być stopniem od {rim_size_min} do {rim_size_max}.",
+    "error_param_current_rim": (
+        "Obecna felga musi być pełnym rozmiarem od {current_rim_min} do {current_rim_max}."
+    ),
     # Wybór koła i generowanie
     "wheel_click_hint": "Kliknij koło, w którym chcesz podmienić felgę.",
     "wheel_mask_hint": (
@@ -137,6 +141,13 @@ TEXTS: Final[dict[str, str]] = {
     "rim_size_unchanged": "bez zmian",
     "rim_size_inches": "{sign}{inches}″",
     "result_rim_size": "Felga: {size}",
+    # Obecna felga (ticket 14): skala cala przy zmianie rozmiaru (od ticketu 16)
+    "current_rim_label": "Obecna felga",
+    "current_rim_hint": (
+        "Rozmiar felgi auta na zdjęciu (np. R17 z boku opony). Gdy go nie znasz, zostaw 17″."
+    ),
+    "current_rim_inches": "{inches}″",
+    "result_current_rim": "obecna {size}",
     "sign_plus": "+",
     "sign_minus": "\N{MINUS SIGN}",  # minus typograficzny (U+2212), nie łącznik
     # Zadanie
@@ -255,6 +266,7 @@ PARAM_LABELS: Final[dict[str, str]] = {
         edit_params.MASK_GROW,
         edit_params.PROMPT_SUFFIX,
         edit_params.RIM_SIZE,
+        edit_params.CURRENT_RIM,
     )
 }
 

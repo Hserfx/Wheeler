@@ -490,17 +490,31 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
 
 **Blocked by:** 13
 
-**Status:** claimed
+**Status:** done
 
-- [ ] Pole „Obecna felga” w sekcji felgi, w formularzu „Generuj” (`#job-form`), jak wybór `rim_size`; domyślnie 17″. `POST /jobs` przy wgraniu go nie przyjmuje
-- [ ] Nowy klucz w `Job.params` (`wheeler_shared/edit_params.py`, pole w `EditParams`), walidacja 14–22 po stronie serwera jak `rim_size` (`advanced.parse_…` → `InvalidParam` → czytelny komunikat); brak klucza oznacza 17″
-- [ ] Jedno ustawienie na całe zadanie: „Ponów” i „Ponów to koło” dostają tę samą wartość
-- [ ] Ekran wyniku pokazuje obecną felgę obok „Felga: +2″”, tylko gdy stopień ≠ „bez zmian”; szczegóły zadania w historii przez `PARAM_LABELS`
-- [ ] Teksty po polsku w `texts.py`; testy jak w `tests/test_rim_size.py` (walidacja, zapis, retry)
+- [x] Pole „Obecna felga” w sekcji felgi, w formularzu „Generuj” (`#job-form`), jak wybór `rim_size`; domyślnie 17″. `POST /jobs` przy wgraniu go nie przyjmuje
+- [x] Nowy klucz w `Job.params` (`wheeler_shared/edit_params.py`, pole w `EditParams`), walidacja 14–22 po stronie serwera jak `rim_size` (`advanced.parse_…` → `InvalidParam` → czytelny komunikat); brak klucza oznacza 17″
+- [x] Jedno ustawienie na całe zadanie: „Ponów” i „Ponów to koło” dostają tę samą wartość
+- [x] Ekran wyniku pokazuje obecną felgę obok „Felga: +2″”, tylko gdy stopień ≠ „bez zmian”; szczegóły zadania w historii przez `PARAM_LABELS`
+- [x] Teksty po polsku w `texts.py`; testy jak w `tests/test_rim_size.py` (walidacja, zapis, retry)
 
 **Comments:**
 
 - 2026-10-19: z rekomendacji w `VERDICT.md` (gałąź `prototype/whole-wheel-resize`, `worker/prototype_whole_wheel/` (`VERDICT.md`, `whole_wheel.py`, `test_whole_wheel.py`, `run.py`)), zatwierdzonej przez użytkownika (ticket 13). Stała `DEFAULT_CURRENT_RIM` = 17 jest dziś w prototypie (`whole_wheel.py`); jej miejsce to `edit_params.py`.
+- 2026-10-20 (agent, gałąź `ticket-14`): klucz `current_rim` w `wheeler_shared/edit_params.py`
+  (`CURRENT_RIM`, `CURRENT_RIMS` 14…22, `DEFAULT_CURRENT_RIM` = 17, `EditParams.current_rim`).
+  Pole to `<select name="current_rim" form="job-form">` pod stopniem rozmiaru w `fieldset`
+  `data-role="rim-size"` (`job.html`); walidacja `advanced.parse_current_rim` -> `InvalidParam`
+  -> „Obecna felga musi być pełnym rozmiarem od 14″ do 22″.”, 400 ze stroną zadania. Zapis jak
+  `rim_size` w `start_generation(..., current_rim=)`: zapisywane przy każdym „Generuj” z polem (także
+  przy „bez zmian”), brak pola (albo puste pole, które FastAPI traktuje jak brak) zostawia zapisaną
+  wartość; wybór zostaje zaznaczony po odrzuconym „Generuj” (409). „Ponów” i „Ponów to koło” biorą
+  wartość z `Job.params` bez dodatkowego kodu. Ekran wyniku: `data-role="result-current-rim"`
+  („obecna 17″”) za „Felga: +2″”, tylko przy stopniu ≠ 0; etykieta w `PARAM_LABELS`. Worker
+  i generowanie bez zmian (`EditParams.current_rim` czeka na ticket 16). Testy:
+  `tests/test_current_rim.py`. DESIGN i README: wzmianka o polu. Odstępstwa: stała rantu 1,4″
+  zostaje w prototypie (przeniesie ją ticket 16 razem z `inch_px`); podpowiedź pod stopniem
+  rozmiaru („zewnętrzna średnica koła zostaje”) bez zmian, bo zmienia się ona w tickecie 16.
 
 ---
 

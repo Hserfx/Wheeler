@@ -555,6 +555,11 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
   zgodnie z „dwoma wariantami” w tickecie); test ticketu 12 „warp tylko w masce koła” (felga 45 px, opona
   z typowego k wystaje z maski) dostał atrapę nakładki nadkola wokół koła, bo bez niej teraz słusznie kończy
   się obcym zasłonięciem. Adapter SAM 2 nie uruchomiony na prawdziwym modelu (ticket tego nie wymaga).
+- 2026-10-20 (agent, poprawki po code review (gałąź `review-fixes-14-17`)): prompt karoserii liczony raz
+  (`Segmenter.segment_body` zwraca go w `BodySegments.prompt`, `body_for_resize` go nie przelicza);
+  `_bool`/`_image` i ręczne wycinki `Box` zastąpione wspólnymi `compositing.mask_array`/`mask_image`
+  i `Box.slices`, sprawdzenie „punkt w obrazie i w masce” w `_in_mask`; `_measure_rims` →
+  `_measure_wheels` (mierzy felgę i karoserię). Bez zmiany zachowania.
 
 ---
 
@@ -606,6 +611,19 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
   `/usr/bin/time -l`; uruchomienie przez procesor, nie przez HTTP i kolejkę; przy wartościach ujemnych
   odsłonięte nadkole ma w wycinku piksele starej opony (wypełnienie: ticket 17), więc testy szerokości koła
   tylko dla wartości dodatnich.
+- 2026-10-20 (agent, poprawki po code review (gałąź `review-fixes-14-17`)): okno warpu ma zapas
+  `LANCZOS_REACH` + 1 px (Lanczos czyta 4 px sąsiedztwa; przy `mask_grow` = 0 zapas 2 px dawał przy
+  brzegu okna odbicie zamiast zdjęcia), a współrzędne źródła są zaokrąglane do siatki `cv2.remap`
+  (1/32 px) jeszcze w float64, bo float32 w układzie okna i całego zdjęcia zaokrąglał je inaczej
+  (pojedyncze piksele różniły się o kilka poziomów). Test: plan w oknie = plan na całym zdjęciu przy
+  `mask_grow` = 0 (tło z pełnym szumem; przy lekkim szumie odbicie nie różni się od zdjęcia). Refaktory
+  bez zmiany zachowania: `MeasuredWheel` przeniesiony do `wheel_resize` i podawany `plan_resize` jednym
+  argumentem (`ResizePlan.old` niesie go do diagnostyki, więc `_WheelEdit.apply` sprawdza tylko
+  `plan`), zapis diagnostyki w `_save_resize_diagnostics`, `mask_box` liczony raz (`_wheel_crop` bierze
+  `Box`), bez `ResizePlan.wheel` (testy biorą nowe koło z elipsy nowej opony z pikselem zapasu albo
+  z pikseli koła w `model_input`), `rim_size: int` w `plan_resize` i `resized_geometry` (ułamek 0,25″
+  był tylko w prototypie, do siatki sylwetki w `run.py`; testy workera go nie używają), stałe kolorów
+  na górze `rim_geometry`.
 
 ---
 
@@ -639,3 +657,8 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
   zaktualizowany. Odstępstwa: „pas nad górną połową” to jak w `_prefill` prototypu pierścień wokół starego
   koła powyżej środka opony; kolor z oryginału zamiast z obrazu po wklejeniu nowego koła (to samo,
   bo pierścień leży poza starym kołem); prawdziwy model nieuruchamiany (ticket tego nie wymaga).
+- 2026-10-20 (agent, poprawki po code review (gałąź `review-fixes-14-17`)): test wypełnienia wymaga
+  zera pikseli starej opony w odsłoniętym obszarze (było: ≤ 5% ciemnych). Bez wyłączania rozmytego
+  brzegu: najciemniejszy piksel wypełnienia ~46 (rozmycie przy nowej oponie), opona 10. Odsłonięty
+  obszar w teście to stare koło poza elipsą nowej opony powiększoną o 1% (~1 px), bo nowe koło to
+  stara maska po warpie (najbliższy sąsiad) i jego brzeg może wyjść o piksel poza elipsę.

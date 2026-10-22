@@ -514,8 +514,20 @@ Ustalenia z grillingu (2026-10-19), które prototyp realizuje:
   Tekst `failure_rim_size_unavailable` w `wheeler_api/texts.py`. `JobStatus.FAILED` i „Ponów” (`retry.py`) bez
   zmian, dla zadań `cancelled` i dawnych `failed`. Testy: `tests/test_failed_generation.py`; poprawione
   `test_progress_cancel.py` (przerwane generowanie → szkic; test „Ponów” z kopiowaniem danych działa teraz na
-  zadaniu anulowanym w trakcie generowania), `test_rim_size.py`, `test_upload_flow.py`. Odstępstwo/doprecyzowanie
-  „komunikat do kolejnego Generuj”: usunięcie koła kliknięciem nie czyści już błędu generowania
-  (`editing.click_photo` czyści tylko błąd maski/detekcji), ale dodanie koła zleca workerowi maskę (`enqueue`
-  segmentacji), więc komunikat znika i zastępuje go stan tej pracy — trzymanie go dalej wymagałoby osobnego pola
-  na pochodzenie błędu (szablon wybiera prefiks komunikatu po `Job.task`).
+  zadaniu anulowanym w trakcie generowania), `test_rim_size.py`, `test_upload_flow.py`. Odstępstwo od
+  „komunikat do kolejnego Generuj” (dodanie koła zastępowało błąd stanem pracy workera, bo prefiks komunikatu
+  zgadywano z `Job.task`) zostało naprawione w poprawkach po code review (niżej).
+- 2026-10-22 (agent, poprawki po code review, gałąź `review-fixes-14-draft`): jawne pochodzenie błędu zamiast
+  zgadywania z `Job.task`: kolumna `Job.error_task` (migracja `0009_t14_error_task`, istniejące błędy dostają
+  bieżące `task`, bo `enqueue` zawsze je czyścił; `Job.error` i `error_task` ustawia `queue.fail_job`, czyści
+  `queue.clear_error`). Szablon `_job_status.html` dobiera prefiks po `error_task`. Błąd generowania przeżywa
+  dodanie i usunięcie koła (`editing.click_photo`: `clear_error`/`enqueue(..., keep_generation_error=True)`),
+  czyści go dopiero „Generuj”; błąd segmentacji i detekcji działa jak dotąd, a nowy błąd zastępuje poprzedni.
+  Usuwanie `rim_size` przy `rim_size_unavailable` w `edit_params.without_rim_size`. Testy: nowe w
+  `test_failed_generation.py` (błąd generowania -> dodanie koła po segmentacji -> komunikat zostaje z prefiksem
+  „Błąd” -> usunięcie koła -> „Generuj” czyści; błąd maski po błędzie generowania) i w `test_failure_migration.py`
+  (uzupełnienie `error_task`). Porządki w testach: wspólne `job_page`, `job_status`, `params_block`,
+  `draft_with_wheel` w `tests/helpers.py`, `BrokenEditor` w `tests/fake_models.py` (zastępuje lokalne warianty),
+  bez `# type: ignore`; zmienna `cancelling` w `test_progress_cancel.py`; brzmienie `rim_size_unavailable`
+  sprawdzane tylko przez `TEXTS[...] in page` (repo nie ma testów samego `texts.py`). DESIGN.md i README opisują
+  zachowanie komunikatu.

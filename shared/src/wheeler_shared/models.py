@@ -12,6 +12,8 @@ z których część wykonuje worker (`TaskKind`), a część użytkownik (status
         też wracają do done z poprzednim wynikiem)
 
 `Job.task` to rodzaj ostatnio zleconej pracy workera; razem ze statusem mówi UI, co się dzieje.
+`Job.error_task` to rodzaj pracy, która zawiodła (pochodzenie `Job.error`): błąd generowania
+przeżywa kolejne prace nad szkicem, więc nie wynika z `task`.
 """
 
 from __future__ import annotations

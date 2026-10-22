@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 import numpy as np
-from fake_models import BoxDetector, DiscSegmenter, NothingSegmenter, SolidEditor
+from fake_models import BoxDetector, BrokenEditor, DiscSegmenter, NothingSegmenter, SolidEditor
 from fastapi.testclient import TestClient
 from helpers import (
     click_wheel,
@@ -18,10 +18,11 @@ from helpers import (
     fetch,
     generate,
     image_src,
+    job_page,
     noise_photo,
+    params_block,
     upload,
 )
-from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
 from wheeler_api.texts import TEXTS
@@ -93,10 +94,8 @@ def test_generation_records_used_seed_in_job_parameters(
     assert run_once(session_factory, storage, fake_processor())
     generate(client, job_id)
 
-    params = re.search(r"<dl[^>]*data-params.*?</dl>", client.get(f"/jobs/{job_id}").text, re.S)
-    assert params and re.search(
-        r'data-param="seed".*?<dd[^>]*>\s*\d+\s*</dd>', params.group(0), re.S
-    )
+    params = params_block(job_page(client, job_id))
+    assert params and re.search(r'data-param="seed".*?<dd[^>]*>\s*\d+\s*</dd>', params, re.S)
 
 
 def test_generation_requires_a_wheel_mask(
@@ -141,10 +140,6 @@ def test_failed_segmentation_lets_user_click_again(
 def test_failure_in_generation_returns_to_draft_with_error_on_page(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
-    class BrokenEditor(SolidEditor):
-        def edit(self, *args: object, **kwargs: object) -> Image.Image:
-            raise RuntimeError("model się wyłożył")
-
     processor = WheelSwapProcessor(
         detector=BoxDetector(), segmenter=DiscSegmenter(radius=10), editor=BrokenEditor()
     )

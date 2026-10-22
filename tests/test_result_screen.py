@@ -7,10 +7,9 @@ from __future__ import annotations
 
 import io
 import re
-from typing import Any
 
 import numpy as np
-from fake_models import BoxDetector, DiscSegmenter, SolidEditor
+from fake_models import BoxDetector, BrokenEditor, DiscSegmenter, SolidEditor
 from fastapi.testclient import TestClient
 from helpers import (
     drain,
@@ -157,10 +156,6 @@ def _result_bytes(client: TestClient, job_id: int) -> bytes:
 def test_failed_wheel_regeneration_keeps_previous_result_and_says_so(
     client: TestClient, session_factory: sessionmaker[Session], storage: Storage
 ) -> None:
-    class BrokenEditor(SolidEditor):
-        def edit(self, *args: Any, **kwargs: Any) -> Image.Image:
-            raise RuntimeError("model się wyłożył")
-
     job_id = _done_job(client, session_factory, storage, [(80, 120)])
     [wheel_id] = _wheel_ids(client.get(f"/jobs/{job_id}/status").text)
     previous = _result_bytes(client, job_id)

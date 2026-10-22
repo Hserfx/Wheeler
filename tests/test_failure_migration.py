@@ -93,8 +93,7 @@ def test_existing_errors_get_the_kind_of_work_that_failed(empty_database_url: st
             ]:
                 conn.execute(
                     text(
-                        "INSERT INTO jobs (status, task, params, error) "
-                        "VALUES (:s, :t, '{}', :e)"
+                        "INSERT INTO jobs (status, task, params, error) VALUES (:s, :t, '{}', :e)"
                     ),
                     {"s": status, "t": task, "e": error},
                 )

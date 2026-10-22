@@ -117,6 +117,10 @@ class Job(Base):
     params: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     # Kod przyczyny niepowodzenia (`wheeler_shared.failures.Failure`), nie tekst dla UI.
     error: Mapped[str | None] = mapped_column(Text)
+    # Rodzaj pracy, która zawiodła (pochodzenie `error`, od niego zależy prefiks komunikatu w UI).
+    # Błąd generowania wraca do szkicu i przeżywa kolejne prace workera, więc nie wynika z `task`.
+    # `error` i `error_task` ustawia i czyści się razem (`queue.fail_job`, `queue.clear_error`).
+    error_task: Mapped[TaskKind | None] = mapped_column(_str_enum(TaskKind, "task_kind"))
     # Liczba kół znalezionych przez detektor (None = detekcja się nie odbyła albo nie udała).
     wheels_detected: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -77,3 +77,32 @@ def test_legacy_error_texts_become_failure_codes(empty_database_url: str) -> Non
         engine.dispose()
     assert jobs == [*legacy_jobs.values(), None]
     assert rims == list(legacy_rims.values())
+
+
+def test_existing_errors_get_the_kind_of_work_that_failed(empty_database_url: str) -> None:
+    migrate(empty_database_url, "review_failure_codes")
+    engine = make_engine(empty_database_url)
+    try:
+        with engine.begin() as conn:
+            for status, task, error in [
+                ("draft", "segment", "nothing_at_click"),
+                ("draft", "detect", "internal"),
+                ("done", "regenerate_wheel", "internal"),
+                ("failed", "generate", "interrupted"),
+                ("done", "generate", None),
+            ]:
+                conn.execute(
+                    text(
+                        "INSERT INTO jobs (status, task, params, error) "
+                        "VALUES (:s, :t, '{}', :e)"
+                    ),
+                    {"s": status, "t": task, "e": error},
+                )
+
+        migrate(empty_database_url)
+
+        with engine.connect() as conn:
+            kinds = conn.execute(text("SELECT error_task FROM jobs ORDER BY id")).scalars().all()
+    finally:
+        engine.dispose()
+    assert kinds == ["segment", "detect", "regenerate_wheel", "generate", None]

@@ -81,12 +81,22 @@ def create_job(
     return job.id
 
 
-def enqueue(job: Job, task: TaskKind) -> None:
-    """Wstawia zadanie do kolejki z pracą `task` (koniec kolejki, czyści poprzedni błąd)."""
+def clear_error(job: Job, *, keep_generation_error: bool = False) -> None:
+    """Czyści komunikat błędu. Błąd generowania (ticket 14) wisi do kolejnego „Generuj”,
+    więc `keep_generation_error` zostawia go przy pracy nad szkicem (koła)."""
+    if keep_generation_error and job.error_task == TaskKind.GENERATE:
+        return
+    job.error = None
+    job.error_task = None
+
+
+def enqueue(job: Job, task: TaskKind, *, keep_generation_error: bool = False) -> None:
+    """Wstawia zadanie do kolejki z pracą `task` (koniec kolejki, czyści poprzedni błąd,
+    a z `keep_generation_error` zostawia błąd generowania, zob. `clear_error`)."""
     job.status = JobStatus.QUEUED
     job.task = task
     job.queued_at = utcnow()
-    job.error = None
+    clear_error(job, keep_generation_error=keep_generation_error)
     job.progress = None
     job.cancel_requested = False
 
@@ -258,11 +268,12 @@ def fail_job(session: Session, job_id: int, *, error: Failure) -> None:
     (`rim_size_unavailable`), nie zostawiamy: brak klucza = „bez zmian”."""
     job = session.get_one(Job, job_id)
     job.error = error
+    job.error_task = job.task
     if job.task == TaskKind.REGENERATE_WHEEL:
         _back_to_result(job)
         return
     if error == Failure.RIM_SIZE_UNAVAILABLE:
-        job.params = {k: v for k, v in job.params.items() if k != edit_params.RIM_SIZE}
+        job.params = edit_params.without_rim_size(job.params)
     job.status = JobStatus.DRAFT
     for wheel in [w for w in job.wheels if w.mask_path is None]:
         job.wheels.remove(wheel)

@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 
 import pytest
-from fake_models import BoxDetector, DiscSegmenter, SolidEditor
+from fake_models import BoxDetector, DiscSegmenter, NothingSegmenter, SolidEditor
 from fastapi.testclient import TestClient
 from helpers import click_wheel, drain, generate, upload
 from PIL import Image
@@ -138,6 +138,54 @@ def test_error_stays_visible_while_the_draft_is_edited(
     assert 'data-role="mask-overlay"' not in status
     assert TEXTS["failure_internal"] in status
     assert TEXTS["failure_internal"] in _page(client, job_id)
+
+
+def test_generation_error_survives_adding_and_removing_wheels_until_generate_clears_it(
+    client: TestClient, session_factory: sessionmaker[Session], storage: Storage
+) -> None:
+    processor = _processor(BrokenEditor())
+    job_id = _draft_with_wheel(client, session_factory, storage, processor)
+    generate(client, job_id)
+    assert run_once(session_factory, storage, processor)
+
+    status = click_wheel(client, job_id, (10, 10))  # dodanie koła zleca workerowi maskę
+    assert TEXTS["status_segmenting"] in status
+    assert TEXTS["failure_internal"] in status
+    assert drain(session_factory, storage, processor) == 1
+
+    page = _page(client, job_id)
+    assert page.count('data-role="mask-overlay"') == 2
+    assert TEXTS["failure_internal"] in page
+    # Prefiks komunikatu zależy od pochodzenia błędu (generowanie), nie od ostatniej pracy workera.
+    assert f'{TEXTS["job_error"]}: {TEXTS["failure_internal"]}' in page
+    assert TEXTS["error_mask_failed"] not in page
+
+    status = click_wheel(client, job_id, (10, 10))  # usunięcie dodanego koła
+    assert status.count('data-role="mask-overlay"') == 1
+    assert TEXTS["failure_internal"] in status
+    assert TEXTS["failure_internal"] in _page(client, job_id)
+
+    generate(client, job_id)
+    assert TEXTS["failure_internal"] not in _status(client, job_id)
+
+
+def test_failed_mask_after_a_generation_error_is_reported_as_a_mask_error(
+    client: TestClient, session_factory: sessionmaker[Session], storage: Storage
+) -> None:
+    processor = _processor(BrokenEditor())
+    job_id = _draft_with_wheel(client, session_factory, storage, processor)
+    generate(client, job_id)
+    assert run_once(session_factory, storage, processor)
+    click_wheel(client, job_id, (10, 10))
+    nothing = WheelSwapProcessor(
+        detector=BoxDetector(), segmenter=NothingSegmenter(), editor=SolidEditor()
+    )
+    assert drain(session_factory, storage, nothing) == 1
+
+    page = _page(client, job_id)
+
+    assert TEXTS["error_mask_failed"] in page and TEXTS["failure_nothing_at_click"] in page
+    assert TEXTS["failure_internal"] not in page  # nowy błąd zastąpił poprzedni
 
 
 def _checked_rim_size(page: str) -> list[str]:

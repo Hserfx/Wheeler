@@ -23,7 +23,7 @@ from wheeler_shared.models import (
     Wheel,
     WheelSource,
 )
-from wheeler_shared.queue import enqueue, mark_cancelled
+from wheeler_shared.queue import clear_error, enqueue, mark_cancelled
 from wheeler_shared.rim_library import use_rim
 from wheeler_shared.storage import Storage
 
@@ -59,8 +59,9 @@ def click_photo(
     miejscu dodaje nowe koło i zleca workerowi wyznaczenie jego maski (SAM 2).
 
     Przy nakładających się maskach usuwane jest koło dodane najpóźniej (rysowane na wierzchu).
-    Dodanie koła (praca workera) czyści komunikat błędu, usunięcie czyści tylko błąd maski
-    albo detekcji. Pliki usuniętych masek zostają w katalogu zadania do jego usunięcia.
+    Błąd generowania zostaje do kolejnego „Generuj” (ticket 14); błąd maski albo detekcji
+    znika przy każdym kliknięciu. Pliki usuniętych masek zostają w katalogu zadania do jego
+    usunięcia.
     """
     job = _lock_draft(session, job_id)
     hit = next(
@@ -73,14 +74,12 @@ def click_photo(
     )
     if hit is not None:
         job.wheels.remove(hit)
-        if job.task != TaskKind.GENERATE:
-            # Błąd maski/detekcji znika; błąd generowania wisi do kolejnego „Generuj”.
-            job.error = None
+        clear_error(job, keep_generation_error=True)
         return
     wheel = Wheel(source=WheelSource.CLICK)
     wheel.click = point
     job.wheels.append(wheel)
-    enqueue(job, TaskKind.SEGMENT)
+    enqueue(job, TaskKind.SEGMENT, keep_generation_error=True)
 
 
 def _wheel_contains(wheel: Wheel, point: Point, mask_contains: MaskContains) -> bool:

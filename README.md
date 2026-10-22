@@ -65,6 +65,9 @@ done --„Ponów to koło”-------> regenerate_wheel (jedno koło, nowy seed) -
 - Błędy workera: `Job.error`/`Rim.error` trzymają kod `wheeler_shared.failures.Failure`
   (procesor rzuca `ProcessingFailed(kod)`, każdy inny wyjątek to `internal`), a szablony pokazują
   tekst z `texts.py` (`failure_text`). Wyjątki bibliotek trafiają tylko do logu workera.
+  `Job.error_task` to rodzaj pracy, która zawiodła (ustawia `queue.fail_job`, czyści razem
+  z błędem `queue.clear_error`); od niego, a nie od bieżącego `Job.task`, zależy prefiks
+  komunikatu w `_job_status.html`.
 - Koła (`Wheel`): `source` (`detected` | `click`), maska, nakładka i `box_*` (prostokąt maski,
   wstępny filtr przy trafianiu kliknięciem). `Job.wheels_detected` = liczba kół z detekcji
   (0 -> UI mówi „Nie wykryto żadnego koła”). Klik trafia w maskę, gdy plik maski ma w tym punkcie
@@ -112,7 +115,8 @@ done --„Ponów to koło”-------> regenerate_wheel (jedno koło, nowy seed) -
   `Job.cancel_requested`; ustawiona flaga przerywa pracę wyjątkiem `JobCancelled` (najpóźniej po
   bieżącym kroku), a zadanie dostaje status `cancelled`. Zadanie w kolejce jest anulowane od razu.
 - Nieudane generowanie (`queue.fail_job`, ticket 14) wraca do szkicu z `Job.error`: zdjęcie,
-  koła, felga i parametry (z seedem) zostają, ponowne „Generuj” czyści błąd. Przy
+  koła, felga i parametry (z seedem) zostają, a błąd (`error_task=generate`) przeżywa dodanie
+  i usunięcie koła (`editing.click_photo`); czyści go dopiero ponowne „Generuj”. Przy
   `rim_size_unavailable` klucz `rim_size` znika z `Job.params` („bez zmian”). Status `failed`
   mają już tylko zadania sprzed tej zmiany (bez migracji).
 - Awaria lub restart workera: przy starcie worker kończy zadania `running` jak po błędzie

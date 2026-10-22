@@ -65,6 +65,26 @@ def image_src(html: str, role: str) -> str:
     return match.group(1)
 
 
+def job_page(client: TestClient, job_id: int) -> str:
+    """Strona zadania (`GET /jobs/<id>`)."""
+    response = client.get(f"/jobs/{job_id}")
+    assert response.status_code == 200
+    return response.text
+
+
+def job_status(client: TestClient, job_id: int) -> str:
+    """Fragment stanu zadania (`GET /jobs/<id>/status`), odpytywany przez UI."""
+    response = client.get(f"/jobs/{job_id}/status")
+    assert response.status_code == 200
+    return response.text
+
+
+def params_block(html: str) -> str | None:
+    """Lista parametrów zadania (`<dl data-params>`) w HTML; `None`, gdy jej nie ma."""
+    match = re.search(r"<dl[^>]*data-params.*?</dl>", html, re.S)
+    return match.group(0) if match else None
+
+
 def fetch(client: TestClient, url: str) -> Image.Image:
     response = client.get(url)
     assert response.status_code == 200, url
@@ -182,6 +202,25 @@ def drain(
     while run_once(session_factory, storage, processor):
         count += 1
     return count
+
+
+def draft_with_wheel(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    storage: Storage,
+    processor: WheelSwapProcessor,
+    *,
+    photo: bytes | None = None,
+    filename: str = "auto.jpg",
+    point: tuple[float, float] = WHEEL_CENTER,
+) -> int:
+    """Szkic z felgą i jednym kołem z maską (detekcja po wgraniu, klik w koło), gotowy do
+    „Generuj”. Przetwarza całą kolejkę `processor`em."""
+    job_id = upload(client, photo, filename=filename)
+    drain(session_factory, storage, processor)
+    click_wheel(client, job_id, point)
+    assert drain(session_factory, storage, processor)
+    return job_id
 
 
 def finish_job(

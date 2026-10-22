@@ -17,7 +17,17 @@ import numpy as np
 import pytest
 from fake_models import BoxDetector, DiscSegmenter, SolidEditor, disc_mask
 from fastapi.testclient import TestClient
-from helpers import click_wheel, drain, jpeg, upload, upload_photo, wheel_photo
+from helpers import (
+    click_wheel,
+    draft_with_wheel,
+    drain,
+    job_page,
+    job_status,
+    jpeg,
+    params_block,
+    upload_photo,
+    wheel_photo,
+)
 from PIL import Image
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -249,11 +259,9 @@ def _draft_with_wheel(
     """Szkic ze zdjęciem koła (`_wheel_photo`), felgą i maską koła, gotowy do „Generuj”."""
     with tempfile.TemporaryDirectory() as folder:
         photo = _wheel_photo(Path(folder) / "auto.png").read_bytes()
-    job_id = upload(client, photo, filename="auto.png")
-    drain(session_factory, storage, processor)
-    click_wheel(client, job_id, WHEEL)
-    assert drain(session_factory, storage, processor)
-    return job_id
+    return draft_with_wheel(
+        client, session_factory, storage, processor, photo=photo, filename="auto.png", point=WHEEL
+    )
 
 
 def _generate(client: TestClient, job_id: int, rim_size: str | None) -> None:
@@ -270,7 +278,7 @@ def test_chosen_rim_size_reaches_the_editor_also_when_regenerating_one_wheel(
 
     _generate(client, job_id, "2")
     assert drain(session_factory, storage, processor)
-    [wheel_id] = re.findall(r'<li[^>]*data-wheel-id="(\d+)"', client.get(f"/jobs/{job_id}").text)
+    [wheel_id] = re.findall(r'<li[^>]*data-wheel-id="(\d+)"', job_page(client, job_id))
     response = client.post(f"/jobs/{job_id}/wheels/{wheel_id}/regenerate", follow_redirects=False)
     assert response.status_code == 303, response.text
     assert drain(session_factory, storage, processor)
@@ -309,7 +317,7 @@ def test_unmeasurable_rim_returns_the_job_to_a_draft_without_the_rim_size(
     _generate(client, job_id, "1")
     assert drain(session_factory, storage, processor)
 
-    status = client.get(f"/jobs/{job_id}/status").text
+    status = job_status(client, job_id)
     assert TEXTS["status_draft"] in status  # ticket 14 (test_failed_generation.py)
     assert TEXTS["failure_rim_size_unavailable"] in status
     assert _shown_rim_size(client, job_id) is None
@@ -330,7 +338,7 @@ def test_rim_size_outside_range_is_refused_and_job_stays_a_draft(
     assert response.status_code == 400
     assert f"Rozmiar felgi musi być stopniem od {MINUS}2″ do +2″." in response.text
     assert 'id="rim-picker"' in response.text  # wybór felgi i rozmiaru zostaje na miejscu
-    assert TEXTS["status_draft"] in client.get(f"/jobs/{job_id}/status").text
+    assert TEXTS["status_draft"] in job_status(client, job_id)
     assert _shown_rim_size(client, job_id) is None
 
 
@@ -383,11 +391,11 @@ def test_upload_does_not_take_rim_size(client: TestClient) -> None:
 
 def _shown_rim_size(client: TestClient, job_id: int) -> str | None:
     """Rozmiar felgi w szczegółach zadania (wszystkie klucze `Job.params`); None = brak."""
-    page = client.get(f"/jobs/{job_id}").text
-    params = re.search(r"<dl[^>]*data-params.*?</dl>", page, re.S)
+    page = job_page(client, job_id)
+    params = params_block(page)
     if params is None:
         return None
-    pairs = re.findall(r"<dt[^>]*>(.*?)</dt>\s*<dd[^>]*>(.*?)</dd>", params.group(0), re.S)
+    pairs = re.findall(r"<dt[^>]*>(.*?)</dt>\s*<dd[^>]*>(.*?)</dd>", params, re.S)
     return {label.strip(): value.strip() for label, value in pairs}.get(
         PARAM_LABELS[edit_params.RIM_SIZE]
     )
@@ -411,7 +419,7 @@ def test_job_page_offers_rim_size_next_to_rim_choice_defaulting_to_unchanged(
     processor = _fakes().processor
     job_id = _draft_with_wheel(client, session_factory, storage, processor)
 
-    page = client.get(f"/jobs/{job_id}").text
+    page = job_page(client, job_id)
 
     # W sekcji wyboru felgi, przed szczegółami zadania.
     assert (
@@ -457,7 +465,7 @@ def test_result_screen_shows_chosen_rim_size_next_to_seed(
     _generate(client, job_id, rim_size)
     assert drain(session_factory, storage, processor)
 
-    html = client.get(f"/jobs/{job_id}/status").text
+    html = job_status(client, job_id)
 
     # Przy seedzie każdego koła (ta sama pozycja listy kół), nie osobno.
     wheels = re.findall(r'<li[^>]*data-wheel-id="\d+".*?</li>', html, re.S)
@@ -481,6 +489,6 @@ def test_result_screen_hides_unchanged_rim_size(
     _generate(client, job_id, rim_size)
     assert drain(session_factory, storage, processor)
 
-    html = client.get(f"/jobs/{job_id}/status").text
+    html = job_status(client, job_id)
 
     assert 'data-role="wheel-seed"' in html and "result-rim-size" not in html

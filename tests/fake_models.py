@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -142,6 +143,14 @@ class SolidEditor:
 
     def release(self) -> None:
         pass
+
+
+class BrokenEditor(SolidEditor):
+    """„mflux”, który zapamiętuje wywołanie (jak `SolidEditor`) i się wykłada."""
+
+    def edit(self, *args: Any, **kwargs: Any) -> Image.Image:
+        super().edit(*args, **kwargs)
+        raise RuntimeError("model się wyłożył")
 
 
 @dataclass

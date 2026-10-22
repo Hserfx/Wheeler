@@ -64,6 +64,11 @@ class EditParams:
         )
 
 
+def without_rim_size(params: Mapping[str, Any]) -> dict[str, Any]:
+    """Parametry zadania bez rozmiaru felgi (brak klucza = „bez zmian”)."""
+    return {key: value for key, value in params.items() if key != RIM_SIZE}
+
+
 @dataclass(frozen=True)
 class RimSizeChange:
     """Stopień rozmiaru felgi ≠ „bez zmian”: o ile cali (zawsze > 0) i w którą stronę."""

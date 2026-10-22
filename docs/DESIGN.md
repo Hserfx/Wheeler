@@ -148,8 +148,9 @@ Pomiary i rysunki: [docs/spike/README.md](spike/README.md).
   awarię lub restart workera, błąd `interrupted`) przestawia to samo zadanie z powrotem na szkic z komunikatem
   błędu, bez czasu zakończenia. Zdjęcie, koła z maskami, wybrana felga i parametry (w tym seed z pierwszej
   próby) zostają, a strona zadania znów pokazuje wybór felgi, rozmiaru i edycję kół. Komunikat wisi do
-  kolejnego „Generuj”, które go czyści; usunięcie koła go nie rusza, dodanie koła (praca workera nad maską)
-  zastępuje go stanem tej pracy. Przy `rim_size_unavailable` rozmiar felgi znika z parametrów („bez zmian”),
+  kolejnego „Generuj”, które go czyści: dodanie i usunięcie koła, wybór felgi i rozmiaru go nie ruszają
+  (komunikat zachowuje prefiks błędu generowania, bo zadanie pamięta rodzaj pracy, która zawiodła). Błąd
+  maski albo detekcji znika przy następnym kliknięciu w zdjęcie, a nowy błąd zastępuje poprzedni. Przy `rim_size_unavailable` rozmiar felgi znika z parametrów („bez zmian”),
   żeby ponowne „Generuj” nie zawiodło tak samo. W Historii takie zadanie ma status „Szkic”.
   Bez automatycznych ponowień. Nieudane „ponów to koło” wraca do poprzedniego wyniku, nieudana detekcja
   albo maska do szkicu, anulowane generowanie kończy się statusem `cancelled`.
